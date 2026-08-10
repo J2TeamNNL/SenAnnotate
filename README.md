@@ -1,15 +1,21 @@
-# Vuetation
+# SenAnnotate
 
-A Chrome extension that turns "fix the blue button in the sidebar" into
-`src/components/BaseButton.vue:12:5`.
+A Chrome extension that turns "fix the blue button in the sidebar" into a report
+your AI coding agent can act on without guessing.
 
-Click any element in a running Vue app, type a note, and copy a Markdown report
-that points your AI coding agent straight at the component and file that rendered
-it. No `npm install`, no code in your bundle — it works against local dev,
-staging, and production.
+Click any element on **any** website, type a note, and copy a Markdown report
+naming the element, its DOM path, a re-resolvable selector, and — with diagnostics
+on — the console errors, failed requests and steps that led there. No
+`npm install`, no code in your bundle: it works against local dev, staging and
+production, on any stack.
 
-It is a Vue-native take on [`agentation`](https://github.com/benjitaylor/agentation),
-which does the same job for React as an npm component you import into your app.
+When the page happens to be a Vue app, the report gains two more lines for free:
+the component ancestry and the `.vue` file that rendered the element, as precisely
+as `src/components/BaseButton.vue:12:5`. Nothing requires it.
+
+It began as a Vue-native take on
+[`agentation`](https://github.com/benjitaylor/agentation), which does the same job
+for React as an npm component you import into your app.
 
 ---
 
@@ -46,7 +52,7 @@ Requires Chrome 111+ (the extension needs `world: "MAIN"` content scripts).
 
 | | |
 |---|---|
-| Toggle inspect mode | click **Inspect**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> |
+| Toggle inspect mode | click **Inspect**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> |
 | Annotate an element | click it |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements | mode <kbd>3</kbd>, then drag across them |
@@ -104,8 +110,11 @@ On a **production build** Vue strips both the names and the paths. The toolbar
 badge turns amber and says so rather than quietly emitting a weaker report; you
 still get selectors, DOM paths, classes and computed styles.
 
-Supported: Vue 3, Vue 2, Nuxt 2, Nuxt 3/4. Detection is per-element, so a page
-mixing a Vue island into other markup works fine.
+Annotating works on any page. The **component and source** columns above are what
+Vue detection adds, and it covers Vue 3, Vue 2, Nuxt 2 and Nuxt 3/4. Detection is
+per-element, so a page mixing a Vue island into other markup works fine — and a
+page with no Vue at all simply reports no component data, with no badge and no
+warning.
 
 ## Architecture
 
@@ -134,7 +143,7 @@ by the page. So the extension is split across three contexts:
 Two details worth knowing:
 
 - **DOM nodes cannot cross `postMessage`.** The content script stamps the target
-  with `data-vuetation-probe="<id>"`, sends the id, and the inspector re-resolves
+  with `data-senannotate-probe="<id>"`, sends the id, and the inspector re-resolves
   it with `querySelector`. Stamps are reference-counted, because a hover lookup
   and a click capture can be in flight on the same element at once.
 - **`world: "MAIN"` is declared in the manifest**, not injected at runtime.
@@ -147,7 +156,7 @@ page's styles cannot reach it and it never blocks a real click.
 ## Handing it to testers
 
 ```bash
-npm run pack     # → vuetation-<version>.zip, guide included
+npm run pack     # → senannotate-<version>.zip, guide included
 ```
 
 Testers install it with `chrome://extensions` → Load unpacked. Full walkthrough,

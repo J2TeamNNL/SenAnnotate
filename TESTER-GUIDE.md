@@ -1,4 +1,4 @@
-# Vuetation — hướng dẫn cho tester
+# SenAnnotate — hướng dẫn cho tester
 
 Extension giúp bạn báo bug chi tiết hơn: click vào chỗ bị lỗi, ghi chú, rồi copy ra
 một báo cáo đã kèm sẵn **lỗi console**, **request bị fail**, và **các bước bạn vừa làm**.
@@ -7,19 +7,23 @@ một báo cáo đã kèm sẵn **lỗi console**, **request bị fail**, và **
 
 ## 1. Cài đặt (làm 1 lần, ~2 phút)
 
-1. Giải nén file `vuetation.zip` ra một thư mục **cố định** — đừng để trong Downloads
+1. Giải nén file `senannotate.zip` ra một thư mục **cố định** — đừng để trong Downloads
    rồi xoá, Chrome cần thư mục này tồn tại lâu dài.
 2. Mở Chrome, vào `chrome://extensions`
 3. Bật **Developer mode** (góc trên bên phải)
 4. Bấm **Load unpacked** → chọn thư mục vừa giải nén (thư mục có file `manifest.json`)
-5. Xong. Icon chữ V màu xanh sẽ hiện trên thanh công cụ.
+5. Xong. Icon chữ **S** màu cam sẽ hiện trên thanh công cụ.
+
+> **Nếu bạn đã cài bản Vuetation cũ:** các note đã lưu sẽ không hiện lại sau khi cập
+> nhật, vì extension đổi namespace lưu trữ. Copy report bạn cần giữ ra ngoài trước khi
+> cập nhật. Từ bản này trở đi các note vẫn được giữ qua reload như bình thường.
 
 > **Chrome sẽ hiện popup "Disable developer mode extensions" mỗi lần mở.**
 > Bấm **Cancel** (đừng bấm Disable). Đây là cảnh báo mặc định của Chrome cho mọi
 > extension cài kiểu này, không phải lỗi.
 
 **Khi có bản mới:** thay file trong đúng thư mục cũ, rồi vào `chrome://extensions`
-bấm nút ⟳ trên card của Vuetation. Sau đó **reload lại tab đang test**.
+bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang test**.
 
 ---
 
@@ -30,7 +34,7 @@ bấm nút ⟳ trên card của Vuetation. Sau đó **reload lại tab đang tes
 1. **Dùng app bình thường** cho tới khi gặp bug. Không cần bật gì trước —
    extension đã tự ghi lỗi console và request fail ngay từ lúc trang load.
 2. Khi thấy bug, bấm **Inspect** trên thanh công cụ góc dưới bên phải
-   (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>).
+   (hoặc <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>).
 3. **Click vào đúng chỗ bị lỗi** → gõ mô tả → **Add note**.
 4. Bấm icon danh sách → **Copy report** → paste vào Jira/Slack.
 
@@ -41,7 +45,7 @@ bấm nút ⟳ trên card của Vuetation. Sau đó **reload lại tab đang tes
 
 | Phím | Tác dụng |
 |---|---|
-| <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> | Bật/tắt Inspect |
+| <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | Bật/tắt Inspect |
 | <kbd>1</kbd> | Chọn theo element (mặc định) |
 | <kbd>2</kbd> | Chọn theo đoạn text |
 | <kbd>3</kbd> | Kéo chọn nhiều element |

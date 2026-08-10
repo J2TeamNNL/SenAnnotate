@@ -94,7 +94,7 @@ async function main() {
 
   const { server, port } = await startServer();
   const base = `http://127.0.0.1:${port}`;
-  const profile = mkdtempSync(join(tmpdir(), "vuetation-e2e-"));
+  const profile = mkdtempSync(join(tmpdir(), "senannotate-e2e-"));
 
   // Extensions require a persistent context, and a headed one: the old headless
   // shell does not load them.

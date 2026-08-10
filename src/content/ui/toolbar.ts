@@ -45,7 +45,7 @@ export class Toolbar {
       "button",
       {
         class: "tool tool--brand",
-        title: "Toggle inspect mode (Alt+Shift+V)",
+        title: "Toggle inspect mode (Alt+Shift+S)",
         attrs: { "aria-pressed": "false" },
         on: { click: () => callbacks.onToggleActive() },
       },

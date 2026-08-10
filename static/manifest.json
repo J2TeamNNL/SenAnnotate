@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Vuetation — Vue.js visual annotator",
-  "version": "0.1.0",
-  "description": "Click any element in a Vue app, add a note, copy structured Markdown that points your AI coding agent at the exact .vue file.",
+  "name": "SenAnnotate — visual annotator",
+  "version": "0.2.0",
+  "description": "Click any element on any page, add a note, and copy structured Markdown that points your AI coding agent at exactly what to change.",
   "minimum_chrome_version": "111",
   "icons": {
     "16": "icons/icon-16.png",
@@ -11,7 +11,7 @@
     "128": "icons/icon-128.png"
   },
   "action": {
-    "default_title": "Vuetation",
+    "default_title": "SenAnnotate",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
@@ -44,8 +44,8 @@
   ],
   "commands": {
     "toggle-inspect": {
-      "suggested_key": { "default": "Alt+Shift+V" },
-      "description": "Toggle Vuetation inspect mode"
+      "suggested_key": { "default": "Alt+Shift+S" },
+      "description": "Toggle SenAnnotate inspect mode"
     }
   }
 }

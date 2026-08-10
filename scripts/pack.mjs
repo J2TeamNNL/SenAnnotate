@@ -2,7 +2,7 @@
 // Package the extension for testers
 // =============================================================================
 //
-// Produces `vuetation-<version>.zip` containing the unpacked extension plus the
+// Produces `senannotate-<version>.zip` containing the unpacked extension plus the
 // tester guide, ready to hand over for `chrome://extensions` → Load unpacked.
 //
 // Uses the system `zip`, which is present on macOS and Linux — not worth a
@@ -24,7 +24,7 @@ if (!existsSync(join(DIST, "manifest.json"))) {
 }
 
 const { version } = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
-const name = `vuetation-${version}`;
+const name = `senannotate-${version}`;
 const archive = join(ROOT, `${name}.zip`);
 const payload = join(STAGING, name);
 

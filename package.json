@@ -1,8 +1,8 @@
 {
-  "name": "vuetation",
-  "version": "0.1.0",
+  "name": "senannotate",
+  "version": "0.2.0",
   "private": true,
-  "description": "Chrome extension: click any element in a Vue.js app, annotate it, and hand an AI coding agent the exact component and source file.",
+  "description": "Chrome extension: click any element on any website, annotate it, and hand an AI coding agent the exact element, DOM path and diagnostics. Adds Vue component and source data when the page is a Vue app.",
   "type": "module",
   "scripts": {
     "icons": "node scripts/make-icons.mjs",
