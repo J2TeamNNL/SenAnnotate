@@ -11,7 +11,7 @@
 // =============================================================================
 
 import { context, build } from "esbuild";
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,9 +20,26 @@ const DIST = resolve(ROOT, "dist");
 const WATCH = process.argv.includes("--watch");
 const DEV = WATCH || process.argv.includes("--dev");
 
-/** Copies static/ verbatim into dist/. */
+/**
+ * Copies static/ verbatim into dist/, then overwrites the manifest's version from
+ * package.json.
+ *
+ * Without this the version ships from two uncoordinated places: the zip's filename comes
+ * from package.json (scripts/pack.mjs) while the manifest inside it comes from
+ * static/manifest.json. Bumping one and forgetting the other produces an archive whose
+ * name and contents disagree, which is invisible until someone opens it.
+ *
+ * The stamp lives in here rather than beside the call site so `npm run dev` gets it too —
+ * a watched build should not differ from a released one.
+ */
 function copyStatic() {
   cpSync(resolve(ROOT, "static"), DIST, { recursive: true });
+
+  const { version } = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
+  const manifestPath = resolve(DIST, "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.version = version;
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 const shared = {

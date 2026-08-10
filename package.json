@@ -4,6 +4,9 @@
   "private": true,
   "description": "Chrome extension: click any element on any website, annotate it, and hand an AI coding agent the exact element, DOM path and diagnostics. Adds Vue component and source data when the page is a Vue app.",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "icons": "node scripts/make-icons.mjs",
     "typecheck": "tsc --noEmit",
