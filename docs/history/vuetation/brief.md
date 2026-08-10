@@ -11,9 +11,9 @@ It is the Vue equivalent of [`agentation`](https://github.com/benjitaylor/agenta
 
 ## Why
 
-1. **We are a Vue shop.** `seller_v3` / `storefront_v5` are Nuxt 4 + Vue 3,
-   `seller_v2` / `admin_v2` are Nuxt 2 + Vue 2. `agentation` only understands
-   React fibers, so it produces zero component/source context on our apps.
+1. **This is a Vue codebase.** Some apps are Nuxt 4 + Vue 3, others still Nuxt 2 + Vue 2.
+   `agentation` only understands React fibers, so it produces zero component/source
+   context on any of them.
 2. **Zero code changes.** `agentation` requires `npm i agentation -D` and a
    `<Agentation />` mount in every app. A browser extension works on every
    environment — local dev, staging, production — with nothing shipped in the bundle.

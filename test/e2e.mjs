@@ -24,40 +24,35 @@ const ROOT = resolve(HERE, "..");
 const DIST = join(ROOT, "dist");
 const FIXTURES = join(HERE, "fixtures");
 
-// Borrowed from the monorepo rather than vendored into this package: Playwright
-// (with its browsers) and the Vue 3 global build are both already installed there.
+// Playwright (with its browsers) and a Vue 3 global build are not dependencies of this
+// package — the extension itself ships none, and the suite is not worth adding three
+// runtimes for. Both are supplied by the person running the suite:
 //
-// Found by walking up rather than by counting `../` segments, because a fixed depth
-// breaks the moment this runs from anywhere but the project root — a git worktree under
-// .claude/worktrees/ resolves `../..` to .claude/ and the suite dies before launching a
-// browser.
-const MONOREPO = findMonorepoRoot(ROOT);
-const PLAYWRIGHT_HOST = MONOREPO ? join(MONOREPO, "storefront_playwright_test") : null;
-const VUE_SOURCE = MONOREPO
-  ? join(MONOREPO, "storefront_v5/node_modules/vue/dist/vue.global.js")
-  : null;
+//   SENANNOTATE_PLAYWRIGHT_DIR  a directory whose node_modules contains playwright
+//   SENANNOTATE_VUE_GLOBAL      path to a vue.global.js dev build (copied in once)
+//
+// There is deliberately no default. A hardcoded guess only works on the machine it was
+// written on, and a wrong guess fails later and more confusingly than an unset variable.
+const PLAYWRIGHT_HOST = process.env.SENANNOTATE_PLAYWRIGHT_DIR || null;
+const VUE_SOURCE = process.env.SENANNOTATE_VUE_GLOBAL || null;
 const VUE_VENDORED = join(FIXTURES, "vendor/vue.global.js");
 
-/** Nearest ancestor directory containing `storefront_playwright_test`, or null. */
-function findMonorepoRoot(from) {
-  let current = from;
-  for (let depth = 0; depth < 8; depth++) {
-    if (existsSync(join(current, "storefront_playwright_test"))) return current;
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return null;
-}
-
 async function ensureVueFixture() {
+  // Copied in on first run and kept (gitignored), so the variable is only needed once.
   if (existsSync(VUE_VENDORED)) return;
-  if (!VUE_SOURCE || !existsSync(VUE_SOURCE)) {
+
+  if (!VUE_SOURCE) {
     throw new Error(
-      `Vue 3 dev build not found${VUE_SOURCE ? ` at ${VUE_SOURCE}` : " (no monorepo root above " + ROOT + ")"}. ` +
-        `Install storefront_v5's dependencies, or drop a copy of vue.global.js at ${VUE_VENDORED}.`,
+      `No Vue 3 dev build available.\n` +
+        `  Set SENANNOTATE_VUE_GLOBAL to a vue.global.js, or drop one at:\n` +
+        `    ${VUE_VENDORED}\n` +
+        `  It ships in the vue package as vue/dist/vue.global.js.`,
     );
   }
+  if (!existsSync(VUE_SOURCE)) {
+    throw new Error(`SENANNOTATE_VUE_GLOBAL points at a file that does not exist:\n  ${VUE_SOURCE}`);
+  }
+
   mkdirSync(dirname(VUE_VENDORED), { recursive: true });
   await copyFile(VUE_SOURCE, VUE_VENDORED);
 }
@@ -111,8 +106,10 @@ async function main() {
 
   if (!PLAYWRIGHT_HOST) {
     throw new Error(
-      `No monorepo root found above ${ROOT} — expected an ancestor containing ` +
-        `storefront_playwright_test, which is where Playwright and its browsers live.`,
+      `SENANNOTATE_PLAYWRIGHT_DIR is not set.\n` +
+        `  Point it at a directory whose node_modules contains playwright and its\n` +
+        `  browsers, e.g. any project where you have run:\n` +
+        `    npm i -D playwright && npx playwright install chromium`,
     );
   }
   const require = createRequire(join(PLAYWRIGHT_HOST, "package.json"));

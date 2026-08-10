@@ -13,7 +13,7 @@
 // REQUIRES A RUNNING NUXT DEV SERVER with devtools enabled. Kept out of
 // `npm test` for that reason.
 //
-//   cd ../../storefront_v5
+//   # in any Nuxt project with `devtools: { enabled: true }`:
 //   TMPDIR=/tmp/nx ./node_modules/.bin/nuxt dev --port 3005
 //   # then, here:
 //   npm run verify:tracer            # defaults to http://localhost:3005/

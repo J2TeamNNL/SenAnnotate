@@ -14,7 +14,7 @@
 
 Every task's requirements implicitly include these.
 
-- **Working directory:** `/Users/thangnm/Documents/Works/others/vuetation` until Task 8 renames it to `others/senannotate`. All paths below are relative to it.
+- **Working directory:** `<repo>` until Task 8 renames it to `others/senannotate`. All paths below are relative to it.
 - **Branch:** `feature/senannotate-rebrand`, created in Task 0.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`). **Never** add a `Co-Authored-By` trailer or a `Claude-Session` trailer.
 - **Chrome floor:** `minimum_chrome_version: "111"` — `world: "MAIN"` content scripts need it. Do not change.
@@ -937,7 +937,7 @@ git commit -m "chore: rebrand manifest, package and docs to SenAnnotate 0.2.0"
 - [ ] **Step 13: Rename the directory**
 
 ```bash
-cd /Users/thangnm/Documents/Works/others
+cd <workspace>
 mv vuetation senannotate
 cd senannotate
 git log --oneline | head -3
@@ -974,10 +974,10 @@ Pick one React SPA and one plain server-rendered page. On each, confirm:
 
 - [ ] **Step 3: Verify the Vue path has not regressed**
 
-Start `storefront_v5`:
+Start a Nuxt app with `devtools: { enabled: true }`:
 
 ```bash
-cd /Users/thangnm/Documents/Works/storefront_v5
+cd <nuxt-app>
 TMPDIR=/tmp/short npx nuxt dev
 ```
 
@@ -988,7 +988,7 @@ Then annotate an element and confirm the report still resolves a real `.vue` fil
 - [ ] **Step 4: Produce the distributable**
 
 ```bash
-cd /Users/thangnm/Documents/Works/others/senannotate
+cd <repo>
 npm run pack
 ls *.zip
 ```

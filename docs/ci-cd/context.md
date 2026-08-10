@@ -14,23 +14,25 @@
 
 This is the single fact that shapes the whole design, so it is worth stating precisely.
 
-`test/e2e.mjs` deliberately does not depend on Playwright. It borrows it, and Vue, from
-elsewhere in the monorepo:
+`test/e2e.mjs` deliberately does not depend on Playwright. At the time this was written it
+resolved Playwright, and a Vue dev build, out of sibling directories next to the project:
 
 ```js
-// test/e2e.mjs:29-30
-const PLAYWRIGHT_HOST = resolve(ROOT, "../../storefront_playwright_test");
-const VUE_SOURCE = resolve(ROOT, "../../storefront_v5/node_modules/vue/dist/vue.global.js");
+// test/e2e.mjs, as it stood then
+const PLAYWRIGHT_HOST = resolve(ROOT, "../../<a project with playwright installed>");
+const VUE_SOURCE = resolve(ROOT, "../../<a Nuxt app>/node_modules/vue/dist/vue.global.js");
 ```
 
-`test/build-prod-fixtures.mjs:26` does the same for vite and the tracer plugin:
-
-```js
-const DONOR = resolve(HERE, "../../../storefront_v5");
-```
+`test/build-prod-fixtures.mjs` did the same for vite and the tracer plugin, reaching into
+a sibling project's pnpm store.
 
 A GitHub-hosted runner clones **only this repository**. Those sibling paths do not
 exist, so `npm test` fails at `ensureVueFixture()` before a browser is even launched.
+
+> Since 0.3.0 those locations come from environment variables
+> (`SENANNOTATE_PLAYWRIGHT_DIR`, `SENANNOTATE_VUE_GLOBAL`, `SENANNOTATE_PNPM_STORE`)
+> rather than hardcoded sibling paths. That removes the machine-specific coupling but not
+> the conclusion below: a runner still has nothing to point them at.
 
 Two further reasons it should not simply be forced to work:
 

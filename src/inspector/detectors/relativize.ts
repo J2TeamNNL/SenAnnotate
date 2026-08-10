@@ -24,7 +24,7 @@ const PATH_MARKERS = [
 /**
  * Turn a compiler-supplied absolute path into something you can `grep` for.
  *
- *   /Users/me/app/src/components/BaseButton.vue?vue&type=script
+ *   /build/app/src/components/BaseButton.vue?vue&type=script
  *     → src/components/BaseButton.vue
  */
 export function relativizeFile(file: string): string {

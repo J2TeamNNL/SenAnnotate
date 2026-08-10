@@ -39,12 +39,11 @@ against three fixtures (Vue 3 via the real runtime, a Vue 2 instance-shape
 simulation, and a plain HTML page). It asserts on the rendered UI and on the
 actual clipboard contents. **20/20 checks pass.**
 
-Also verified by hand against a live Nuxt 4 app in this monorepo
-(`storefront_v5`, Nuxt 4.4.7 / Vue 3.5.35). It correctly reported
+Also verified by hand against a live app (Nuxt 4.4.7 / Vue 3.5.35). It correctly reported
 `components/s/image.vue` and the ancestry
 `<default> <index> <BaseHomePageBannerCarousel> <EmblaCarousel> <NuxtLink> <SImage>`.
 
-> Note: `storefront_v5`'s dev server fails to boot with the default `TMPDIR` on
+> Note: that app's dev server fails to boot with the default `TMPDIR` on
 > macOS — Nuxt's vite-node unix socket path exceeds the 104-byte limit, so the
 > socket silently fails to bind and every request 500s. `TMPDIR=/tmp/short npx
 > nuxt dev` works around it. Unrelated to this extension, but it costs an hour if
@@ -77,13 +76,13 @@ Bugs 1 and 4 have regression checks in the suite.
 
 ### Follow-up: `vite-plugin-vue-tracer` support
 
-Triggered by "what do we need for seller_v3?". Investigating that turned up a
+Triggered by asking what the main Nuxt 4 app would need. Investigating that turned up a
 wrong assumption baked into the first version.
 
 - **Nuxt DevTools no longer emits `data-v-inspector`.** v3+ ships
   `vite-plugin-vue-tracer` instead, which writes nothing to the DOM and records
   positions in `globalThis.__vue_tracer__.vnodeToPos`, a WeakMap keyed by vnode
-  `props`. That is why the live `storefront_v5` check measured **0**
+  `props`. That is why the live check against that app measured **0**
   `data-v-inspector` attributes and quietly degraded to file-level `__file`.
 - Added tracer support in the MAIN-world inspector (`readTracerPosition`, walking
   up the DOM to the nearest recorded ancestor) and put it at the top of the
@@ -97,12 +96,12 @@ wrong assumption baked into the first version.
 - Three new regression checks (fixture `test/fixtures/vue3-tracer.html` reproduces
   the plugin's exact store shape). **23/23 pass.**
 
-Verified against **seller_v3** (Nuxt 4.5.1 / Vue 3.5.40) with `devtools.enabled`
+Verified against another Nuxt 4 app (4.5.1 / Vue 3.5.40) with `devtools.enabled`
 flipped on temporarily — reports came back as `app/pages/auth/login.vue:287:6`,
-`app/layouts/auth.vue:16:10`. The config change was reverted; seller_v3 is
+`app/layouts/auth.vue:16:10`. The config change was reverted; that app is
 untouched.
 
-**Recommendation for seller_v3:** nothing to install. `@nuxt/devtools` and
+**Recommendation for that app:** nothing to install. `@nuxt/devtools` and
 `vite-plugin-vue-tracer@1.4.0` are already in its dependency tree. It just needs
 `devtools: { enabled: true }` in `nuxt.config.ts` (currently `false`) to get line
 and column numbers.
@@ -140,7 +139,7 @@ Vietnamese walkthrough for Load-unpacked install.
    stopped working — and because the fallback also failed, the user would have
    pasted whatever was on their clipboard beforehand. Caught only because the test
    asserts on clipboard *contents*: it came back holding output from an earlier
-   manual run against seller_v3. Fixed by mirroring diagnostics into the content
+   manual run against a real app. Fixed by mirroring diagnostics into the content
    script via a pushed `BRIDGE_EVENT`, leaving `copyReport` synchronous up to the
    clipboard call.
 8. **Annotating polluted the repro steps.** Clicking an element to annotate it was
@@ -181,11 +180,11 @@ tracer variant was byte-identical to the devtools one.
 
 Suite is at **44/44**.
 
-### Follow-up: enabling it on seller_v3's `develop` deploy
+### Follow-up: enabling it on the Nuxt 4 app's `develop` deploy
 
-Requested: turn `__VUE_PROD_DEVTOOLS__` on for seller_v3, dev environment only.
+Requested: turn `__VUE_PROD_DEVTOOLS__` on for that app, dev environment only.
 
-**Files changed in `seller_v3/`:**
+**Files changed in it:**
 
 1. `nuxt.config.ts` — `vite.vue.features.prodDevtools`, driven by
    `process.env.VUE_DEVTOOLS === 'true'`. Nuxt forwards `vite.vue` straight into
@@ -199,13 +198,13 @@ Requested: turn `__VUE_PROD_DEVTOOLS__` on for seller_v3, dev environment only.
    step only.
 
 **Why a new build arg instead of the existing `APP_ENV`:** the pipeline already
-passes `--build-arg APP_ENV=dev`, but it passes it on `test-deploy-production`
-too — a step that builds the **production** image (`seller-v3-prod`). Gating on
+passes `--build-arg APP_ENV=dev`, but it passes it on the production-deploy step
+too — a step that builds the **production** image. Gating on
 `APP_ENV` would have shipped devtools metadata to production. (`APP_ENV` is also
 currently consumed by nothing: no `ARG APP_ENV` in the Dockerfile, no reference in
 the app. Flagged to the user, deliberately not changed.)
 
-**Verified by building seller_v3 twice, for real:**
+**Verified by building that app twice, for real:**
 
 | | `__vueParentComponent` in client bundle |
 |---|---|

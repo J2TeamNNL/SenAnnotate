@@ -210,7 +210,7 @@ detected, omit the `Stack:` line and keep `Viewport`. The standard-detail line b
 - MV3 content scripts are not ES modules — `src/content` and `src/inspector` each
   bundle to a single IIFE via esbuild; service worker and popup are ESM.
 - Chrome rejects SVG in `manifest.icons`, hence the PNG generator.
-- Neither `/Users/thangnm/Documents/Works` nor `others/vuetation` is a git repository,
+- Neither the surrounding workspace nor the project itself is a git repository,
   so nothing in this task can be committed. Docs are written, not committed.
 
 ## Test baseline
@@ -221,11 +221,11 @@ Measured on 2026-08-10 before any change: **45/45 checks pass**.
 (`history/vuetation/changelog.md` says "20/20" — true when written on 2026-08-07,
 but the suite has grown since. Verified by running it, not by reading the old note.)
 
-Prerequisites, all present and confirmed: `node_modules`, Playwright resolved from
-`../../storefront_playwright_test`, the Vue 3 global build from
-`../../storefront_v5/node_modules/vue/dist/vue.global.js` (already vendored into
-`test/fixtures/vendor/`), and the generated `test/fixtures/prod/*` bundles. The runner
-builds the prod fixtures itself on first run.
+Prerequisites, all present and confirmed: `node_modules`, Playwright with its browsers,
+a Vue 3 global build (vendored into `test/fixtures/vendor/`), and the generated
+`test/fixtures/prod/*` bundles. The runner builds the prod fixtures itself on first run.
+None of the three are dependencies of this package — see `test/e2e.mjs` for how they are
+supplied.
 
 One check encodes the behaviour being deliberately changed:
 

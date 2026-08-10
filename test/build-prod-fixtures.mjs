@@ -11,43 +11,37 @@
 //   devtools  + __VUE_PROD_DEVTOOLS__: true
 //   tracer    + __VUE_PROD_DEVTOOLS__ and vite-plugin-vue-tracer enabled in prod
 //
-// vite, @vitejs/plugin-vue and vite-plugin-vue-tracer are resolved out of the
-// monorepo rather than added as dependencies here — same approach as Playwright.
+// vite, @vitejs/plugin-vue and vite-plugin-vue-tracer are supplied by the person running
+// the suite rather than added as dependencies here — same approach as Playwright:
+//
+//   SENANNOTATE_PNPM_STORE  a pnpm store (node_modules/.pnpm) holding those three
+//
+// There is deliberately no default, for the same reason: a hardcoded guess only works on
+// the machine it was written on.
 // =============================================================================
 
 import { existsSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = join(HERE, "prod-app");
 const OUT_ROOT = join(HERE, "fixtures", "prod");
 
-// Found by walking up rather than by counting `../` segments: a fixed depth breaks when
-// this runs from a git worktree under .claude/worktrees/, where the count is two deeper.
-//
-// Anchored on `storefront_playwright_test`, which exists only at the monorepo root.
-// Anchoring on `storefront_v5` itself does not work — there is a second, dependency-less
-// directory of that name under `others/`, and the walk-up finds that one first.
-const MONOREPO = findMonorepoRoot(HERE);
-const STORE = MONOREPO ? join(MONOREPO, "storefront_v5/node_modules/.pnpm") : "";
+const STORE = process.env.SENANNOTATE_PNPM_STORE || "";
 
-/** Nearest ancestor directory containing `storefront_playwright_test`, or null. */
-function findMonorepoRoot(from) {
-  let current = from;
-  for (let depth = 0; depth < 8; depth++) {
-    if (existsSync(join(current, "storefront_playwright_test"))) return current;
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return null;
-}
-
-/** Resolve a package out of the donor project's pnpm store. */
+/** Resolve a package out of the supplied pnpm store. */
 function fromStore(prefix, subpath) {
+  if (!STORE) {
+    throw new Error(
+      `SENANNOTATE_PNPM_STORE is not set.\n` +
+        `  The production fixtures need vite, @vitejs/plugin-vue and\n` +
+        `  vite-plugin-vue-tracer. Point it at a node_modules/.pnpm directory that has\n` +
+        `  them, e.g. from any project running Vite with the Vue plugin.`,
+    );
+  }
   if (!existsSync(STORE)) {
-    throw new Error(`Cannot find ${STORE}. Install storefront_v5's dependencies first.`);
+    throw new Error(`SENANNOTATE_PNPM_STORE points at a directory that does not exist:\n  ${STORE}`);
   }
   const dir = readdirSync(STORE).find((entry) => entry.startsWith(prefix));
   if (!dir) throw new Error(`No package matching "${prefix}" in ${STORE}`);

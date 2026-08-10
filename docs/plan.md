@@ -132,7 +132,7 @@ returns nothing but the stale `vuetation-0.1.0.zip` artefact — delete that.
 4. **Manual, non-Vue:** load unpacked, then on two or three real sites that are not Vue
    (one React SPA, one server-rendered page) confirm: no stack badge, annotating works,
    the copied report has no `Stack:` line and never says "Vue".
-5. **Manual, Vue regression:** `storefront_v5` dev server — component ancestry and
+5. **Manual, Vue regression:** a real Nuxt dev server — component ancestry and
    source file must still resolve exactly as at v0.1.0. Note the `TMPDIR` workaround
    from `history/vuetation/changelog.md`: start it as
    `TMPDIR=/tmp/short npx nuxt dev`, or Nuxt's vite-node socket path exceeds macOS's

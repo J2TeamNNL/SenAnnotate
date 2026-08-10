@@ -25,8 +25,8 @@ export const ROOT = resolve(HERE, "..");
 export const DIST = join(ROOT, "dist");
 export const SHOTS = join(HERE, "screenshots");
 
-// Borrowed from the monorepo rather than vendored, exactly as `e2e.mjs` does it.
-const PLAYWRIGHT_HOST = resolve(ROOT, "../../storefront_playwright_test");
+// Supplied by the caller, exactly as `e2e.mjs` does it — see its header.
+const PLAYWRIGHT_HOST = process.env.SENANNOTATE_PLAYWRIGHT_DIR || null;
 
 // -----------------------------------------------------------------------------
 // Reporting — same shape as e2e.mjs so output reads identically
@@ -58,6 +58,13 @@ export function report() {
 export async function launchWithExtension({ viewport = { width: 1280, height: 800 } } = {}) {
   if (!existsSync(DIST)) {
     throw new Error(`No build at ${DIST}. Run \`npm run build\` first.`);
+  }
+  if (!PLAYWRIGHT_HOST) {
+    throw new Error(
+      `SENANNOTATE_PLAYWRIGHT_DIR is not set.\n` +
+        `  Point it at a directory whose node_modules contains playwright and its\n` +
+        `  browsers. See the header of test/e2e.mjs.`,
+    );
   }
 
   const require = createRequire(join(PLAYWRIGHT_HOST, "package.json"));

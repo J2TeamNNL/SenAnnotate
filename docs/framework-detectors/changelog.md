@@ -12,16 +12,22 @@ Delivered as 0.3.0. **46/46 → 60/60 e2e.**
 
 ### The suite could not run at all from a worktree
 
-Found before writing any code, by checking rather than assuming. `test/e2e.mjs` resolved
-Playwright as `resolve(ROOT, "../../storefront_playwright_test")` — a fixed depth, which
-from a git worktree under `.claude/worktrees/` resolves to `.claude/` and dies before
-launching a browser. The only regression net for a wide refactor was unavailable in the
-environment the refactor had to happen in.
+Found before writing any code, by checking rather than assuming. `test/e2e.mjs` located
+Playwright with a **fixed** number of `../` segments, which resolves correctly only from
+the project root — from a git worktree under `.claude/worktrees/` it landed two levels
+wrong and the suite died before launching a browser. The only regression net for a wide
+refactor was unavailable in the environment the refactor had to happen in.
 
-Fixed by walking up to find the monorepo root. **The first fix was wrong**: anchoring on
-`storefront_v5` found `others/storefront_v5`, a second directory of that name with no
-`node_modules`. Only running it surfaced that. Re-anchored on
-`storefront_playwright_test`, which exists only at the monorepo root.
+Fixed by searching upward for a known anchor directory instead of counting segments.
+**The first attempt was wrong**: the anchor chosen was a name that existed *twice* in the
+tree, and the upward search found the nearer one — which had no `node_modules`. Only
+running it surfaced that; re-anchored on a name that is unique.
+
+> Superseded in the same release: these locations now come from environment variables
+> (`SENANNOTATE_PLAYWRIGHT_DIR`, `SENANNOTATE_VUE_GLOBAL`, `SENANNOTATE_PNPM_STORE`), so
+> there is no path search left to get wrong. The episode is kept because the lesson —
+> a fixed-depth relative path is a latent bug the moment the cwd can change — is what led
+> there.
 
 ### Phase 0 — the seam
 

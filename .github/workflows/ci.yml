@@ -37,8 +37,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-# The Playwright suite (`npm test`) is deliberately absent. It resolves Playwright from
-# ../../storefront_playwright_test and Vue from ../../storefront_v5/node_modules, and
-# test/build-prod-fixtures.mjs reaches ../../../storefront_v5 — sibling monorepo paths a
-# bare checkout does not have. It also needs a headed Chromium. It stays a manual gate
-# before tagging; see docs/ci-cd/context.md.
+# The Playwright suite (`npm test`) is deliberately absent. It needs Playwright with
+# browsers, a Vue dev build, and vite plus the Vue plugin — none of them dependencies of
+# this package, all supplied by environment variable (see test/e2e.mjs). A runner has
+# nothing to point them at, and the suite also needs a headed Chromium. It stays a manual
+# gate before tagging; see docs/ci-cd/context.md.

@@ -120,19 +120,19 @@ headed Chromium (kept in the session scratchpad, not committed):
   its own CSP): toolbar injects, **no** stack badge, annotating works, and the report is
   `**Viewport:** 1280×800` with no `Stack:` line and no occurrence of "Vue". This is the
   actual claim of the rebrand, so it was worth automating rather than eyeballing.
-- **Real Vue app — no regression.** Checked against a **seller_v3** dev server
-  (Nuxt 4 / Vue 3) that was already running on `:3000`, rather than booting
-  `storefront_v5` as the plan said — a second Nuxt was unnecessary. Result:
-  badge `Nuxt 3/4 3.5.40` (no warning), `**Source:** app/layouts/auth.vue`,
+- **Real Vue app — no regression.** Checked against a Nuxt 4 / Vue 3 dev server that was
+  already running on `:3000`, rather than booting the app the plan named — a second Nuxt
+  was unnecessary. Result: badge `Nuxt 3/4 3.5.40` (no warning),
+  `**Source:** app/layouts/auth.vue`,
   `**Components:** <nuxt-root> <LayoutLoader> <auth>`, `**Stack:** … · pinia`, plus
-  repro steps and console capture. No line/column, which is expected: seller_v3 runs
+  repro steps and console capture. No line/column, which is expected: that app runs
   `devtools: { enabled: false }`, so the tracer is absent.
 
 `npm run pack` → `senannotate-0.2.0.zip` (33.8 KB).
 
 #### `file:line:column` confirmed against the real tracer
 
-Followed up on `storefront_v5` (Nuxt 4.4.7 / Vue 3.5.35, `devtools: { enabled: true }`,
+Followed up on a different app (Nuxt 4.4.7 / Vue 3.5.35, `devtools: { enabled: true }`,
 `vite-plugin-vue-tracer@1.3.0`). **6/6 checks.** This is the path v0.1.0 originally got
 wrong — it looked for `data-v-inspector` attributes that current Nuxt no longer emits and
 fell back to file-level silently — so it was verified by reading the plugin's actual

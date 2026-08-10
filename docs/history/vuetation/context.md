@@ -133,8 +133,9 @@ gives you.
 - Extension icons must be raster (Chrome rejects SVG in `manifest.icons`), so
   `scripts/make-icons.mjs` rasterises the Vue mark with a dependency-free PNG encoder.
 
-## Files that matter in this repo
+## What it was tested against
 
-- `seller_v3/` — Nuxt 4 / Vue 3 / `<script setup>` → the primary test target.
-- `seller_v2/`, `admin_v2/` — Nuxt 2 / Vue 2 → the `__vue__` code path.
-- `storefront_v5/` — second Vue 3 target.
+- A **Nuxt 4 / Vue 3** app using `<script setup>` → the primary test target, exercising
+  the `__vueParentComponent` path and the tracer.
+- A second Nuxt 4 / Vue 3 app → confirmed the same path on a different codebase.
+- **Nuxt 2 / Vue 2** apps → the `__vue__` code path.

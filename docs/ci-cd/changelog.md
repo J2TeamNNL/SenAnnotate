@@ -20,11 +20,11 @@ Decisions taken:
 
 Two findings from reading the code that shaped the design rather than just filling it in:
 
-1. **The e2e suite cannot run on a GitHub runner, by construction.** `test/e2e.mjs:29-30`
-   resolves Playwright from `../../storefront_playwright_test` and Vue from
-   `../../storefront_v5/node_modules/`, and `test/build-prod-fixtures.mjs:26` reaches for
-   `../../../storefront_v5`. A runner clones only this repo, so those paths are absent and
-   the suite fails before launching a browser. It also needs a *headed* Chromium. So CI
+1. **The e2e suite cannot run on a GitHub runner, by construction.** It needs Playwright
+   with browsers, a Vue dev build, and vite plus the Vue plugin — none of which are
+   dependencies of this package. At the time they came from sibling directories; since
+   0.3.0 they come from environment variables. Either way a runner has nothing to supply,
+   so the suite fails before launching a browser. It also needs a *headed* Chromium. So CI
    verifies typecheck/build/pack and the suite stays a manual pre-tag gate — stated
    explicitly in `context.md` so this reads as a known limitation with a documented fix
    path, not an oversight.

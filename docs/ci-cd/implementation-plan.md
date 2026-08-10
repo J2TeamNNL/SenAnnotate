@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Spec:** `docs/ci-cd/{brief,context,plan}.md`. Read `context.md` first — it explains why e2e is absent, which otherwise looks like an oversight.
-- **CI must not run `npm test`.** `test/e2e.mjs:29-30` resolves Playwright from `../../storefront_playwright_test` and Vue from `../../storefront_v5/node_modules/`; `test/build-prod-fixtures.mjs:26` reaches `../../../storefront_v5`. A runner clones only this repo. It also needs a *headed* Chromium.
+- **CI must not run `npm test`.** It needs Playwright with browsers, a Vue dev build, and vite plus the Vue plugin — none of them dependencies of this package, all supplied externally. A runner has nothing to supply. It also needs a *headed* Chromium.
 - **Node:** `node-version: 22` in both workflows; `"engines": { "node": ">=20" }` in `package.json` — floor, not pin.
 - **`release.yml` requires `permissions: contents: write`.** The default token is read-only; without this, creating a release fails with 403.
 - **Artifact retention: 14 days.**

@@ -35,7 +35,7 @@ DevTools is on in `nuxt.config.ts`:
 
 ```ts
 export default defineNuxtConfig({
-  devtools: { enabled: true },   // seller_v3 currently has this set to false
+  devtools: { enabled: true },   // often left off — check yours
 })
 ```
 
@@ -278,8 +278,19 @@ npm run build
 
 `npm run test` launches Chromium with the extension loaded and asserts on the
 actual rendered UI and the actual clipboard contents — see `test/e2e.mjs`.
-Playwright is resolved from `storefront_playwright_test/`, where it is already
-installed, rather than being duplicated here.
+
+The suite needs three things this package deliberately does not depend on, supplied by
+environment variable so nothing machine-specific is baked in:
+
+| Variable | Points at |
+|---|---|
+| `SENANNOTATE_PLAYWRIGHT_DIR` | a directory whose `node_modules` has `playwright` + browsers |
+| `SENANNOTATE_VUE_GLOBAL` | a `vue.global.js` dev build (copied in once, then cached) |
+| `SENANNOTATE_PNPM_STORE` | a `node_modules/.pnpm` with `vite`, `@vitejs/plugin-vue`, `vite-plugin-vue-tracer` — only for the production fixtures |
+
+Each is checked with an actionable error rather than a default guess: a hardcoded path
+works on exactly one machine, and a wrong one fails later and more confusingly than an
+unset variable.
 
 Fixtures under `test/fixtures/` reproduce what `@vitejs/plugin-vue` emits
 (`__name`, `__file`, `data-v-inspector`) so the source-resolution path is
@@ -308,7 +319,7 @@ npm run verify:tracer    # needs a running Nuxt dev server
   version got wrong. Start a dev server first:
 
   ```bash
-  cd ../../storefront_v5
+  # in any Nuxt project with devtools enabled
   TMPDIR=/tmp/nx ./node_modules/.bin/nuxt dev --port 3005
   ```
 

@@ -57,7 +57,7 @@ The existing `others/vuetation/` project, rebranded to SenAnnotate v0.2.0 and mo
 1. On a non-Vue site (plain HTML or a React app), the toolbar shows **no** stack badge,
    annotating works, and the copied report contains no `Stack:` line and no mention
    of Vue.
-2. On a Vue dev build (`storefront_v5`), behaviour is unchanged from v0.1.0: component
+2. On a real Vue dev build, behaviour is unchanged from v0.1.0: component
    ancestry and source file still resolve.
 3. `npm run typecheck`, `npm run test` and `npm run build` all pass.
 4. `grep -rin vuetation others/senannotate --exclude-dir=node_modules --exclude-dir=dist`

@@ -44,19 +44,19 @@
       // read off `$options`. That is the whole contract `inspectVue2` depends on —
       // see src/inspector/vue-internals.ts.
       const root = {
-        $options: { name: "App", __file: "/Users/dev/shop/src/App.vue" },
+        $options: { name: "App", __file: "/build/shop/src/App.vue" },
         $parent: null,
         $props: {},
       };
 
       const card = {
-        $options: { name: "ProductCard", __file: "/Users/dev/shop/src/components/ProductCard.vue" },
+        $options: { name: "ProductCard", __file: "/build/shop/src/components/ProductCard.vue" },
         $parent: root,
         $props: { title: "Classic Tee", price: 24 },
       };
 
       const button = {
-        $options: { name: "AddToCartButton", __file: "/Users/dev/shop/src/components/AddToCartButton.vue" },
+        $options: { name: "AddToCartButton", __file: "/build/shop/src/components/AddToCartButton.vue" },
         $parent: card,
         $props: { disabled: false },
       };
