@@ -10,10 +10,8 @@
 // annotations stay in `local`, which has room for them.
 // =============================================================================
 
+import { ANNOTATION_PREFIX, SETTINGS_KEY } from "../shared/protocol";
 import { DEFAULT_SETTINGS, type Annotation, type Settings } from "../shared/types";
-
-const ANNOTATION_PREFIX = "vuetation:page:";
-const SETTINGS_KEY = "vuetation:settings";
 
 export function pageKey(): string {
   return `${ANNOTATION_PREFIX}${location.origin}${location.pathname}`;

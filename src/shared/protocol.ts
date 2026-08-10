@@ -14,7 +14,7 @@
 
 import type { ComponentDetectionMode, Diagnostics, PageVueInfo, VueElementInfo } from "./types";
 
-export const NS = "vuetation";
+export const NS = "senannotate";
 
 export const BRIDGE_REQUEST = `${NS}:request`;
 export const BRIDGE_RESPONSE = `${NS}:response`;
@@ -27,6 +27,14 @@ export const PROBE_ATTR = `data-${NS}-probe`;
 export const UI_ATTR = `data-${NS}-ui`;
 /** Emitted by `vite-plugin-vue-inspector` / Nuxt DevTools: "src/App.vue:12:5". */
 export const INSPECTOR_ATTR = "data-v-inspector";
+
+/**
+ * Storage keys. Declared here rather than in `content/storage.ts` because the popup
+ * needs the same two strings, and two copies of a namespaced key are two chances to
+ * drift on the next rename.
+ */
+export const ANNOTATION_PREFIX = `${NS}:page:`;
+export const SETTINGS_KEY = `${NS}:settings`;
 
 // -----------------------------------------------------------------------------
 // content → inspector

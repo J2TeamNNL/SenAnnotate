@@ -2,7 +2,12 @@
 // Extension popup — status and settings
 // =============================================================================
 
-import type { RuntimeMessage, RuntimeResponse } from "../shared/protocol";
+import {
+  ANNOTATION_PREFIX,
+  SETTINGS_KEY,
+  type RuntimeMessage,
+  type RuntimeResponse,
+} from "../shared/protocol";
 import {
   DEFAULT_SETTINGS,
   OUTPUT_DETAIL_OPTIONS,
@@ -11,9 +16,6 @@ import {
   type Settings,
   type ThemePreference,
 } from "../shared/types";
-
-const SETTINGS_KEY = "vuetation:settings";
-const ANNOTATION_PREFIX = "vuetation:page:";
 
 const COMPONENT_OPTIONS: { value: ComponentDetectionMode; label: string }[] = [
   { value: "filtered", label: "Skip framework plumbing" },
