@@ -456,6 +456,21 @@ async function main() {
       plainComposer.includes('button "Click me"'),
       plainComposer.slice(0, 200),
     );
+
+    await plain.locator(".composer__input").fill("Make this button wider.");
+    await plain.locator(".composer .button--primary").click();
+    await plain.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    await plain.locator('.tool[title^="Annotations"]').click();
+    await plain.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await plain.locator(".panel .button--primary").click();
+    const plainReport = await plain.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "non-framework reports omit the Stack line and never mention Vue",
+      !plainReport.includes("Stack:") && !/Vue/.test(plainReport),
+      plainReport.slice(0, 300),
+    );
   } finally {
     await context.close();
     server.close();

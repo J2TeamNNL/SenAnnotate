@@ -32,8 +32,8 @@ function formatProps(props: Record<string, string> | undefined): string | null {
   return entries.map(([key, value]) => `${key}=${value}`).join(", ");
 }
 
-function describeStack(page: PageVueInfo | null): string {
-  if (!page?.detected) return "Vue not detected";
+function describeStack(page: PageVueInfo | null): string | null {
+  if (!page?.detected) return null;
 
   const label =
     page.flavour === "nuxt3"
@@ -138,7 +138,8 @@ export function generateOutput(
     lines.push("");
     lines.push("**Environment:**");
     lines.push(`- URL: ${context.href}`);
-    lines.push(`- Stack: ${describeStack(context.page)}`);
+    const stack = describeStack(context.page);
+    if (stack) lines.push(`- Stack: ${stack}`);
     if (context.page?.routePath) lines.push(`- Route: ${context.page.routePath}`);
     lines.push(`- Viewport: ${viewport}`);
     lines.push(`- Device pixel ratio: ${window.devicePixelRatio}`);
@@ -147,7 +148,10 @@ export function generateOutput(
     lines.push("");
     lines.push("---");
   } else if (detailLevel !== "compact") {
-    lines.push(`**Stack:** ${describeStack(context.page)}  ·  **Viewport:** ${viewport}`);
+    const stack = describeStack(context.page);
+    lines.push(
+      stack ? `**Stack:** ${stack}  ·  **Viewport:** ${viewport}` : `**Viewport:** ${viewport}`,
+    );
   }
 
   lines.push("");
