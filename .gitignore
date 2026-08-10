@@ -14,3 +14,6 @@ test/fixtures/prod/
 
 # Written by the test/verify-*.mjs scripts
 test/screenshots/
+
+# Claude Code scratch space — agent worktrees live here
+.claude/
