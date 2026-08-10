@@ -231,6 +231,91 @@ async function main() {
     check("annotations survive a reload", (await page.locator(".marker").count()) === 1);
 
     // -------------------------------------------------------------------------
+    // Forensic element identification
+    // -------------------------------------------------------------------------
+    //
+    // Everything below comes out of `src/content/identify.ts`, which had no coverage
+    // at all: the pre-existing checks only ever asserted the element *name*. These
+    // pin the rest of its observable output.
+    //
+    // Note the ordering: the detail level has to be Forensic *before* annotating.
+    // `capture.ts` gates the forensic fields on the setting at capture time, so
+    // switching the dropdown afterwards adds nothing to an existing annotation.
+
+    const forensic = await context.newPage();
+    await forensic.goto(`${base}/vue3-app.html`);
+    await forensic.waitForSelector(".base-button");
+    await forensic.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await forensic.waitForTimeout(800);
+
+    await forensic.locator('.tool[title^="Annotations"]').click();
+    await forensic.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
+    await forensic.locator(".panel select").selectOption("forensic");
+    await forensic.waitForTimeout(400);
+    await forensic.locator('.tool[title^="Annotations"]').click();
+    await forensic.waitForTimeout(300);
+
+    await forensic.locator(".tool--brand").click();
+    await forensic.locator(".base-button").first().click({ force: true });
+    await forensic.locator(".composer").waitFor({ state: "visible", timeout: 10_000 });
+    await forensic.locator(".composer__input").fill("Forensic coverage.");
+    await forensic.locator(".composer .button--primary").click();
+    await forensic.locator(".composer").waitFor({ state: "detached", timeout: 10_000 });
+
+    await forensic.locator('.tool[title^="Annotations"]').click();
+    await forensic.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
+    await forensic.locator(".panel .button--primary").click();
+    const forensicReport = await forensic.evaluate(() => navigator.clipboard.readText());
+    await forensic.close();
+
+    /** One assertion per identify.ts export, so a regression names the function. */
+    const forensicLine = (label) =>
+      forensicReport.split("\n").find((l) => l.startsWith(`**${label}:**`)) ?? "";
+
+    check(
+      "identifyElement names an element by tag and text",
+      forensicReport.includes('### 1. button "Save changes"'),
+      forensicReport.slice(0, 200),
+    );
+    check(
+      "buildSelector produces a rooted, nth-of-type qualified selector",
+      /^\*\*Selector:\*\* `.*button:nth-of-type\(\d+\)`$/.test(forensicLine("Selector")),
+      forensicLine("Selector"),
+    );
+    check(
+      "getFullElementPath walks from body with tag#id.class segments",
+      /^\*\*Full DOM path:\*\* body > div#app > .*button\.base$/.test(forensicLine("Full DOM path")),
+      forensicLine("Full DOM path"),
+    );
+    check(
+      "getElementClasses lists the element's own classes",
+      forensicLine("Classes") === "**Classes:** base",
+      forensicLine("Classes"),
+    );
+    check(
+      "getNearbyText brackets the surrounding text",
+      /^\*\*Context:\*\* \[before: ".*"\] Save changes \[after: ".*"\]$/.test(forensicLine("Context")),
+      forensicLine("Context"),
+    );
+    check(
+      "getForensicComputedStyles emits semicolon-separated declarations",
+      /^\*\*Computed styles:\*\* color: .*; background-color: .*; font-size: .*$/.test(
+        forensicLine("Computed styles"),
+      ),
+      forensicLine("Computed styles").slice(0, 160),
+    );
+    check(
+      "getAccessibilityInfo reports focusability",
+      forensicLine("Accessibility").includes("focusable"),
+      forensicLine("Accessibility"),
+    );
+    check(
+      "getNearbyElements names siblings with their classes",
+      /^\*\*Nearby elements:\*\* .*button\.base "Discard"/.test(forensicLine("Nearby elements")),
+      forensicLine("Nearby elements"),
+    );
+
+    // -------------------------------------------------------------------------
     // vite-plugin-vue-tracer (current Nuxt DevTools)
     // -------------------------------------------------------------------------
     const tracer = await context.newPage();
