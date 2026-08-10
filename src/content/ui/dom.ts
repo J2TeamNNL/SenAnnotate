@@ -85,7 +85,7 @@ const PATHS: Record<string, string> = {
   close: "M6 6l12 12M18 6L6 18",
   camera: "M4 8a2 2 0 012-2h1.5l1-2h7l1 2H18a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z M12 16a3.5 3.5 0 100-7 3.5 3.5 0 000 7z",
   check: "M5 13l4 4L19 7",
-  vue: "M2 4h4l6 10 6-10h4L12 21z M8 4h3l1 2 1-2h3l-4 7z",
+  s: "M15.03 6.75A3.5 3.5 0 1 0 12 12A3.5 3.5 0 1 1 8.97 17.25",
   gear: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7z M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 11-4 0v-.1A1.6 1.6 0 006 19.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.6 1.6 0 003 14.9H3a2 2 0 110-4h.1A1.6 1.6 0 004.6 9l-.1-.1a2 2 0 112.8-2.8l.1.1A1.6 1.6 0 0010 4.6V4a2 2 0 114 0v.1a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 001.1 2.7H21a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z",
   pencil: "M4 20h4L20 8a2.8 2.8 0 10-4-4L4 16z",
   bug: "M9 7a3 3 0 016 0M8 7h8v6a4 4 0 01-8 0zM4 11h4M16 11h4M5 6l2 2M19 6l-2 2M5 17l2.5-1.5M19 17l-2.5-1.5",
@@ -106,10 +106,6 @@ export function icon(name: keyof typeof PATHS | string, size = 16): SVGSVGElemen
 
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
   path.setAttribute("d", PATHS[name] ?? PATHS.cursor);
-  if (name === "vue") {
-    path.setAttribute("fill", "currentColor");
-    path.setAttribute("stroke", "none");
-  }
   svg.append(path);
 
   return svg;

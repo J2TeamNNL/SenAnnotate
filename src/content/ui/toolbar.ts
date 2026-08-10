@@ -49,7 +49,7 @@ export class Toolbar {
         attrs: { "aria-pressed": "false" },
         on: { click: () => callbacks.onToggleActive() },
       },
-      icon("vue", 17),
+      icon("s", 17),
       this.brandLabel,
     );
 
