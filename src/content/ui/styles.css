@@ -10,9 +10,9 @@
   /* Reset anything the page might have set on our host element. */
   all: initial;
 
-  --sa-accent: #41b883;
-  --sa-accent-strong: #35a372;
-  --sa-accent-ink: #04150d;
+  --sa-accent: #f97316;
+  --sa-accent-strong: #ea580c;
+  --sa-accent-ink: #431407;
 
   --sa-bg: rgba(255, 255, 255, 0.86);
   --sa-bg-solid: #ffffff;

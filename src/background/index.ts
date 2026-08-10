@@ -9,7 +9,7 @@
 
 import type { RuntimeMessage, RuntimeResponse } from "../shared/protocol";
 
-const ACCENT = "#41b883";
+const ACCENT = "#f97316";
 
 chrome.runtime.onMessage.addListener(
   (message: RuntimeMessage, sender, sendResponse: (response: RuntimeResponse) => void) => {
