@@ -168,6 +168,18 @@ button {
   color: #b45309;
 }
 
+/*
+ * With an orange accent, amber alone no longer reads as a warning — it sits too
+ * close in hue to the brand icon right beside it. Differentiate by form instead of
+ * re-tinting: red is already the destructive colour, and a stripped production build
+ * is a degraded capability, not an error. A pseudo-element keeps this out of
+ * `textContent`, which three e2e assertions read.
+ */
+.stack-badge[data-warn="true"]::before {
+  content: "⚠";
+  margin-right: 4px;
+}
+
 :host([data-theme="dark"]) .stack-badge[data-warn="true"] {
   color: #fbbf24;
 }
