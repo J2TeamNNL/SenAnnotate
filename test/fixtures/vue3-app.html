@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vuetation fixture — Vue 3</title>
+    <style>
+      body {
+        margin: 0;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      .sidebar {
+        width: 220px;
+        padding: 20px;
+        background: #f4f5f7;
+        border-right: 1px solid #e2e4e8;
+      }
+      .sidebar__title {
+        margin: 0 0 12px;
+        font-size: 13px;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .base-button {
+        display: block;
+        width: 100%;
+        margin-bottom: 8px;
+        padding: 8px 12px;
+        border: 1px solid #d0d4da;
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+      }
+      .content {
+        flex: 1;
+        padding: 32px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <script src="./vendor/vue.global.js"></script>
+    <script>
+      // These component objects mirror exactly what `@vitejs/plugin-vue` emits for
+      // an SFC in dev: `__name` from the filename, `__file` as an absolute path,
+      // and `data-v-inspector` attributes from vite-plugin-vue-inspector.
+      const { createApp } = Vue;
+
+      const BaseButton = {
+        __name: "BaseButton",
+        __file: "/Users/dev/app/src/components/BaseButton.vue",
+        props: { label: String, variant: { type: String, default: "secondary" } },
+        template: `
+          <button
+            class="base-button"
+            data-v-b1a2c3d4
+            data-v-inspector="src/components/BaseButton.vue:12:5"
+          >{{ label }}</button>`,
+      };
+
+      const TheSidebar = {
+        __name: "TheSidebar",
+        __file: "/Users/dev/app/src/components/TheSidebar.vue",
+        components: { BaseButton },
+        template: `
+          <aside class="sidebar" data-v-inspector="src/components/TheSidebar.vue:4:3">
+            <h2 class="sidebar__title">Navigation</h2>
+            <BaseButton label="Save changes" variant="primary" />
+            <BaseButton label="Discard" />
+          </aside>`,
+      };
+
+      const App = {
+        __name: "App",
+        __file: "/Users/dev/app/src/App.vue",
+        components: { TheSidebar },
+        template: `
+          <div class="layout" data-v-inspector="src/App.vue:2:1">
+            <TheSidebar />
+            <main class="content">
+              <h1 id="headline">Dashboard</h1>
+              <p class="intro">A fixture page for the Vuetation extension.</p>
+            </main>
+          </div>`,
+      };
+
+      createApp(App).mount("#app");
+    </script>
+  </body>
+</html>

@@ -1,0 +1,179 @@
+// =============================================================================
+// Floating toolbar
+// =============================================================================
+
+import type { InspectMode, PageVueInfo } from "../../shared/types";
+import { h, icon } from "./dom";
+
+export interface ToolbarState {
+  active: boolean;
+  mode: InspectMode;
+  frozen: boolean;
+  panelOpen: boolean;
+  count: number;
+  page: PageVueInfo | null;
+}
+
+export interface ToolbarCallbacks {
+  onToggleActive(): void;
+  onModeChange(mode: InspectMode): void;
+  onToggleFreeze(): void;
+  onTogglePanel(): void;
+}
+
+const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
+  { mode: "point", iconName: "cursor", title: "Click an element (1)" },
+  { mode: "text", iconName: "text", title: "Select text (2)" },
+  { mode: "area", iconName: "marquee", title: "Drag across elements (3)" },
+];
+
+export class Toolbar {
+  readonly element: HTMLElement;
+
+  private readonly brandButton: HTMLButtonElement;
+  private readonly brandLabel: HTMLElement;
+  private readonly modeButtons = new Map<InspectMode, HTMLButtonElement>();
+  private readonly modeGroup: HTMLElement;
+  private readonly freezeButton: HTMLButtonElement;
+  private readonly panelButton: HTMLButtonElement;
+  private readonly countBadge: HTMLElement;
+  private readonly stackBadge: HTMLElement;
+
+  constructor(layer: HTMLElement, callbacks: ToolbarCallbacks) {
+    this.brandLabel = h("span", { class: "tool__label", text: "Inspect" });
+    this.brandButton = h(
+      "button",
+      {
+        class: "tool tool--brand",
+        title: "Toggle inspect mode (Alt+Shift+V)",
+        attrs: { "aria-pressed": "false" },
+        on: { click: () => callbacks.onToggleActive() },
+      },
+      icon("vue", 17),
+      this.brandLabel,
+    );
+
+    for (const { mode, iconName, title } of MODES) {
+      const button = h("button", {
+        class: "tool",
+        title,
+        attrs: { "aria-pressed": "false" },
+        on: { click: () => callbacks.onModeChange(mode) },
+      });
+      button.append(icon(iconName));
+      this.modeButtons.set(mode, button);
+    }
+
+    this.modeGroup = h(
+      "div",
+      { class: "tool-group", style: { display: "none", alignItems: "center", gap: "2px" } },
+      h("span", { class: "divider" }),
+      ...this.modeButtons.values(),
+    );
+
+    this.freezeButton = h(
+      "button",
+      {
+        class: "tool",
+        title: "Freeze animations (F)",
+        attrs: { "aria-pressed": "false" },
+        on: { click: () => callbacks.onToggleFreeze() },
+      },
+      icon("snowflake"),
+    );
+
+    this.countBadge = h("span", { class: "count", text: "0", style: { display: "none" } });
+    this.panelButton = h(
+      "button",
+      {
+        class: "tool",
+        title: "Annotations (A)",
+        attrs: { "aria-pressed": "false" },
+        on: { click: () => callbacks.onTogglePanel() },
+      },
+      icon("list"),
+      this.countBadge,
+    );
+
+    this.stackBadge = h("span", { class: "stack-badge", style: { display: "none" } });
+
+    this.element = h(
+      "div",
+      { class: "toolbar" },
+      this.stackBadge,
+      this.brandButton,
+      this.modeGroup,
+      h("span", { class: "divider" }),
+      this.freezeButton,
+      this.panelButton,
+    );
+
+    layer.append(this.element);
+  }
+
+  update(state: ToolbarState): void {
+    this.brandButton.setAttribute("aria-pressed", String(state.active));
+    this.brandLabel.textContent = state.active ? "Inspecting" : "Inspect";
+    this.modeGroup.style.display = state.active ? "flex" : "none";
+
+    for (const [mode, button] of this.modeButtons) {
+      button.setAttribute("aria-pressed", String(state.active && state.mode === mode));
+    }
+
+    this.freezeButton.setAttribute("aria-pressed", String(state.frozen));
+    this.panelButton.setAttribute("aria-pressed", String(state.panelOpen));
+
+    this.countBadge.textContent = String(state.count);
+    this.countBadge.style.display = state.count > 0 ? "inline-flex" : "none";
+
+    this.applyStackBadge(state.page);
+  }
+
+  /**
+   * The badge is the honest answer to "why is my Source line missing?" — it says
+   * up front when the page is a production build with no component metadata.
+   */
+  private applyStackBadge(page: PageVueInfo | null): void {
+    if (!page) {
+      this.stackBadge.style.display = "none";
+      return;
+    }
+
+    if (!page.detected) {
+      this.stackBadge.style.display = "inline-flex";
+      this.stackBadge.dataset.warn = "true";
+      this.stackBadge.textContent = "No Vue detected";
+      this.stackBadge.title =
+        "No Vue runtime found on this page. Annotations still work, but there will be no component or source information.";
+      return;
+    }
+
+    const label =
+      page.flavour === "nuxt3"
+        ? "Nuxt 3/4"
+        : page.flavour === "nuxt2"
+          ? "Nuxt 2"
+          : page.flavour === "vue3"
+            ? "Vue 3"
+            : "Vue 2";
+
+    this.stackBadge.style.display = "inline-flex";
+    this.stackBadge.textContent = page.version ? `${label} ${page.version}` : label;
+
+    if (!page.devMetadata) {
+      this.stackBadge.dataset.warn = "true";
+      this.stackBadge.title =
+        "Production build — Vue strips component names and file paths. Reports will fall back to selectors and DOM paths.";
+    } else {
+      delete this.stackBadge.dataset.warn;
+      this.stackBadge.title =
+        page.hasTracer || page.hasInspectorAttrs
+          ? "Dev build with the Vue component tracer — source lines include line and column numbers."
+          : "Dev build — source lines will be file-level only. Turn on Nuxt DevTools (devtools: { enabled: true }) to get line and column numbers.";
+    }
+  }
+
+  destroy(): void {
+    this.element.remove();
+  }
+}

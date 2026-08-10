@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vuetation fixture — vue-tracer</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      .toolbar-row {
+        display: flex;
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid #e2e4e8;
+        border-radius: 8px;
+      }
+      .base-button {
+        padding: 8px 14px;
+        border: 1px solid #d0d4da;
+        border-radius: 6px;
+        background: #fff;
+        cursor: pointer;
+      }
+      .badge {
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: #eef2f6;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <script src="./vendor/vue.global.js"></script>
+    <script>
+      // Reproduces `vite-plugin-vue-tracer` — what current Nuxt DevTools ships.
+      // Unlike the older vite-plugin-vue-inspector it writes NOTHING to the DOM;
+      // positions live in a global WeakMap keyed by each vnode's `props` object.
+      // See vite-plugin-vue-tracer/dist/client/record.mjs.
+      const store = {
+        hasData: true,
+        vnodeToPos: new WeakMap(),
+        fileToVNode: new Map(),
+        posToVNode: new Map(),
+      };
+      Object.defineProperty(globalThis, "__vue_tracer__", {
+        value: store,
+        configurable: true,
+        enumerable: false,
+      });
+
+      const { createApp } = Vue;
+
+      const BaseButton = {
+        __name: "BaseButton",
+        __file: "/Users/dev/app/app/components/BaseButton.vue",
+        props: { label: String },
+        template: `
+          <button class="base-button">
+            <span class="label">{{ label }}</span>
+            <span class="badge">new</span>
+          </button>`,
+      };
+
+      const App = {
+        __name: "App",
+        __file: "/Users/dev/app/app/app.vue",
+        components: { BaseButton },
+        template: `
+          <div class="toolbar-row">
+            <BaseButton label="Publish" />
+          </div>`,
+      };
+
+      createApp(App).mount("#app");
+
+      // The plugin registers positions during render. Doing it after mount is
+      // equivalent for our purposes: the extension only ever reads the map.
+      // `props ||= {}` mirrors recordPosition, which guarantees a key exists.
+      const record = (selector, source, line, column) => {
+        const el = document.querySelector(selector);
+        const vnode = el.__vnode;
+        vnode.props ||= {};
+        store.vnodeToPos.set(vnode.props, [source, line, column]);
+      };
+
+      record(".base-button", "app/components/BaseButton.vue", 42, 7);
+      record(".toolbar-row", "app/app.vue", 8, 3);
+      // Note: `.badge` is deliberately NOT registered, so clicking it exercises
+      // the walk up to the nearest instrumented ancestor.
+    </script>
+  </body>
+</html>

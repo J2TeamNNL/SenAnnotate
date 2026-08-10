@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vuetation fixture — a page that misbehaves</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      .settings-card {
+        max-width: 420px;
+        padding: 16px;
+        border: 1px solid #e2e4e8;
+        border-radius: 8px;
+      }
+      .field {
+        display: block;
+        margin-bottom: 12px;
+      }
+      .field input {
+        display: block;
+        width: 100%;
+        padding: 7px 9px;
+        border: 1px solid #d0d4da;
+        border-radius: 6px;
+      }
+      .save {
+        padding: 8px 14px;
+        border: 0;
+        border-radius: 6px;
+        background: #41b883;
+        color: #04150d;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="settings-card">
+      <h1 id="headline">Account settings</h1>
+
+      <label class="field" for="email">
+        Email address
+        <input id="email" name="email" type="email" placeholder="you@example.com" />
+      </label>
+
+      <label class="field" for="pw">
+        Password
+        <input id="pw" name="password" type="password" />
+      </label>
+
+      <button class="save">Save changes</button>
+    </div>
+
+    <script>
+      // Everything below fires on load so the capture buffers are populated before
+      // the test drives the toolbar.
+
+      // 1. An explicitly logged error — the app caught it and reported it.
+      console.error("Settings form failed validation: missing tenant id");
+
+      // 2. An unhandled promise rejection.
+      Promise.reject(new Error("saveProfile() timed out after 30000ms"));
+
+      // 3. An uncaught throw.
+      setTimeout(() => {
+        throw new TypeError("Cannot read properties of undefined (reading 'profile')");
+      }, 40);
+
+      // 4. A failing request whose URL carries a credential, to prove redaction.
+      fetch("/api/seller/profile?access_token=SUPERSECRET123&page=2").catch(() => {});
+
+      // 5. A failing XHR.
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/seller/settings");
+      xhr.send("{}");
+
+      document.querySelector(".save").addEventListener("click", () => {
+        console.error("Save clicked but no handler is wired up");
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,115 @@
+// =============================================================================
+// Wire protocol
+// =============================================================================
+//
+// Two hops:
+//
+//   content (ISOLATED) ←window.postMessage→ inspector (MAIN)
+//   content (ISOLATED) ←chrome.runtime→     background (service worker)
+//
+// DOM nodes cannot cross `postMessage`, so the content script stamps the target
+// element with PROBE_ATTR and sends the id; the inspector re-resolves it with
+// `querySelector` and the attribute is removed straight afterwards.
+// =============================================================================
+
+import type { ComponentDetectionMode, Diagnostics, PageVueInfo, VueElementInfo } from "./types";
+
+export const NS = "vuetation";
+
+export const BRIDGE_REQUEST = `${NS}:request`;
+export const BRIDGE_RESPONSE = `${NS}:response`;
+/** One-way, inspector → content. No request, no id. */
+export const BRIDGE_EVENT = `${NS}:event`;
+
+/** Temporary marker used to hand an element reference across worlds. */
+export const PROBE_ATTR = `data-${NS}-probe`;
+/** Marks our own shadow host so page scripts and freeze CSS can exclude it. */
+export const UI_ATTR = `data-${NS}-ui`;
+/** Emitted by `vite-plugin-vue-inspector` / Nuxt DevTools: "src/App.vue:12:5". */
+export const INSPECTOR_ATTR = "data-v-inspector";
+
+// -----------------------------------------------------------------------------
+// content → inspector
+// -----------------------------------------------------------------------------
+
+export type BridgeRequest =
+  | { kind: "detect" }
+  | {
+      kind: "inspect";
+      probeId: string;
+      mode: ComponentDetectionMode;
+      maxComponents: number;
+      includeProps: boolean;
+    }
+  | { kind: "freeze" }
+  | { kind: "unfreeze" }
+  | { kind: "diagnostics" }
+  | { kind: "clear-diagnostics" };
+
+export type BridgeResult =
+  | { kind: "detect"; page: PageVueInfo }
+  | { kind: "inspect"; info: VueElementInfo | null }
+  | { kind: "diagnostics"; diagnostics: Diagnostics }
+  | { kind: "ack" };
+
+/**
+ * Pushed whenever the diagnostics buffers change.
+ *
+ * The content script keeps a mirror so that copying a report needs no `await`
+ * before touching the clipboard — an await there costs the click's user
+ * activation and `navigator.clipboard.writeText` silently stops working.
+ */
+export type BridgeEvent = { kind: "diagnostics"; diagnostics: Diagnostics };
+
+export interface BridgeEnvelope<T> {
+  channel: typeof BRIDGE_REQUEST | typeof BRIDGE_RESPONSE;
+  id: number;
+  payload: T;
+}
+
+export function isBridgeEnvelope<T>(
+  data: unknown,
+  channel: string,
+): data is BridgeEnvelope<T> {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as BridgeEnvelope<T>).channel === channel &&
+    typeof (data as BridgeEnvelope<T>).id === "number"
+  );
+}
+
+export function isBridgeEventMessage(
+  data: unknown,
+): data is { channel: typeof BRIDGE_EVENT; payload: BridgeEvent } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { channel?: string }).channel === BRIDGE_EVENT
+  );
+}
+
+// -----------------------------------------------------------------------------
+// content ↔ background
+// -----------------------------------------------------------------------------
+
+export type RuntimeMessage =
+  /**
+   * Photograph the visible tab and hand back a PNG data URL of the whole viewport.
+   * Only the service worker can call `captureVisibleTab`; cropping and saving stay
+   * in the content script, which — unlike an MV3 service worker — has a canvas,
+   * `URL.createObjectURL`, and a document to hang a download anchor off.
+   */
+  | { kind: "capture" }
+  /** Reflect the annotation count on the toolbar icon. */
+  | { kind: "badge"; count: number }
+  /** background → content, when the keyboard command fires or the popup asks. */
+  | { kind: "toggle-inspect" }
+  /** background/popup → content, after settings changed. */
+  | { kind: "settings-changed" }
+  /** popup → background, asking for the active tab's annotation count. */
+  | { kind: "get-status" };
+
+export type RuntimeResponse =
+  | { ok: true; dataUrl?: string; count?: number; active?: boolean }
+  | { ok: false; error: string };

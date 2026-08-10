@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vuetation</title>
+    <style>
+      :root {
+        --accent: #41b883;
+        --accent-ink: #04150d;
+        --bg: #ffffff;
+        --sunken: #f4f5f7;
+        --fg: #1c2530;
+        --muted: #64748b;
+        --border: rgba(20, 30, 45, 0.12);
+        color-scheme: light dark;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161b22;
+          --sunken: #0d1117;
+          --fg: #e6edf3;
+          --muted: #8b949e;
+          --border: rgba(240, 246, 252, 0.14);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        width: 300px;
+        margin: 0;
+        padding: 14px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      h1 {
+        flex: 1;
+        margin: 0;
+        font-size: 14px;
+        font-weight: 650;
+      }
+
+      .logo {
+        width: 18px;
+        height: 18px;
+        color: var(--accent);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 10px;
+        margin-bottom: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--sunken);
+        font-size: 12px;
+      }
+
+      .status__dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex: none;
+      }
+
+      .status[data-detected="true"] .status__dot {
+        background: var(--accent);
+      }
+
+      .status__text {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .status__count {
+        font-variant-numeric: tabular-nums;
+        font-weight: 650;
+        color: var(--muted);
+      }
+
+      button.primary {
+        display: block;
+        width: 100%;
+        height: 32px;
+        margin-bottom: 14px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: var(--accent-ink);
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      button.primary:hover {
+        filter: brightness(0.95);
+      }
+
+      button.primary:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      h2 {
+        margin: 0 0 7px;
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        font-size: 12px;
+      }
+
+      .field label {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .field select {
+        height: 26px;
+        min-width: 118px;
+        padding: 0 5px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--fg);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+
+      .field input[type="checkbox"] {
+        width: 15px;
+        height: 15px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      .hint {
+        margin: 3px 0 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      footer {
+        margin-top: 14px;
+        padding-top: 11px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .link {
+        border: 0;
+        background: none;
+        padding: 0;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .link:hover {
+        color: var(--fg);
+      }
+
+      .link--danger:hover {
+        color: #e5484d;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      kbd {
+        padding: 1px 4px;
+        border: 1px solid var(--border);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        background: var(--sunken);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <svg class="logo" viewBox="0 0 128 111" fill="currentColor" aria-hidden="true">
+        <path d="M0 0h25.6L64 66.5 102.4 0H128L64 110.9z" />
+        <path d="M25.6 0h25.6L64 22.2 76.8 0h25.6L64 66.5z" opacity="0.62" />
+      </svg>
+      <h1>Vuetation</h1>
+    </header>
+
+    <div class="status" id="status" data-detected="false">
+      <span class="status__dot"></span>
+      <span class="status__text" id="status-text">Checking page…</span>
+      <span class="status__count" id="status-count"></span>
+    </div>
+
+    <button class="primary" id="toggle" disabled>Toggle inspect mode</button>
+
+    <h2>Report</h2>
+    <div class="field">
+      <label for="detail">Detail level</label>
+      <select id="detail"></select>
+    </div>
+    <div class="field">
+      <label for="components">Components</label>
+      <select id="components"></select>
+    </div>
+    <div class="field">
+      <label for="props">Include component props</label>
+      <input type="checkbox" id="props" />
+    </div>
+
+    <h2>Bug reports</h2>
+    <div class="field">
+      <label for="diagnostics">Capture errors &amp; steps</label>
+      <input type="checkbox" id="diagnostics" />
+    </div>
+    <p class="hint">
+      Records console errors, failed requests and the steps you took, and attaches
+      them when you copy. Values you type are never recorded.
+    </p>
+
+    <h2>Behaviour</h2>
+    <div class="field">
+      <label for="markers">Show numbered pins</label>
+      <input type="checkbox" id="markers" />
+    </div>
+    <div class="field">
+      <label for="freeze">Freeze animations on inspect</label>
+      <input type="checkbox" id="freeze" />
+    </div>
+    <div class="field">
+      <label for="theme">Theme</label>
+      <select id="theme"></select>
+    </div>
+
+    <footer>
+      <span class="hint" style="margin: 0"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></span>
+      <span class="spacer"></span>
+      <button class="link link--danger" id="clear">Clear all pages</button>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

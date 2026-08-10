@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vuetation fixture — Vue 2 shape</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      .product-card {
+        width: 260px;
+        padding: 16px;
+        border: 1px solid #e2e4e8;
+        border-radius: 8px;
+      }
+      .product-card__title {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+      .add-to-cart {
+        padding: 8px 14px;
+        border: 0;
+        border-radius: 6px;
+        background: #41b883;
+        color: #04150d;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="product-card">
+        <h3 class="product-card__title">Classic Tee</h3>
+        <button class="add-to-cart">Add to cart</button>
+      </div>
+    </div>
+
+    <script>
+      // Vue 2 is not installed anywhere in this monorepo's node_modules, so rather
+      // than skip the Vue 2 path entirely this fixture reproduces its *shape*:
+      // `el.__vue__` on component root elements, walked via `$parent`, with names
+      // read off `$options`. That is the whole contract `inspectVue2` depends on —
+      // see src/inspector/vue-internals.ts.
+      const root = {
+        $options: { name: "App", __file: "/Users/dev/shop/src/App.vue" },
+        $parent: null,
+        $props: {},
+      };
+
+      const card = {
+        $options: { name: "ProductCard", __file: "/Users/dev/shop/src/components/ProductCard.vue" },
+        $parent: root,
+        $props: { title: "Classic Tee", price: 24 },
+      };
+
+      const button = {
+        $options: { name: "AddToCartButton", __file: "/Users/dev/shop/src/components/AddToCartButton.vue" },
+        $parent: card,
+        $props: { disabled: false },
+      };
+
+      document.getElementById("app").__vue__ = root;
+      document.querySelector(".product-card").__vue__ = card;
+      document.querySelector(".add-to-cart").__vue__ = button;
+
+      window.Vue = { version: "2.7.16" };
+    </script>
+  </body>
+</html>
