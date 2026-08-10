@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Redundant with `pack`, which builds first — kept because it fails with a
+      # clearer message than a pack failure would, and esbuild takes milliseconds.
+      - run: npm run build
+
+      - run: npm run pack
+
+      # Lets a build from any commit be downloaded and loaded into Chrome without
+      # cutting a release. `if-no-files-found: error` because the default is `warn`,
+      # and a silent empty upload looks identical to a successful one.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: senannotate-zip
+          path: senannotate-*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+# The Playwright suite (`npm test`) is deliberately absent. It resolves Playwright from
+# ../../storefront_playwright_test and Vue from ../../storefront_v5/node_modules, and
+# test/build-prod-fixtures.mjs reaches ../../../storefront_v5 — sibling monorepo paths a
+# bare checkout does not have. It also needs a headed Chromium. It stays a manual gate
+# before tagging; see docs/ci-cd/context.md.
