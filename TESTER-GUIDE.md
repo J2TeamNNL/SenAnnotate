@@ -1,11 +1,152 @@
-# SenAnnotate — hướng dẫn cho tester
+# SenAnnotate — Tester Guide
+
+*[English below](#english) · [Tiếng Việt ở dưới](#tiếng-việt)*
+
+---
+
+## English
+
+The extension helps you file more detailed bug reports: click the broken thing, add a
+note, then copy a report that already includes **console errors**, **failed
+requests**, and **the steps you just took**.
+
+---
+
+### 1. Install (one-time, ~2 minutes)
+
+1. Unzip `senannotate.zip` into a **permanent** folder — not Downloads, where it
+   might get cleaned up. Chrome needs this folder to keep existing.
+2. Open Chrome, go to `chrome://extensions`
+3. Turn on **Developer mode** (top-right corner)
+4. Click **Load unpacked** → pick the unzipped folder (the one containing
+   `manifest.json`)
+5. Done. An orange **S** icon appears in the toolbar.
+
+> **If you had the old Vuetation build installed:** your saved notes will not
+> reappear after updating — the extension's storage namespace changed. Copy out
+> any report you need to keep before updating. From this version onward, notes
+> persist across reloads as normal.
+
+> **Chrome shows a "Disable developer mode extensions" popup every time it opens.**
+> Click **Cancel** (not Disable). This is Chrome's default warning for any
+> extension installed this way — not an error.
+
+**When a new build comes in:** replace the files in the same folder, then go to
+`chrome://extensions` and click the ⟳ button on SenAnnotate's card. Then
+**reload the tab you're testing.**
+
+---
+
+### 2. How to use it
+
+#### Standard workflow
+
+1. **Use the app normally** until you hit a bug. Nothing needs to be turned on
+   first — the extension is already recording console errors and failed requests
+   from the moment the page loads.
+2. When you see a bug, click **Inspect** on the toolbar in the bottom-right corner
+   (or press <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>).
+3. **Click exactly where the bug is** → type a description → **Add note**.
+4. Click the list icon → **Copy report** → paste into Jira/Slack.
+
+> ⚠️ **Important:** use the app *first*, turn on Inspect *after*. While Inspect is
+> on, clicks are intercepted by the extension to select an element — the app
+> underneath will not receive them.
+
+#### Shortcuts
+
+| Key | Action |
+|---|---|
+| <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | Toggle Inspect |
+| <kbd>1</kbd> | Select by element (default) |
+| <kbd>2</kbd> | Select a text span |
+| <kbd>3</kbd> | Drag-select multiple elements |
+| <kbd>F</kbd> | Freeze animations (to catch the exact moment of a bug) |
+| <kbd>A</kbd> | Open the notes list |
+| <kbd>Esc</kbd> | Cancel / exit Inspect |
+
+#### Tips
+
+- **Bug only happens mid-animation?** Press <kbd>F</kbd> to freeze it, then
+  annotate.
+- **Need a screenshot?** The note box has a camera icon — saves a cropped shot of
+  the element straight to your Downloads folder.
+- **Detail level** is a dropdown next to the Copy button. **Standard** is enough
+  by default. Pick **Detailed** if the dev asks for a stack trace too.
+- Notes are saved per page and survive a reload (F5).
+
+---
+
+### 3. What a report looks like
+
+```markdown
+## Page feedback: /buggy.html
+
+### 1. button "Save changes"
+**Location:** .settings-card > .save
+**Feedback:** Clicking Save does nothing, console shows an error.
+
+---
+
+## Steps to reproduce
+1. Edited Email address  `+0.0s`
+2. Edited Password  `+0.0s`
+3. Clicked button "Save changes"  `+0.1s`
+
+## Console errors (4)
+- `+0.0s` **Uncaught:** TypeError: Cannot read properties of undefined (reading 'profile') — /buggy.html:68
+- `+0.1s` **console.error:** Save clicked but no handler is wired up
+
+## Failed requests (2)
+- `+0.0s` **404** Not Found — GET /api/seller/profile?access_token=[redacted]&page=2 (9ms)
+- `+0.0s` **404** Not Found — POST /api/seller/settings (9ms)
+```
+
+---
+
+### 4. About privacy
+
+The extension runs entirely on your machine — **nothing is ever sent anywhere.**
+Everything only reaches the clipboard when you actively click Copy.
+
+Things that are **never** recorded:
+
+- **Values you type into a form.** The report only says *"Edited Password"* —
+  never the password itself.
+- **Request/response bodies.** Only method, path, status code and duration are
+  recorded.
+- **Tokens in URLs.** Parameters like `access_token`, `api_key`, `signature`… are
+  replaced with `[redacted]` before they reach the report.
+
+That said, a report **does** contain page URLs and on-screen text. If you're
+testing with real customer data, skim the report before pasting it somewhere
+public.
+
+To turn the automatic capture off entirely: click the extension icon → uncheck
+**Capture errors & steps**.
+
+---
+
+### 5. Having trouble?
+
+| Symptom | Fix |
+|---|---|
+| No toolbar visible | Reload the tab. The extension does not run on `chrome://` pages, the Chrome Web Store, or PDF viewers. |
+| No badge shown in the toolbar | Normal on a page that isn't a Vue app — annotating and error capture still work fully. A badge only appears when a framework is detected. |
+| Copy doesn't seem to work | Click somewhere on the page first to give the tab focus, then Copy again. |
+| "Console errors" section is empty | The error happened *before* you installed/enabled the extension. Reload the tab and reproduce the bug again. |
+| Clicking doesn't select an element | Check that Inspect is actually on (the button should be lit and read "Inspecting"). |
+
+---
+
+## Tiếng Việt
 
 Extension giúp bạn báo bug chi tiết hơn: click vào chỗ bị lỗi, ghi chú, rồi copy ra
 một báo cáo đã kèm sẵn **lỗi console**, **request bị fail**, và **các bước bạn vừa làm**.
 
 ---
 
-## 1. Cài đặt (làm 1 lần, ~2 phút)
+### 1. Cài đặt (làm 1 lần, ~2 phút)
 
 1. Giải nén file `senannotate.zip` ra một thư mục **cố định** — đừng để trong Downloads
    rồi xoá, Chrome cần thư mục này tồn tại lâu dài.
@@ -27,9 +168,9 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 
 ---
 
-## 2. Cách dùng
+### 2. Cách dùng
 
-### Quy trình chuẩn
+#### Quy trình chuẩn
 
 1. **Dùng app bình thường** cho tới khi gặp bug. Không cần bật gì trước —
    extension đã tự ghi lỗi console và request fail ngay từ lúc trang load.
@@ -41,7 +182,7 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 > ⚠️ **Quan trọng:** hãy dùng app *trước*, bật Inspect *sau*. Khi Inspect đang bật,
 > click sẽ bị extension giữ lại để chọn element, app sẽ không nhận click đó.
 
-### Phím tắt
+#### Phím tắt
 
 | Phím | Tác dụng |
 |---|---|
@@ -53,7 +194,7 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 | <kbd>A</kbd> | Mở danh sách ghi chú |
 | <kbd>Esc</kbd> | Huỷ / thoát Inspect |
 
-### Mẹo
+#### Mẹo
 
 - **Bug chỉ xuất hiện lúc animation đang chạy?** Bấm <kbd>F</kbd> để đóng băng, rồi
   mới annotate.
@@ -65,7 +206,7 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 
 ---
 
-## 3. Báo cáo trông như thế nào
+### 3. Báo cáo trông như thế nào
 
 ```markdown
 ## Page feedback: /buggy.html
@@ -92,7 +233,7 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 
 ---
 
-## 4. Về quyền riêng tư
+### 4. Về quyền riêng tư
 
 Extension chạy hoàn toàn trên máy bạn — **không gửi dữ liệu đi đâu cả**. Mọi thứ chỉ
 nằm trong clipboard khi bạn chủ động bấm Copy.
@@ -112,12 +253,12 @@ Muốn tắt hẳn phần tự động ghi này: click icon extension → bỏ t
 
 ---
 
-## 5. Gặp vấn đề?
+### 5. Gặp vấn đề?
 
 | Hiện tượng | Xử lý |
 |---|---|
 | Không thấy thanh công cụ | Reload lại tab. Extension không chạy trên `chrome://`, Chrome Web Store, và file PDF. |
-| Badge ghi "No Vue detected" | Bình thường trên trang không phải Vue — vẫn annotate và ghi lỗi được đầy đủ. |
+| Không thấy badge trên thanh công cụ | Bình thường trên trang không phải app Vue — vẫn annotate và ghi lỗi được đầy đủ. Badge chỉ hiện khi phát hiện được framework. |
 | Copy không ăn | Bấm vào trang một cái cho tab được focus, rồi Copy lại. |
 | Phần "Console errors" trống | Lỗi xảy ra *trước khi* bạn cài/bật extension. Reload tab rồi tái hiện lại bug. |
 | Click không chọn được element | Kiểm tra Inspect đã bật chưa (nút phải sáng xanh, chữ đổi thành "Inspecting"). |
