@@ -233,14 +233,19 @@ async function updateHover(element: Element): Promise<void> {
 
   if (settings.componentMode === "off") return;
 
-  const vue = await inspectElement(element, settings.componentMode, settings.maxComponents, false);
+  const framework = await inspectElement(
+    element,
+    settings.componentMode,
+    settings.maxComponents,
+    false,
+  );
 
   // The pointer moved on while we waited — this result is stale.
   if (token !== hoverToken || hoveredElement !== element) return;
 
   hoverLabel = {
-    primary: vue?.ownerComponent ? `<${vue.ownerComponent}>` : name,
-    secondary: formatSource(resolveSource(element, vue)),
+    primary: framework?.ownerComponent ? `<${framework.ownerComponent}>` : name,
+    secondary: formatSource(resolveSource(element, framework)),
   };
   overlay.showHighlights([element.getBoundingClientRect()], hoverLabel);
 }

@@ -19,6 +19,13 @@ Turning a Vue-specific annotator into one that works on any website.
 | [`implementation-plan.md`](./implementation-plan.md) | The executable version: bite-sized steps with real code and a verification command per step |
 | [`changelog.md`](./changelog.md) | What actually happened, including four surfaces the plan missed and the checks that had to be rewritten |
 
+## [`framework-detectors/`](./framework-detectors/) — 0.3.0
+
+Extending component and source detection from Vue only to Vue, React, Svelte and
+Angular, by making the detector layer pluggable first. Its `context.md` has the table
+of what each framework actually exposes — the reason the design does not flatten them
+into one shape, and why Angular and React 19 report no source line at all.
+
 ## [`ci-cd/`](./ci-cd/) — GitHub Actions
 
 Build/typecheck on every push, and a tag-triggered GitHub Release carrying the packed

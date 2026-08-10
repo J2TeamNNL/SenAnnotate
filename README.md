@@ -9,9 +9,11 @@ on — the console errors, failed requests and steps that led there. No
 `npm install`, no code in your bundle: it works against local dev, staging and
 production, on any stack.
 
-When the page happens to be a Vue app, the report gains two more lines for free:
-the component ancestry and the `.vue` file that rendered the element, as precisely
-as `src/components/BaseButton.vue:12:5`. Nothing requires it.
+When the page is built with **Vue, React, Svelte or Angular**, the report gains two
+more lines for free: the component ancestry, and the source file that rendered the
+element — as precisely as `src/components/BaseButton.vue:12:5` where the framework
+records it. Nothing requires any of them; see [Framework support](#framework-support)
+for what each one can actually give you.
 
 It began as a Vue-native take on
 [`agentation`](https://github.com/benjitaylor/agentation), which does the same job
@@ -86,45 +88,75 @@ Four detail levels, chosen in the panel or the extension popup:
 | Detailed | selector, props, classes, bounding box, nearby text |
 | Forensic | full DOM path, computed styles, accessibility, environment |
 
-## How it finds your source files
+## Framework support
 
-Four strategies, best first:
+Annotating works on **any** page. What a framework adds is the component ancestry and
+the source location — and how much of that is available differs a lot by framework,
+because each records different things. Rather than flatten them to a lowest common
+denominator, the report carries what is actually there:
 
-1. **`vite-plugin-vue-tracer`** — what current Nuxt DevTools (v3+) ships. It writes
+| | Components | Source | Props |
+|---|---|---|---|
+| **Vue** 2, 3, Nuxt 2, 3/4 | ✅ | `file:line:col` with the tracer, filename otherwise | ✅ |
+| **Svelte**, SvelteKit | ✅ from `loc.file` | ✅ `file:line:col`, no plugin needed | ❌ |
+| **React**, Next.js | ✅ | `file:line:col` on React ≤18; **none on React 19** | ✅ |
+| **Angular** | ✅ | ❌ none — Angular records no authoring positions | ✅ |
+
+Detection is **per-element**, so a page mixing frameworks — a Svelte widget in a React
+app, a Vue island in server-rendered markup — works. A page with no framework at all
+simply reports no component data, with no badge and no warning.
+
+On a **production build** names and paths are stripped in every framework. The toolbar
+badge turns amber and says so rather than quietly emitting a weaker report; you still
+get selectors, DOM paths, classes and computed styles.
+
+<details>
+<summary>How each framework is read, and why</summary>
+
+**Vue** — four strategies, best first:
+
+1. **`vite-plugin-vue-tracer`**, what current Nuxt DevTools (v3+) ships. Writes
    **nothing to the DOM**; positions live in a global WeakMap,
-   `globalThis.__vue_tracer__.vnodeToPos`, keyed by each vnode's `props` object.
-   Gives exact file, line and column. Requires `devtools: { enabled: true }`.
-2. **`data-v-inspector`** — the older `vite-plugin-vue-inspector` wrote
-   `data-v-inspector="src/components/Foo.vue:12:5"` onto template elements. Still
-   supported for projects on the older plugin; Nuxt has since moved off it.
-3. **`__file`** — the SFC compiler stamps the absolute path onto the component
-   options in any dev build of Vue 2 or Vue 3. File-level, no line number. The
-   path is trimmed back to the first `src/`, `app/`, `pages/`, `components/`,
-   `layouts/` … segment so it is repo-relative and greppable.
-4. **Scoped-style hash** — `data-v-7ba5bd90`. No path, but it survives production
-   builds and is a unique `grep -r` handle.
+   `globalThis.__vue_tracer__.vnodeToPos`, keyed by each vnode's `props` object. Exact
+   file, line and column. Requires `devtools: { enabled: true }`.
+2. **`data-v-inspector`**, from the older `vite-plugin-vue-inspector`. Exact, readable
+   straight off the DOM. Nuxt has since moved off it.
+3. **`__file`** on the component options — any dev build of Vue 2 or 3. File-level only.
+4. **Scoped-style hash** `data-v-7ba5bd90`. No path, but survives production and is a
+   unique `grep -r` handle.
 
-Hover the toolbar's stack badge to see which one is active on the current page.
+**Svelte** has no component instance tree on the DOM at all — there is no
+`__svelteComponent` to walk. What it has, compiled with `dev: true`, is
+`el.__svelte_meta.loc` giving the exact authoring file, line and char per element. That
+is *better* than a component tree here, since it needs no name-to-file mapping and no
+build plugin. The ancestry is recovered by walking up and collecting distinct
+`loc.file` values, which for Svelte is nearly the instance tree since one file is one
+component. Props are not exposed anywhere, so none are reported.
 
-On a **production build** Vue strips both the names and the paths. The toolbar
-badge turns amber and says so rather than quietly emitting a weaker report; you
-still get selectors, DOM paths, classes and computed styles.
+**React** attaches its fiber under a randomised key (`__reactFiber$<random>`), so it is
+found by prefix scan, then `fiber.return` gives the ancestry. Source came from
+`fiber._debugSource`, which **React 19 removed** — so on React 19 you get the component
+chain and no source line, unless the app runs its own babel plugin. `elementType` is
+preferred over `type` so `memo` and `forwardRef` wrappers report what the author wrote.
 
-Annotating works on any page. The **component and source** columns above are what
-Vue detection adds, and it covers Vue 3, Vue 2, Nuxt 2 and Nuxt 3/4. Detection is
-per-element, so a page mixing a Vue island into other markup works fine — and a
-page with no Vue at all simply reports no component data, with no badge and no
-warning.
+**Angular** is the only one with a documented debug API: `window.ng.getComponent(el)`,
+installed outside production mode. It answers only for elements that *are* component
+hosts, so the chain is built by walking up and asking about each ancestor. Angular
+records no authoring positions anywhere, not even in dev, so there is no source line to
+give.
+
+</details>
 
 ## Architecture
 
-A content script cannot see `element.__vueParentComponent`. Chrome gives each
-isolated world its own view of JS properties on DOM nodes, and those are written
-by the page. So the extension is split across three contexts:
+A content script cannot see `element.__vueParentComponent`, `__reactFiber$…` or
+`__svelte_meta`. Chrome gives each isolated world its own view of JS properties on DOM
+nodes, and every framework writes its metadata there. So the extension is split across
+three contexts:
 
 ```
 ┌─ MAIN world · src/inspector ─────────────┐  the page's own JS heap
-│  reads __vueParentComponent / __vue__    │
+│  detectors/ read framework internals     │
 │  patches setTimeout/rAF to freeze motion │
 └──────────────┬───────────────────────────┘
                │  window.postMessage bridge
@@ -328,7 +360,8 @@ git tag -d v0.3.0 && git push origin :refs/tags/v0.3.0
 ```
 src/
 ├── shared/       types, wire protocol, Markdown generation
-├── inspector/    MAIN world — Vue internals, freeze
+├── inspector/    MAIN world — freeze, diagnostics
+│   └── detectors/  one file per framework + a dispatcher
 ├── content/      ISOLATED world — capture, storage, UI
 ├── background/   service worker
 └── popup/        settings
