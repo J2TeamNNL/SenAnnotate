@@ -26,16 +26,36 @@ const FIXTURES = join(HERE, "fixtures");
 
 // Borrowed from the monorepo rather than vendored into this package: Playwright
 // (with its browsers) and the Vue 3 global build are both already installed there.
-const PLAYWRIGHT_HOST = resolve(ROOT, "../../storefront_playwright_test");
-const VUE_SOURCE = resolve(ROOT, "../../storefront_v5/node_modules/vue/dist/vue.global.js");
+//
+// Found by walking up rather than by counting `../` segments, because a fixed depth
+// breaks the moment this runs from anywhere but the project root — a git worktree under
+// .claude/worktrees/ resolves `../..` to .claude/ and the suite dies before launching a
+// browser.
+const MONOREPO = findMonorepoRoot(ROOT);
+const PLAYWRIGHT_HOST = MONOREPO ? join(MONOREPO, "storefront_playwright_test") : null;
+const VUE_SOURCE = MONOREPO
+  ? join(MONOREPO, "storefront_v5/node_modules/vue/dist/vue.global.js")
+  : null;
 const VUE_VENDORED = join(FIXTURES, "vendor/vue.global.js");
+
+/** Nearest ancestor directory containing `storefront_playwright_test`, or null. */
+function findMonorepoRoot(from) {
+  let current = from;
+  for (let depth = 0; depth < 8; depth++) {
+    if (existsSync(join(current, "storefront_playwright_test"))) return current;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return null;
+}
 
 async function ensureVueFixture() {
   if (existsSync(VUE_VENDORED)) return;
-  if (!existsSync(VUE_SOURCE)) {
+  if (!VUE_SOURCE || !existsSync(VUE_SOURCE)) {
     throw new Error(
-      `Vue 3 dev build not found at ${VUE_SOURCE}. Install storefront_v5's dependencies, ` +
-        `or drop a copy of vue.global.js at ${VUE_VENDORED}.`,
+      `Vue 3 dev build not found${VUE_SOURCE ? ` at ${VUE_SOURCE}` : " (no monorepo root above " + ROOT + ")"}. ` +
+        `Install storefront_v5's dependencies, or drop a copy of vue.global.js at ${VUE_VENDORED}.`,
     );
   }
   mkdirSync(dirname(VUE_VENDORED), { recursive: true });
@@ -89,6 +109,12 @@ async function main() {
     await buildProdFixtures();
   }
 
+  if (!PLAYWRIGHT_HOST) {
+    throw new Error(
+      `No monorepo root found above ${ROOT} — expected an ancestor containing ` +
+        `storefront_playwright_test, which is where Playwright and its browsers live.`,
+    );
+  }
   const require = createRequire(join(PLAYWRIGHT_HOST, "package.json"));
   const { chromium } = require("playwright");
 

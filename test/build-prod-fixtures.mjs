@@ -23,8 +23,26 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = join(HERE, "prod-app");
 const OUT_ROOT = join(HERE, "fixtures", "prod");
 
-const DONOR = resolve(HERE, "../../../storefront_v5");
-const STORE = join(DONOR, "node_modules/.pnpm");
+// Found by walking up rather than by counting `../` segments: a fixed depth breaks when
+// this runs from a git worktree under .claude/worktrees/, where the count is two deeper.
+//
+// Anchored on `storefront_playwright_test`, which exists only at the monorepo root.
+// Anchoring on `storefront_v5` itself does not work — there is a second, dependency-less
+// directory of that name under `others/`, and the walk-up finds that one first.
+const MONOREPO = findMonorepoRoot(HERE);
+const STORE = MONOREPO ? join(MONOREPO, "storefront_v5/node_modules/.pnpm") : "";
+
+/** Nearest ancestor directory containing `storefront_playwright_test`, or null. */
+function findMonorepoRoot(from) {
+  let current = from;
+  for (let depth = 0; depth < 8; depth++) {
+    if (existsSync(join(current, "storefront_playwright_test"))) return current;
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return null;
+}
 
 /** Resolve a package out of the donor project's pnpm store. */
 function fromStore(prefix, subpath) {
