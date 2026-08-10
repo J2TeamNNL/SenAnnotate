@@ -289,6 +289,40 @@ Both write screenshots to `test/screenshots/` (gitignored) and share
 `test/verify-harness.mjs`. `e2e.mjs` deliberately does not use that harness — it is
 the only regression net here and stays self-contained.
 
+### Releasing
+
+CI runs on every push to `main` — typecheck, build, pack — and attaches the packed zip to
+the run as a 14-day artifact, so any commit can be loaded into Chrome without cutting a
+release. It does **not** run `npm test`; see [`docs/ci-cd/context.md`](./docs/ci-cd/context.md)
+for why, and treat the suite as a manual gate before releasing.
+
+To publish a release:
+
+```bash
+# 1. Run the full suite yourself — CI cannot.
+npm test
+
+# 2. Bump the version. package.json is the only place that matters: the build
+#    stamps dist/manifest.json from it.
+#    …edit "version" in package.json…
+git commit -am "chore: release 0.3.0"
+
+# 3. Push the commit first, then the tag. The tag must match package.json
+#    exactly or the workflow refuses to release.
+git tag v0.3.0
+git push && git push --tags
+```
+
+`.github/workflows/release.yml` then builds, packs, and creates a GitHub Release with
+`senannotate-<version>.zip` attached and generated release notes.
+
+If the tag and `package.json` disagree, the workflow fails before installing anything and
+creates nothing. Fix `package.json`, then delete and re-push the tag:
+
+```bash
+git tag -d v0.3.0 && git push origin :refs/tags/v0.3.0
+```
+
 ## Layout
 
 ```
