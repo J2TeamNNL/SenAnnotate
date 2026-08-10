@@ -2,8 +2,8 @@
 // Dependency-free PNG icon generator
 // =============================================================================
 //
-// Chrome rejects SVG in `manifest.icons`, so the Vue mark is rasterised here with
-// a hand-rolled PNG encoder (zlib is the only thing we need, and it ships with Node).
+// Chrome rejects SVG in `manifest.icons`, so the SenAnnotate mark is rasterised here
+// with a hand-rolled PNG encoder (zlib is the only thing we need, and it ships with Node).
 //
 // Run: node scripts/make-icons.mjs
 // =============================================================================
@@ -16,48 +16,83 @@ import { fileURLToPath } from "node:url";
 const OUT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../static/icons");
 const SIZES = [16, 32, 48, 128];
 
-// The Vue mark, in its native 128 x 110.85 coordinate space.
-const GREEN = [65, 184, 131, 255]; // #41B883
-const NAVY = [53, 73, 94, 255]; //  #35495E
-
-const OUTER = [
-  [0, 0],
-  [25.6, 0],
-  [64, 66.5],
-  [102.4, 0],
-  [128, 0],
-  [64, 110.85],
-];
-const INNER = [
-  [25.6, 0],
-  [51.2, 0],
-  [64, 22.2],
-  [76.8, 0],
-  [102.4, 0],
-  [64, 66.5],
-];
-
-const LOGO_W = 128;
-const LOGO_H = 110.85;
-const PADDING_RATIO = 0.09; // breathing room so the mark isn't flush to the edge
 const SUPERSAMPLE = 4;
 
 // ---------------------------------------------------------------------------
 // Geometry
 // ---------------------------------------------------------------------------
+//
+// The SenAnnotate mark: an "S" monogram in a rounded-square badge. Everything is
+// expressed in a unit square (0..1) so one set of predicates renders at every size.
+// A badge rather than a bare glyph because a hairline S on transparent disappears at
+// 16px against both light and dark browser chrome.
 
-/** Ray-casting point-in-polygon. */
-function inside(polygon, x, y) {
-  let hit = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [xi, yi] = polygon[i];
-    const [xj, yj] = polygon[j];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
-      hit = !hit;
-    }
-  }
-  return hit;
+const ORANGE = [249, 115, 22, 255]; // #f97316
+const INK = [67, 20, 7, 255]; //      #431407
+
+const MARGIN = 0.06; // clear space around the badge
+const CORNER = 0.24; // badge corner radius, as a fraction of the icon size
+
+const GLYPH_H = 0.56; //          "S" height
+const ARC_R = GLYPH_H / 4; //     two tangent circles stacked make that height
+const STROKE = GLYPH_H * 0.19; // pen width
+
+/** Rounded rect: clamp into the corner-centre rect, then one radius check covers all cases. */
+function inRoundedRect(x, y, x0, y0, x1, y1, r) {
+  const cx = Math.min(Math.max(x, x0 + r), x1 - r);
+  const cy = Math.min(Math.max(y, y0 + r), y1 - r);
+  const dx = x - cx;
+  const dy = y - cy;
+  return dx * dx + dy * dy <= r * r;
 }
+
+/** Degrees from +x, increasing downward — image coordinates, not maths coordinates. */
+function angleAt(x, y, cx, cy) {
+  return (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
+}
+
+function onArc(x, y, cx, cy, keep) {
+  if (Math.abs(Math.hypot(x - cx, y - cy) - ARC_R) > STROKE / 2) return false;
+  return keep(angleAt(x, y, cx, cy));
+}
+
+function nearPoint(x, y, px, py) {
+  return Math.hypot(x - px, y - py) <= STROKE / 2;
+}
+
+/**
+ * The "S" as two externally tangent arcs, each sweeping 240°:
+ *
+ *   upper bowl  from the top-right terminal (-30°), anticlockwise over the top and
+ *               down the left side, to the tangent point at +90°
+ *   lower bowl  from the tangent point (-90°), clockwise round the right side and
+ *               along the bottom, to the bottom-left terminal at +150°
+ *
+ * They meet exactly at the centre: two circles of radius r whose centres are 2r
+ * apart touch midway.
+ */
+function inGlyph(x, y) {
+  const upperY = 0.5 - ARC_R;
+  const lowerY = 0.5 + ARC_R;
+
+  if (onArc(x, y, 0.5, upperY, (deg) => deg <= -30 || deg >= 90)) return true;
+  if (onArc(x, y, 0.5, lowerY, (deg) => deg >= -90 && deg <= 150)) return true;
+
+  // Round caps on the two visible terminals.
+  const rad = Math.PI / 180;
+  const upperTip = [0.5 + ARC_R * Math.cos(-30 * rad), upperY + ARC_R * Math.sin(-30 * rad)];
+  const lowerTip = [0.5 + ARC_R * Math.cos(150 * rad), lowerY + ARC_R * Math.sin(150 * rad)];
+  return nearPoint(x, y, upperTip[0], upperTip[1]) || nearPoint(x, y, lowerTip[0], lowerTip[1]);
+}
+
+// Painted in order, back to front.
+const LAYERS = [
+  {
+    color: ORANGE,
+    hit: (x, y) => inRoundedRect(x, y, MARGIN, MARGIN, 1 - MARGIN, 1 - MARGIN, CORNER),
+  },
+  { color: INK, hit: inGlyph },
+];
 
 /** Source-over composite of a straight-alpha colour onto a straight-alpha pixel. */
 function composite(dst, offset, color, alpha) {
@@ -77,36 +112,37 @@ function composite(dst, offset, color, alpha) {
 function renderIcon(size) {
   const rgba = new Uint8Array(size * size * 4); // transparent
 
-  const pad = size * PADDING_RATIO;
-  const scale = Math.min((size - pad * 2) / LOGO_W, (size - pad * 2) / LOGO_H);
-  const drawW = LOGO_W * scale;
-  const drawH = LOGO_H * scale;
-  const originX = (size - drawW) / 2;
-  const originY = (size - drawH) / 2;
-
-  // Map a device pixel coordinate back into logo space.
-  const toLogo = (px, py) => [(px - originX) / scale, (py - originY) / scale];
-
   const step = 1 / SUPERSAMPLE;
   const samplesPerPixel = SUPERSAMPLE * SUPERSAMPLE;
+  const hits = new Array(LAYERS.length).fill(0);
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      let outerHits = 0;
-      let innerHits = 0;
+      hits.fill(0);
 
       for (let sy = 0; sy < SUPERSAMPLE; sy++) {
         for (let sx = 0; sx < SUPERSAMPLE; sx++) {
-          const [lx, ly] = toLogo(x + (sx + 0.5) * step, y + (sy + 0.5) * step);
-          if (inside(OUTER, lx, ly)) outerHits++;
-          if (inside(INNER, lx, ly)) innerHits++;
+          const ux = (x + (sx + 0.5) * step) / size;
+          const uy = (y + (sy + 0.5) * step) / size;
+          for (let i = 0; i < LAYERS.length; i++) {
+            if (LAYERS[i].hit(ux, uy)) hits[i]++;
+          }
         }
       }
 
-      if (outerHits === 0 && innerHits === 0) continue;
+      let painted = false;
+      for (const count of hits) {
+        if (count > 0) {
+          painted = true;
+          break;
+        }
+      }
+      if (!painted) continue;
+
       const offset = (y * size + x) * 4;
-      composite(rgba, offset, GREEN, outerHits / samplesPerPixel);
-      composite(rgba, offset, NAVY, innerHits / samplesPerPixel);
+      for (let i = 0; i < LAYERS.length; i++) {
+        if (hits[i] > 0) composite(rgba, offset, LAYERS[i].color, hits[i] / samplesPerPixel);
+      }
     }
   }
 
