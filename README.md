@@ -304,5 +304,6 @@ Zero runtime dependencies. Build-time: `esbuild` and `typescript`.
 
 ## Docs
 
-Design notes, the port map from `agentation`, and the reasoning behind the
-three-world split live in `docs/vue-chrome-annotator/` at the monorepo root.
+Design notes, the port map from `agentation`, the reasoning behind the three-world
+split, and the full record of the 0.2.0 rebrand live in [`docs/`](./docs) — start with
+[`docs/README.md`](./docs/README.md).
