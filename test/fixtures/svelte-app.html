@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate fixture — Svelte shape</title>
+    <style>
+      body { font: 14px system-ui; margin: 0; padding: 24px; }
+      .app-bar { display: flex; gap: 8px; padding: 12px; background: #f4f5f7; }
+    </style>
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <!--
+      Reproduces what Svelte compiled with `dev: true` leaves on DOM nodes:
+      `__svelte_meta.loc` naming the authoring file, line and char. Svelte has no
+      component instance tree on the DOM at all, so the ancestry the detector reports is
+      recovered from distinct `loc.file` values walking up — which this fixture exercises
+      by nesting elements written in three different .svelte files.
+
+      `window.__svelte.v` is the version Set the compiler writes unless the app opts out
+      with `discloseVersion: false`.
+    -->
+    <div id="svelte-app" class="svelte-1a2b3c">
+      <div class="app-bar svelte-4d5e6f">
+        <button class="save svelte-7g8h9i">Save changes</button>
+      </div>
+      <p class="intro svelte-1a2b3c">A fixture page for the SenAnnotate extension.</p>
+      <span class="bare">No dev metadata on this one.</span>
+    </div>
+
+    <script>
+      window.__svelte = { v: new Set(["5.37.0"]) };
+      // SvelteKit stamps a hashed global like this alongside the data-sveltekit-* attrs.
+      window.__sveltekit_9zq1x = { base: "", assets: "" };
+
+      const ROOT = "/Users/ci/app/src";
+      function meta(el, file, line, char) {
+        el.__svelte_meta = { loc: { file, line, char } };
+      }
+
+      meta(document.querySelector("#svelte-app"), ROOT + "/routes/+page.svelte", 3, 1);
+      meta(document.querySelector(".app-bar"), ROOT + "/lib/Toolbar.svelte", 9, 3);
+      meta(document.querySelector(".save"), ROOT + "/lib/SaveButton.svelte", 12, 5);
+      meta(document.querySelector(".intro"), ROOT + "/routes/+page.svelte", 18, 3);
+      // `.bare` deliberately gets none: it should still resolve via its ancestors.
+    </script>
+  </body>
+</html>

@@ -12,14 +12,28 @@
 // =============================================================================
 
 import type { ElementFrameworkInfo, PageFrameworkInfo } from "../../shared/types";
+import { angularDetector } from "./angular";
+import { reactDetector } from "./react";
 import type { FrameworkDetector, InspectOptions } from "./types";
 import { vueDetector } from "./vue";
+import { svelteDetector } from "./svelte";
 
 /**
- * Tried in order. Put the cheapest and most specific probes first — each `detect()` is
- * a handful of property reads, but `inspect()` runs on every hover.
+ * Tried in order, cheapest and most specific first.
+ *
+ * Vue and React lead because their probes are a direct property read on one element.
+ * Angular's needs `window.ng`, also cheap. Svelte is last because it is the only one
+ * whose page probe may sweep a few hundred elements looking for `__svelte_meta`, and
+ * because its per-element check is the loosest — a scoped `svelte-*` class alone is
+ * enough for it to claim an element, so anything with stronger evidence should win
+ * first.
  */
-const DETECTORS: FrameworkDetector[] = [vueDetector];
+const DETECTORS: FrameworkDetector[] = [
+  vueDetector,
+  reactDetector,
+  angularDetector,
+  svelteDetector,
+];
 
 const NOTHING_DETECTED: PageFrameworkInfo = {
   detected: false,

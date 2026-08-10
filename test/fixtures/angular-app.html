@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate fixture — Angular shape</title>
+    <style>
+      body { font: 14px system-ui; margin: 0; padding: 24px; }
+      .app-bar { display: flex; gap: 8px; padding: 12px; background: #f4f5f7; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Reproduces Angular's debug surface: the `ng-version` attribute it stamps on the
+      bootstrapped host in every build, `__ngContext__` on rendered nodes, and the
+      `window.ng` debug API that only exists outside production mode.
+      `ng.getComponent(el)` answers only for elements that ARE component hosts, which is
+      why the detector walks up the DOM asking about each ancestor — this fixture nests
+      three component hosts to exercise that.
+
+      Angular records no authoring positions, so there is deliberately no source data
+      here to find: the detector must report the component chain and no Source line.
+    -->
+    <app-root ng-version="18.2.0">
+      <app-toolbar class="app-bar">
+        <app-save-button>
+          <button class="save">Save changes</button>
+        </app-save-button>
+      </app-toolbar>
+      <p class="intro">A fixture page for the SenAnnotate extension.</p>
+    </app-root>
+
+    <script>
+      // Named classes stand in for the component instances Angular would construct.
+      class AppComponent {
+        constructor() { this.title = "Dashboard"; this._internal = 1; }
+      }
+      class ToolbarComponent {
+        constructor() { this.dense = false; }
+      }
+      class SaveButtonComponent {
+        constructor() { this.label = "Save changes"; this.disabled = false; }
+      }
+
+      const instances = new Map([
+        [document.querySelector("app-root"), new AppComponent()],
+        [document.querySelector("app-toolbar"), new ToolbarComponent()],
+        [document.querySelector("app-save-button"), new SaveButtonComponent()],
+      ]);
+
+      // Angular marks every rendered node, host or not.
+      for (const el of document.querySelectorAll("app-root, app-root *")) {
+        el.__ngContext__ = 42;
+      }
+
+      window.ng = {
+        getComponent(el) {
+          return instances.get(el) ?? null;
+        },
+        getOwningComponent(el) {
+          let current = el;
+          while (current) {
+            if (instances.has(current)) return instances.get(current);
+            current = current.parentElement;
+          }
+          return null;
+        },
+        getDirectives() {
+          return [];
+        },
+      };
+    </script>
+  </body>
+</html>

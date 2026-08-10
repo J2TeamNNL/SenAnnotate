@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate fixture — React shape</title>
+    <style>
+      body { font: 14px system-ui; margin: 0; padding: 24px; }
+      .app-bar { display: flex; gap: 8px; padding: 12px; background: #f4f5f7; }
+      .save { padding: 8px 14px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Reproduces the shapes React writes onto DOM nodes, rather than loading React
+      itself: a randomised `__reactFiber$<suffix>` key, a `return` chain of fibers, and
+      the `_debugSource` that React 18 and earlier populate (React 19 removed it).
+
+      Same approach as vue2-app.html, which simulates the Vue 2 instance shape. It keeps
+      the suite hermetic and — more importantly here — lets the *absence* of
+      `_debugSource` be tested too, which a real React 18 build could not show us.
+    -->
+    <div id="root">
+      <div class="app-bar">
+        <button class="save">Save changes</button>
+        <button class="discard">Discard</button>
+      </div>
+      <p class="intro">A fixture page for the SenAnnotate extension.</p>
+    </div>
+
+    <!-- React 19 shape: fibers and names, but no _debugSource anywhere up the chain. -->
+    <div id="react19">
+      <button class="orphan">No source anywhere</button>
+    </div>
+
+    <script>
+      // React's DevTools hook, which reports the renderer version.
+      window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+        renderers: new Map([[1, { version: "18.3.1" }]]),
+      };
+
+      // The suffix is random per page load in real React; any constant stands in.
+      const FIBER_KEY = "__reactFiber$k3n9xq2";
+      const PROPS_KEY = "__reactProps$k3n9xq2";
+
+      function composite(name, file, line, column, parent) {
+        return {
+          elementType: { name },
+          type: { name },
+          return: parent ?? null,
+          _debugSource: file ? { fileName: file, lineNumber: line, columnNumber: column } : null,
+        };
+      }
+
+      function host(tag, parent, debugSource) {
+        return {
+          elementType: tag,
+          type: tag,
+          return: parent ?? null,
+          _debugSource: debugSource ?? null,
+        };
+      }
+
+      const ROOT = "/Users/ci/app/src";
+
+      // <App> <Toolbar> <SaveButton>, plus internals that must be filtered out.
+      const appFiber = composite("App", ROOT + "/App.jsx", 4, 3, null);
+      const strictFiber = composite("StrictMode", null, 0, 0, appFiber);
+      const toolbarFiber = composite("Toolbar", ROOT + "/components/Toolbar.jsx", 9, 5, strictFiber);
+      const memoFiber = composite("Memo", null, 0, 0, toolbarFiber);
+      const saveFiber = composite(
+        "SaveButton",
+        ROOT + "/components/SaveButton.jsx",
+        12,
+        5,
+        memoFiber,
+      );
+
+      const saveButton = document.querySelector(".save");
+      saveButton[FIBER_KEY] = host("button", saveFiber, {
+        fileName: ROOT + "/components/SaveButton.jsx",
+        lineNumber: 12,
+        columnNumber: 5,
+      });
+      saveButton[PROPS_KEY] = {
+        label: "Save changes",
+        disabled: false,
+        onClick: () => {},
+        children: "Save changes",
+      };
+
+      // The discard button belongs to Toolbar directly — a shorter chain.
+      const discard = document.querySelector(".discard");
+      discard[FIBER_KEY] = host("button", toolbarFiber, {
+        fileName: ROOT + "/components/Toolbar.jsx",
+        lineNumber: 14,
+        columnNumber: 7,
+      });
+
+      // Has no _debugSource of its own, but an ancestor does — must walk up to it, the
+      // same way Vue's tracer and Svelte's __svelte_meta walk up.
+      const intro = document.querySelector(".intro");
+      intro[FIBER_KEY] = host("p", composite("Intro", null, 0, 0, appFiber), null);
+
+      // React 19: names survive, `_debugSource` is gone entirely. Nothing in this chain
+      // has one, so the detector must report components and omit Source rather than
+      // inventing a path.
+      const shellFiber = composite("Shell", null, 0, 0, null);
+      const orphanFiber = composite("OrphanButton", null, 0, 0, shellFiber);
+      document.querySelector(".orphan")[FIBER_KEY] = host("button", orphanFiber, null);
+      document.querySelector("#react19")[FIBER_KEY] = host("div", shellFiber, null);
+
+      document.querySelector("#root")[FIBER_KEY] = host("div", appFiber, null);
+      document.body[FIBER_KEY] = host("body", appFiber, null);
+    </script>
+  </body>
+</html>

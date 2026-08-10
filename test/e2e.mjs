@@ -497,6 +497,139 @@ async function main() {
       !plainReport.includes("Stack:") && !/Vue/.test(plainReport),
       plainReport.slice(0, 300),
     );
+
+    // -------------------------------------------------------------------------
+    // React, Svelte, Angular
+    // -------------------------------------------------------------------------
+    //
+    // Each fixture reproduces the framework's DOM shapes rather than loading the
+    // real runtime — the same approach vue2-app.html already takes. It keeps the
+    // suite hermetic and lets shapes be tested that a real build could not show
+    // us on demand, such as a React 19 node with no `_debugSource`.
+
+    /**
+     * Annotate `selector` on `path` and return { badge, hover, report }.
+     *
+     * Clears any stored annotations first. Annotations persist per origin+pathname, and
+     * these fixtures are visited more than once in the same browser profile — without
+     * this, the second visit's report still contains the first visit's annotation and
+     * every assertion reads the wrong section.
+     */
+    async function driveFramework(path, selector) {
+      const page = await context.newPage();
+      await page.goto(`${base}/${path}`);
+      await page.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+      await page.waitForTimeout(2_000); // outwait boot()'s late-hydration retry
+
+      if ((await page.locator(".marker").count()) > 0) {
+        await page.locator('.tool[title^="Annotations"]').click();
+        await page.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
+        await page.locator('.panel .icon-button[title^="Clear all"]').click();
+        await page.waitForTimeout(300);
+        await page.locator('.tool[title^="Annotations"]').click();
+        await page.waitForTimeout(300);
+      }
+
+      const badge = (await page.locator(".stack-badge").textContent())?.trim() ?? "";
+
+      await page.locator(".tool--brand").click();
+      await page.locator(selector).first().hover();
+      await page.waitForTimeout(700);
+      const hover = (await page.locator(".highlight__label").textContent())?.trim() ?? "";
+
+      await page.locator(selector).first().click({ force: true });
+      await page.locator(".composer").waitFor({ state: "visible", timeout: 10_000 });
+      await page.locator(".composer__input").fill("Framework detector check.");
+      await page.locator(".composer .button--primary").click();
+      await page.locator(".composer").waitFor({ state: "detached", timeout: 10_000 });
+
+      await page.locator('.tool[title^="Annotations"]').click();
+      await page.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
+      await page.locator(".panel .button--primary").click();
+      const report = await page.evaluate(() => navigator.clipboard.readText());
+
+      await page.close();
+      return { badge, hover, report };
+    }
+
+    // React ---------------------------------------------------------------------
+    const react = await driveFramework("react-app.html", ".save");
+    check("React is detected and versioned", /^React 18 18\./.test(react.badge), `badge "${react.badge}"`);
+    check(
+      "React ancestry is walked via fiber.return",
+      react.report.includes("**Components:** <App> <Toolbar> <SaveButton>"),
+      react.report.slice(0, 400),
+    );
+    check(
+      "React internals and HOC wrappers are filtered out",
+      !react.report.includes("StrictMode") && !react.report.includes("Memo"),
+      react.report.slice(0, 400),
+    );
+    check(
+      "React source comes from _debugSource with line and column",
+      react.report.includes("**Source:** src/components/SaveButton.jsx:12:5"),
+      react.report.slice(0, 400),
+    );
+
+    // No _debugSource of its own, but an ancestor has one — walks up, exactly as the
+    // Vue tracer and Svelte's __svelte_meta do.
+    const reactInherited = await driveFramework("react-app.html", ".intro");
+    check(
+      "a node without its own _debugSource walks up to an ancestor that has one",
+      reactInherited.report.includes("<Intro>") &&
+        reactInherited.report.includes("**Source:** src/App.jsx:4:3"),
+      reactInherited.report.slice(0, 400),
+    );
+
+    // React 19 shape: names survive, `_debugSource` is gone from the whole chain. Must
+    // report components and omit Source rather than inventing a path.
+    const react19 = await driveFramework("react-app.html", ".orphan");
+    check(
+      "React 19 (no _debugSource anywhere) still reports its components",
+      react19.report.includes("<Shell> <OrphanButton>"),
+      react19.report.slice(0, 400),
+    );
+    check(
+      "React 19 reports no Source line rather than inventing one",
+      !react19.report.includes("**Source:**"),
+      react19.report.slice(0, 400),
+    );
+
+    // Svelte --------------------------------------------------------------------
+    const svelte = await driveFramework("svelte-app.html", ".save");
+    check("SvelteKit is detected and versioned", /^SvelteKit 5\./.test(svelte.badge), `badge "${svelte.badge}"`);
+    check(
+      "Svelte source comes from __svelte_meta with line and column",
+      svelte.report.includes("**Source:** src/lib/SaveButton.svelte:12:5"),
+      svelte.report.slice(0, 400),
+    );
+    check(
+      "Svelte ancestry is recovered from distinct loc.file values",
+      svelte.report.includes("**Components:** <+page> <Toolbar> <SaveButton>"),
+      svelte.report.slice(0, 400),
+    );
+
+    // An element with no __svelte_meta of its own must inherit from its ancestors.
+    const svelteBare = await driveFramework("svelte-app.html", ".bare");
+    check(
+      "an element without its own __svelte_meta walks up to an ancestor",
+      svelteBare.report.includes("**Source:** src/routes/+page.svelte"),
+      svelteBare.report.slice(0, 400),
+    );
+
+    // Angular -------------------------------------------------------------------
+    const angular = await driveFramework("angular-app.html", ".save");
+    check("Angular is detected and versioned", /^Angular 18 18\./.test(angular.badge), `badge "${angular.badge}"`);
+    check(
+      "Angular ancestry is walked via ng.getComponent",
+      angular.report.includes("**Components:** <AppComponent> <ToolbarComponent> <SaveButtonComponent>"),
+      angular.report.slice(0, 400),
+    );
+    check(
+      "Angular reports no Source line, having no authoring positions",
+      !angular.report.includes("**Source:**"),
+      angular.report.slice(0, 400),
+    );
   } finally {
     await context.close();
     server.close();
