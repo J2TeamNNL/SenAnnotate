@@ -15,9 +15,13 @@ element — as precisely as `src/components/BaseButton.vue:12:5` where the frame
 records it. Nothing requires any of them; see [Framework support](#framework-support)
 for what each one can actually give you.
 
-It began as a Vue-native take on
-[`agentation`](https://github.com/benjitaylor/agentation), which does the same job
-for React as an npm component you import into your app.
+The idea comes from [`agentation`](https://github.com/benjitaylor/agentation) by Benji
+Taylor, which does the same job for React as an npm component you import into your app.
+This project started as a Vue-oriented answer to it and has since been reimplemented —
+see [`NOTICE.md`](./NOTICE.md) for the provenance, which is worth reading before
+vendoring any of this.
+
+MIT licensed. See [`LICENSE`](./LICENSE).
 
 ---
 
@@ -382,6 +386,6 @@ Zero runtime dependencies. Build-time: `esbuild` and `typescript`.
 
 ## Docs
 
-Design notes, the port map from `agentation`, the reasoning behind the three-world
-split, and the full record of the 0.2.0 rebrand live in [`docs/`](./docs) — start with
+Design notes, the reasoning behind the three-world split, the licensing history, and the
+full record of each release live in [`docs/`](./docs) — start with
 [`docs/README.md`](./docs/README.md).

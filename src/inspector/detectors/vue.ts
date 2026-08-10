@@ -156,7 +156,7 @@ function readTracerPosition(element: Element): TracerPosition | null {
 }
 
 // -----------------------------------------------------------------------------
-// Filtering — the Vue equivalent of agentation's React internals list
+// Filtering — Vue and Nuxt built-ins that say nothing about where the code lives
 // -----------------------------------------------------------------------------
 
 /** Framework plumbing that tells you nothing about where the code lives. */

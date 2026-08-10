@@ -1,5 +1,14 @@
 # Context — Vuetation
 
+> **Superseded in 0.3.1.** The three files this document records as *ported* were later
+> reimplemented from scratch, because `agentation` turned out to be under the PolyForm
+> Shield License — source-available with a non-compete clause, not open source. See
+> [`NOTICE.md`](../../../NOTICE.md).
+>
+> This record is kept exactly as written. It is the honest account of where the code came
+> from at the time, and deleting it to make the current licensing look tidier would be
+> concealment.
+
 ## Reference source: `agentation` v3.0.2
 
 Cloned to scratchpad for study. Key modules and what we took:

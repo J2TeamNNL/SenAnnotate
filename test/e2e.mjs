@@ -266,6 +266,12 @@ async function main() {
     await forensic.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
     await forensic.locator(".panel .button--primary").click();
     const forensicReport = await forensic.evaluate(() => navigator.clipboard.readText());
+
+    // Put the detail level back. It lives in chrome.storage.sync, so leaving it on
+    // Forensic silently changes every later check in this file — which is exactly what
+    // happened the first time this test was written.
+    await forensic.locator(".panel select").selectOption("standard");
+    await forensic.waitForTimeout(400);
     await forensic.close();
 
     /** One assertion per identify.ts export, so a regression names the function. */
@@ -284,12 +290,18 @@ async function main() {
     );
     check(
       "getFullElementPath walks from body with tag#id.class segments",
-      /^\*\*Full DOM path:\*\* body > div#app > .*button\.base$/.test(forensicLine("Full DOM path")),
+      /^\*\*Full DOM path:\*\* body > div#app > .*button\.base-button$/.test(
+        forensicLine("Full DOM path"),
+      ),
       forensicLine("Full DOM path"),
     );
+    // Author-written class names are kept whole. The previous implementation dropped the
+    // last hyphenated segment as if it were a build hash, turning `base-button` into
+    // `base` and `sidebar__title` into `sidebar_` — a worse grep target and a less
+    // specific selector. Only segments that actually look like hashes are stripped now.
     check(
-      "getElementClasses lists the element's own classes",
-      forensicLine("Classes") === "**Classes:** base",
+      "getElementClasses keeps author-written class names whole",
+      forensicLine("Classes") === "**Classes:** base-button",
       forensicLine("Classes"),
     );
     check(
@@ -310,8 +322,10 @@ async function main() {
       forensicLine("Accessibility"),
     );
     check(
-      "getNearbyElements names siblings with their classes",
-      /^\*\*Nearby elements:\*\* .*button\.base "Discard"/.test(forensicLine("Nearby elements")),
+      "getNearbyElements names siblings with their classes and text",
+      /^\*\*Nearby elements:\*\* h2\.sidebar__title "Navigation", button\.base-button "Discard"/.test(
+        forensicLine("Nearby elements"),
+      ),
       forensicLine("Nearby elements"),
     );
 
@@ -574,9 +588,14 @@ async function main() {
     await plain.locator(".panel .button--primary").click();
     const plainReport = await plain.evaluate(() => navigator.clipboard.readText());
 
+    // Checks that the *tool* claims no framework. Deliberately not `!/Vue/` over the
+    // whole report: plain.html's own copy says "No Vue here", and forensic detail
+    // surfaces page text, so that assertion failed for the page being right.
     check(
-      "non-framework reports omit the Stack line and never mention Vue",
-      !plainReport.includes("Stack:") && !/Vue/.test(plainReport),
+      "non-framework reports claim no framework",
+      !plainReport.includes("Stack:") &&
+        !plainReport.includes("**Components:**") &&
+        !plainReport.includes("**Owner:**"),
       plainReport.slice(0, 300),
     );
 

@@ -1,466 +1,500 @@
 // =============================================================================
-// Element identification
+// Element identification — ISOLATED world
 // =============================================================================
 //
-// Ported near-verbatim from agentation's `element-identification.ts` — none of it
-// is framework-specific, and it is the part that turns a DOM node into something
-// a person (and an agent) can read back. Additions for this extension:
-//   - `buildSelector`, a re-resolvable unique CSS selector
-//   - Vue-aware class cleaning (`data-v-*` scope attributes are not classes)
+// Turning a DOM node into something an agent can find again. Four descriptions, each
+// for a different job:
+//
+//   identifyElement    a human label      `button "Save changes"`
+//   buildSelector      a re-queryable CSS selector
+//   getFullElementPath the whole ancestry, for forensic reports
+//   getElementPath     a short ancestry, for the report's Location line
+//
+// Everything here reads only the DOM, so it needs no bridge round-trip and works
+// identically whichever framework rendered the page — or none.
+//
+// Shadow DOM is handled throughout: a click inside a custom element retargets to its
+// host, so `closest()` alone stops at the boundary and would misjudge both what was
+// clicked and whether it belongs to us.
 // =============================================================================
 
 import { UI_ATTR } from "../shared/protocol";
 
+/** Text longer than this is truncated in labels; enough to identify, short enough to scan. */
+const MAX_LABEL_TEXT = 40;
+const MAX_CONTEXT_TEXT = 60;
+
 // -----------------------------------------------------------------------------
-// Shadow DOM helpers
+// Shadow-DOM aware traversal
 // -----------------------------------------------------------------------------
 
-/** Parent element, stepping out of a shadow root onto its host when needed. */
-function parentOf(element: Element): Element | null {
-  if (element.parentElement) return element.parentElement;
-  const root = element.getRootNode();
-  return root instanceof ShadowRoot ? root.host : null;
-}
-
+/**
+ * `closest()` that keeps going when it reaches a shadow boundary, hopping to the host
+ * and continuing up the light tree.
+ *
+ * Plain `closest()` stops at the shadow root, so an element inside a web component would
+ * never be recognised as living inside anything outside it.
+ */
 export function closestCrossingShadow(element: Element, selector: string): Element | null {
   let current: Element | null = element;
+
   while (current) {
-    if (current.matches(selector)) return current;
-    current = parentOf(current);
+    const found = current.closest(selector);
+    if (found) return found;
+
+    const root = current.getRootNode();
+    if (!(root instanceof ShadowRoot)) return null;
+    current = root.host;
   }
+
   return null;
 }
 
-/** True for anything belonging to our own overlay — never annotate ourselves. */
+/** True for our own overlay — the toolbar, markers, composer and panel. */
 export function isOurUi(element: Element | null): boolean {
   if (!element) return false;
+  if (element.hasAttribute?.(UI_ATTR)) return true;
   return !!closestCrossingShadow(element, `[${UI_ATTR}]`);
 }
 
-// -----------------------------------------------------------------------------
-// Class-name cleaning
-// -----------------------------------------------------------------------------
-
-/** `button_primary__a1b2c` → `button_primary`. CSS-module hashes are noise. */
-function stripHash(cls: string): string {
-  return cls.replace(/[_-][a-zA-Z0-9]{5,}$/, "");
+/** The deepest element actually under the pointer, following shadow roots down. */
+function deepestAt(element: Element): Element {
+  let current = element;
+  // A custom element retargets events to itself; its shadow content is the real subject.
+  for (let depth = 0; depth < 10; depth++) {
+    const root = (current as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
+    if (!root) break;
+    const inner = root.activeElement;
+    if (!(inner instanceof Element) || inner === current) break;
+    current = inner;
+  }
+  return current;
 }
 
-function classListOf(element: Element): string[] {
+// -----------------------------------------------------------------------------
+// Class names
+// -----------------------------------------------------------------------------
+
+/**
+ * Build-tool hash suffixes, which change every build and so make useless grep targets:
+ *
+ *   Button_a1b2c3        CSS modules
+ *   Button__a1b2c3       CSS modules, double underscore
+ *   css-1q2w3e          emotion / styled-components
+ *   svelte-1a2b3c       Svelte scoped styles
+ *   jsx-1234567890      styled-jsx
+ *
+ * Deliberately conservative: a segment is only treated as a hash when it *looks* like
+ * one — at least four characters mixing letters and digits, or a long digit run. A
+ * human-written modifier like `base-button` or `sidebar__title` is kept intact, because
+ * dropping it turns a specific class into a vague one and makes the selector worse.
+ */
+const HASHED_SEGMENT = /^(?=.*\d)[a-z0-9]{4,}$/i;
+const WHOLLY_HASHED = /^(css|svelte|jsx|sc)-[a-z0-9]{4,}$/i;
+
+function normaliseClass(cls: string): string | null {
+  if (!cls || cls.startsWith("__")) return null;
+  if (WHOLLY_HASHED.test(cls)) return null;
+
+  // Strip a trailing hash segment, but only that — `base-button` keeps both words.
+  const stripped = cls.replace(/[_-]{1,2}(?=[^_-]*$)([a-z0-9]+)$/i, (whole, tail: string) =>
+    HASHED_SEGMENT.test(tail) ? "" : whole,
+  );
+
+  const result = stripped || cls;
+  return result.length > 0 ? result : null;
+}
+
+/** An element's own classes, hashes removed, in source order. */
+export function getElementClasses(target: Element): string {
+  return meaningfulClasses(target).join(" ");
+}
+
+function meaningfulClasses(element: Element): string[] {
   const raw = element.getAttribute("class");
   if (!raw) return [];
-  return raw.split(/\s+/).filter(Boolean);
+
+  const out: string[] = [];
+  for (const cls of raw.trim().split(/\s+/)) {
+    const normalised = normaliseClass(cls);
+    if (normalised && !out.includes(normalised)) out.push(normalised);
+  }
+  return out;
 }
 
-function meaningfulClass(element: Element): string | null {
-  return (
-    classListOf(element)
-      .map(stripHash)
-      .find((cls) => cls.length > 2 && !/^[a-z]{1,2}$/.test(cls) && !/^data-v-/.test(cls)) ?? null
-  );
+/** `div.layout`, `button.base-button`, or just `span` when it has no usable class. */
+function describeElement(element: Element, maxClasses = 2): string {
+  const tag = element.tagName.toLowerCase();
+  const classes = meaningfulClasses(element).slice(0, maxClasses);
+  return classes.length ? `${tag}.${classes.join(".")}` : tag;
 }
 
 // -----------------------------------------------------------------------------
 // Paths
 // -----------------------------------------------------------------------------
 
-/** Short readable ancestry, e.g. `.sidebar > nav > .nav-link`. */
+/**
+ * Short ancestry for the report's Location line — the last few steps are what orient a
+ * reader; the whole chain from `<body>` is noise at that length.
+ */
 export function getElementPath(target: Element, maxDepth = 4): string {
   const parts: string[] = [];
   let current: Element | null = target;
-  let depth = 0;
 
-  while (current && depth < maxDepth) {
-    const tag = current.tagName.toLowerCase();
-    if (tag === "html" || tag === "body") break;
-
-    let identifier = tag;
-    if (current.id) identifier = `#${current.id}`;
-    else {
-      const cls = meaningfulClass(current);
-      if (cls) identifier = `.${cls}`;
-    }
-
-    const next = parentOf(current);
-    if (!current.parentElement && next) identifier = `⟨shadow⟩ ${identifier}`;
-
-    parts.unshift(identifier);
-    current = next;
-    depth++;
+  while (current && parts.length < maxDepth) {
+    if (current.tagName === "BODY" || current.tagName === "HTML") break;
+    parts.unshift(describeElement(current, 1));
+    current = parentCrossingShadow(current);
   }
 
   return parts.join(" > ");
 }
 
-/** Full ancestry up to `<html>`, for forensic output. */
+/** The full chain from `<body>` down, with ids — the forensic view. */
 export function getFullElementPath(target: Element): string {
   const parts: string[] = [];
   let current: Element | null = target;
 
-  while (current && current.tagName.toLowerCase() !== "html") {
-    const tag = current.tagName.toLowerCase();
-    let identifier = tag;
-
-    if (current.id) identifier = `${tag}#${current.id}`;
-    else {
-      const cls = meaningfulClass(current);
-      if (cls) identifier = `${tag}.${cls}`;
-    }
-
-    const next = parentOf(current);
-    if (!current.parentElement && next) identifier = `⟨shadow⟩ ${identifier}`;
-
-    parts.unshift(identifier);
-    current = next;
+  while (current && parts.length < 40) {
+    parts.unshift(segmentWithId(current));
+    if (current.tagName === "BODY") break;
+    current = parentCrossingShadow(current);
   }
 
   return parts.join(" > ");
 }
+
+function segmentWithId(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+  if (element.id) return `${tag}#${element.id}`;
+  const classes = meaningfulClasses(element).slice(0, 2);
+  return classes.length ? `${tag}.${classes.join(".")}` : tag;
+}
+
+function parentCrossingShadow(element: Element): Element | null {
+  if (element.parentElement) return element.parentElement;
+  const root = element.getRootNode();
+  return root instanceof ShadowRoot ? root.host : null;
+}
+
+// -----------------------------------------------------------------------------
+// Selector
+// -----------------------------------------------------------------------------
 
 /**
- * A selector that actually re-resolves — used to re-attach markers after a reload.
- * Prefers ids and stable test hooks, falls back to `:nth-of-type` chains.
+ * A selector that resolves back to this element.
+ *
+ * Anchored on the nearest ancestor with an id, which keeps it short and stable; without
+ * one it runs to `body`. Each step is disambiguated with `:nth-of-type` when the tag
+ * repeats among its siblings, since a class list alone is frequently shared.
  */
 export function buildSelector(target: Element): string {
-  if (target.id && document.querySelectorAll(`#${CSS.escape(target.id)}`).length === 1) {
-    return `#${CSS.escape(target.id)}`;
-  }
-
-  for (const attr of ["data-testid", "data-test", "data-cy", "name"]) {
-    const value = target.getAttribute(attr);
-    if (!value) continue;
-    const candidate = `[${attr}="${CSS.escape(value)}"]`;
-    if (document.querySelectorAll(candidate).length === 1) return candidate;
-  }
-
-  const parts: string[] = [];
+  const steps: string[] = [];
   let current: Element | null = target;
 
-  while (current && current.tagName.toLowerCase() !== "html") {
-    const node: Element = current;
-    const tag = node.tagName.toLowerCase();
+  while (current && steps.length < 12) {
+    if (current.id) {
+      steps.unshift(`#${cssEscape(current.id)}`);
+      return steps.join(" > ");
+    }
 
-    if (node.id) {
-      parts.unshift(`#${CSS.escape(node.id)}`);
+    if (current.tagName === "BODY") {
+      steps.unshift("body");
       break;
     }
 
-    const parent: Element | null = node.parentElement;
-    if (!parent) {
-      parts.unshift(tag);
-      break;
-    }
-
-    const sameTag = Array.from(parent.children).filter((child) => child.tagName === node.tagName);
-    parts.unshift(sameTag.length > 1 ? `${tag}:nth-of-type(${sameTag.indexOf(node) + 1})` : tag);
-    current = parent;
+    steps.unshift(selectorStep(current));
+    current = parentCrossingShadow(current);
   }
 
-  return parts.join(" > ");
+  return steps.join(" > ");
+}
+
+function selectorStep(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+  const parent = element.parentElement;
+  if (!parent) return tag;
+
+  const sameTag = Array.from(parent.children).filter((c) => c.tagName === element.tagName);
+  if (sameTag.length < 2) return tag;
+
+  return `${tag}:nth-of-type(${sameTag.indexOf(element) + 1})`;
+}
+
+function cssEscape(value: string): string {
+  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value;
 }
 
 // -----------------------------------------------------------------------------
-// Human-readable naming
+// Human label
 // -----------------------------------------------------------------------------
 
-const SVG_SHAPES = ["path", "circle", "rect", "line", "g", "ellipse", "polygon"];
-const CONTAINERS = ["div", "section", "article", "nav", "header", "footer", "aside", "main"];
+/** Elements whose visible text is the most useful thing to call them by. */
+const TEXTUAL = new Set([
+  "a",
+  "button",
+  "summary",
+  "label",
+  "legend",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "th",
+  "td",
+  "li",
+  "dt",
+  "dd",
+  "p",
+  "figcaption",
+  "caption",
+  "option",
+]);
 
-/** Turns an element into a phrase a person recognises on sight. */
+/**
+ * A label a person would recognise, plus the short path.
+ *
+ * The order is deliberate: an accessible name beats visible text, which beats an
+ * attribute, which beats the bare tag. That is roughly the order in which a reader
+ * would identify the thing themselves.
+ */
 export function identifyElement(target: Element): { name: string; path: string } {
-  const path = getElementPath(target);
-  const tag = target.tagName.toLowerCase();
+  const element = deepestAt(target);
+  const tag = element.tagName.toLowerCase();
+  const path = getElementPath(element);
 
-  const dataElement = (target as HTMLElement).dataset?.element;
-  if (dataElement) return { name: dataElement, path };
+  const label = accessibleName(element);
+  if (label) return { name: `${tag} "${truncate(label, MAX_LABEL_TEXT)}"`, path };
 
-  if (SVG_SHAPES.includes(tag)) {
-    const svg = closestCrossingShadow(target, "svg");
-    const host = svg ? parentOf(svg) : null;
-    if (host) return { name: `graphic in ${identifyElement(host).name}`, path };
-    return { name: "graphic element", path };
-  }
-  if (tag === "svg") {
-    const parent = parentOf(target);
-    if (parent?.tagName.toLowerCase() === "button") {
-      const label = parent.textContent?.trim();
-      return { name: label ? `icon in "${label}" button` : "button icon", path };
-    }
-    return { name: "icon", path };
+  if (TEXTUAL.has(tag)) {
+    const text = ownText(element);
+    if (text) return { name: `${tag} "${truncate(text, MAX_LABEL_TEXT)}"`, path };
   }
 
-  if (tag === "button") {
-    const aria = target.getAttribute("aria-label");
-    if (aria) return { name: `button [${aria}]`, path };
-    const text = target.textContent?.trim();
-    return { name: text ? `button "${text.slice(0, 25)}"` : "button", path };
-  }
-  if (tag === "a") {
-    const text = target.textContent?.trim();
-    if (text) return { name: `link "${text.slice(0, 25)}"`, path };
-    const href = target.getAttribute("href");
-    if (href) return { name: `link to ${href.slice(0, 30)}`, path };
-    return { name: "link", path };
-  }
-  if (tag === "input") {
-    const placeholder = target.getAttribute("placeholder");
-    if (placeholder) return { name: `input "${placeholder}"`, path };
-    const name = target.getAttribute("name");
-    if (name) return { name: `input [${name}]`, path };
-    return { name: `${target.getAttribute("type") || "text"} input`, path };
-  }
-  if (tag === "textarea") return { name: "textarea", path };
-  if (tag === "select") return { name: "select", path };
+  const attribute = distinguishingAttribute(element);
+  if (attribute) return { name: `${tag}[${attribute}]`, path };
 
-  if (/^h[1-6]$/.test(tag)) {
-    const text = target.textContent?.trim();
-    return { name: text ? `${tag} "${text.slice(0, 35)}"` : tag, path };
-  }
-  if (tag === "p") {
-    const text = target.textContent?.trim();
-    if (text) {
-      return { name: `paragraph: "${text.slice(0, 40)}${text.length > 40 ? "…" : ""}"`, path };
-    }
-    return { name: "paragraph", path };
-  }
-  if (tag === "span" || tag === "label") {
-    const text = target.textContent?.trim();
-    if (text && text.length < 40) return { name: `"${text}"`, path };
-    return { name: tag, path };
-  }
-  if (tag === "li") {
-    const text = target.textContent?.trim();
-    if (text && text.length < 40) return { name: `list item: "${text.slice(0, 35)}"`, path };
-    return { name: "list item", path };
-  }
-  if (tag === "blockquote") return { name: "blockquote", path };
-  if (tag === "code") {
-    const text = target.textContent?.trim();
-    if (text && text.length < 30) return { name: `code: \`${text}\``, path };
-    return { name: "code", path };
-  }
-  if (tag === "pre") return { name: "code block", path };
+  const described = describeElement(element, 2);
+  return { name: described, path };
+}
 
-  if (tag === "img") {
-    const alt = target.getAttribute("alt");
-    return { name: alt ? `image "${alt.slice(0, 30)}"` : "image", path };
-  }
-  if (tag === "video") return { name: "video", path };
-  if (tag === "canvas") return { name: "canvas", path };
+function accessibleName(element: Element): string | null {
+  const aria = element.getAttribute("aria-label")?.trim();
+  if (aria) return aria;
 
-  if (CONTAINERS.includes(tag)) {
-    const aria = target.getAttribute("aria-label");
-    if (aria) return { name: `${tag} [${aria}]`, path };
-    const role = target.getAttribute("role");
-    if (role) return { name: role, path };
-
-    const words = classListOf(target)
-      .map(stripHash)
-      .flatMap((cls) => cls.split(/[\s_-]+/))
-      .filter((word) => word.length > 2 && !/^[a-z]{1,2}$/.test(word))
-      .slice(0, 2);
-    if (words.length) return { name: words.join(" "), path };
-
-    return { name: tag === "div" ? "container" : tag, path };
+  const labelledBy = element.getAttribute("aria-labelledby");
+  if (labelledBy) {
+    const referenced = labelledBy
+      .split(/\s+/)
+      .map((id) => element.ownerDocument.getElementById(id)?.textContent?.trim())
+      .filter(Boolean)
+      .join(" ");
+    if (referenced) return referenced;
   }
 
-  // Custom elements read well as-is: `<my-widget>` → `<my-widget>`.
-  if (tag.includes("-")) return { name: `<${tag}>`, path };
+  if (element instanceof HTMLImageElement && element.alt.trim()) return element.alt.trim();
+  return null;
+}
 
-  return { name: tag, path };
+/** Text belonging to this element, ignoring nested block content and our own UI. */
+function ownText(element: Element): string {
+  const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+  return text;
+}
+
+function distinguishingAttribute(element: Element): string | null {
+  for (const name of ["placeholder", "name", "type", "role", "href", "title"]) {
+    const value = element.getAttribute(name);
+    if (value) return `${name}="${truncate(value, 30)}"`;
+  }
+  return null;
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
 // -----------------------------------------------------------------------------
-// Surrounding context
+// Surroundings
 // -----------------------------------------------------------------------------
 
+/**
+ * The element's text with its neighbours' text bracketing it.
+ *
+ * The brackets matter: "Save changes" on its own is ambiguous when a page has three of
+ * them, and knowing what sits either side is usually what disambiguates.
+ */
 export function getNearbyText(element: Element): string {
-  const texts: string[] = [];
+  const own = truncate(ownText(element), MAX_CONTEXT_TEXT);
+  const before = siblingText(element, "previousElementSibling");
+  const after = siblingText(element, "nextElementSibling");
 
-  const own = element.textContent?.trim();
-  if (own && own.length < 100) texts.push(own);
+  const parts: string[] = [];
+  if (before) parts.push(`[before: "${before}"]`);
+  if (own) parts.push(own);
+  if (after) parts.push(`[after: "${after}"]`);
 
-  const previous = element.previousElementSibling?.textContent?.trim();
-  if (previous && previous.length < 50) texts.unshift(`[before: "${previous.slice(0, 40)}"]`);
-
-  const next = element.nextElementSibling?.textContent?.trim();
-  if (next && next.length < 50) texts.push(`[after: "${next.slice(0, 40)}"]`);
-
-  return texts.join(" ");
+  return parts.join(" ");
 }
 
+function siblingText(element: Element, direction: "previousElementSibling" | "nextElementSibling"): string {
+  let sibling = element[direction];
+  let hops = 0;
+  while (sibling && hops < 3) {
+    if (!isOurUi(sibling)) {
+      const text = ownText(sibling);
+      if (text) return truncate(text, 30);
+    }
+    sibling = sibling[direction];
+    hops++;
+  }
+  return "";
+}
+
+/** Siblings named the way the report names elements, with their text when they have any. */
 export function getNearbyElements(element: Element): string {
-  const parent = parentOf(element);
+  const parent = parentCrossingShadow(element);
   if (!parent) return "";
 
-  const siblings = Array.from(element.parentElement?.children ?? parent.children).filter(
-    (child) => child !== element,
-  );
-  if (!siblings.length) return "";
+  const out: string[] = [];
+  for (const sibling of Array.from(parent.children)) {
+    if (sibling === element || isOurUi(sibling)) continue;
+    if (out.length >= 4) break;
 
-  const described = siblings.slice(0, 4).map((sibling) => {
-    const tag = sibling.tagName.toLowerCase();
-    const cls = meaningfulClass(sibling);
-    const suffix = cls ? `.${cls}` : "";
+    const described = describeElement(sibling, 1);
+    const text = ownText(sibling);
+    out.push(text ? `${described} "${truncate(text, 24)}"` : described);
+  }
 
-    if (tag === "button" || tag === "a") {
-      const text = sibling.textContent?.trim().slice(0, 15);
-      if (text) return `${tag}${suffix} "${text}"`;
-    }
-    return `${tag}${suffix}`;
-  });
-
-  const parentCls = meaningfulClass(parent);
-  const parentId = parentCls ? `.${parentCls}` : parent.tagName.toLowerCase();
-  const total = parent.children.length;
-  const overflow = total > described.length + 1 ? ` (${total} total in ${parentId})` : "";
-
-  return described.join(", ") + overflow;
-}
-
-export function getElementClasses(target: Element): string {
-  const classes = classListOf(target)
-    .map(stripHash)
-    .filter((cls, index, all) => all.indexOf(cls) === index);
-  return classes.join(", ");
+  return out.join(", ");
 }
 
 // -----------------------------------------------------------------------------
 // Computed styles
 // -----------------------------------------------------------------------------
 
-const DEFAULT_VALUES = new Set([
-  "none",
-  "normal",
-  "auto",
-  "0px",
-  "rgba(0, 0, 0, 0)",
-  "transparent",
-  "static",
-  "visible",
-]);
+/** The properties most often relevant to "this looks wrong". */
+const SNAPSHOT_PROPERTIES = [
+  "color",
+  "background-color",
+  "font-size",
+  "font-weight",
+  "padding",
+  "margin",
+  "display",
+];
 
 const FORENSIC_PROPERTIES = [
   "color",
-  "backgroundColor",
-  "borderColor",
-  "fontSize",
-  "fontWeight",
-  "fontFamily",
-  "lineHeight",
-  "letterSpacing",
-  "textAlign",
+  "background-color",
+  "border-color",
+  "font-size",
+  "font-weight",
+  "font-family",
+  "text-align",
   "width",
   "height",
   "padding",
   "margin",
   "border",
-  "borderRadius",
+  "border-radius",
   "display",
+  "flex-direction",
+  "justify-content",
+  "align-items",
   "position",
-  "top",
-  "right",
-  "bottom",
-  "left",
-  "zIndex",
-  "flexDirection",
-  "justifyContent",
-  "alignItems",
-  "gap",
+  "z-index",
   "opacity",
-  "visibility",
   "overflow",
-  "boxShadow",
-  "transform",
 ];
 
-function toCssName(property: string): string {
-  return property.replace(/([A-Z])/g, "-$1").toLowerCase();
+function declarations(target: Element, properties: string[]): string {
+  const computed = getComputedStyle(target);
+  const out: string[] = [];
+
+  for (const property of properties) {
+    const value = computed.getPropertyValue(property).trim();
+    if (!value || value === "none" || value === "normal" || value === "auto") continue;
+    // A font stack is unreadable in a report; its first family is the useful part.
+    const rendered = property === "font-family" ? value.split(",")[0].replace(/["']/g, "") : value;
+    out.push(`${property}: ${rendered}`);
+  }
+
+  return out.join("; ");
 }
 
-/** The short version — what you want on a "detailed" report. */
 export function getComputedStylesSnapshot(target: Element): string {
-  const styles = window.getComputedStyle(target);
-  const parts: string[] = [];
-
-  if (styles.color && styles.color !== "rgb(0, 0, 0)") parts.push(`color: ${styles.color}`);
-  if (styles.backgroundColor && !DEFAULT_VALUES.has(styles.backgroundColor)) {
-    parts.push(`bg: ${styles.backgroundColor}`);
-  }
-  if (styles.fontSize) parts.push(`font: ${styles.fontSize}`);
-  if (styles.fontWeight && styles.fontWeight !== "400") parts.push(`weight: ${styles.fontWeight}`);
-  if (styles.padding && styles.padding !== "0px") parts.push(`padding: ${styles.padding}`);
-  if (styles.margin && styles.margin !== "0px") parts.push(`margin: ${styles.margin}`);
-  if (styles.display && styles.display !== "block" && styles.display !== "inline") {
-    parts.push(`display: ${styles.display}`);
-  }
-  if (styles.position && styles.position !== "static") parts.push(`position: ${styles.position}`);
-  if (styles.borderRadius && styles.borderRadius !== "0px") {
-    parts.push(`radius: ${styles.borderRadius}`);
-  }
-
-  return parts.join(", ");
+  return declarations(target, SNAPSHOT_PROPERTIES);
 }
 
-/** The long version — every property that could plausibly matter. */
 export function getForensicComputedStyles(target: Element): string {
-  const styles = window.getComputedStyle(target);
-  const parts: string[] = [];
-
-  for (const property of FORENSIC_PROPERTIES) {
-    const cssName = toCssName(property);
-    const value = styles.getPropertyValue(cssName);
-    if (value && !DEFAULT_VALUES.has(value)) parts.push(`${cssName}: ${value}`);
-  }
-
-  return parts.join("; ");
+  return declarations(target, FORENSIC_PROPERTIES);
 }
 
+// -----------------------------------------------------------------------------
+// Accessibility
+// -----------------------------------------------------------------------------
+
+const NATIVELY_FOCUSABLE = new Set(["a", "button", "input", "select", "textarea", "summary"]);
+
+/**
+ * The accessibility facts worth putting in a bug report: the explicit ARIA surface, and
+ * whether a keyboard user can reach the thing at all — which is the one most often wrong.
+ */
 export function getAccessibilityInfo(target: Element): string {
   const parts: string[] = [];
 
   const role = target.getAttribute("role");
-  const label = target.getAttribute("aria-label");
-  const describedBy = target.getAttribute("aria-describedby");
-  const tabIndex = target.getAttribute("tabindex");
-  const hidden = target.getAttribute("aria-hidden");
-
   if (role) parts.push(`role="${role}"`);
-  if (label) parts.push(`aria-label="${label}"`);
-  if (describedBy) parts.push(`aria-describedby="${describedBy}"`);
-  if (tabIndex) parts.push(`tabindex=${tabIndex}`);
-  if (hidden === "true") parts.push("aria-hidden");
-  if (target.matches("a, button, input, select, textarea, [tabindex]")) parts.push("focusable");
+
+  for (const attribute of Array.from(target.attributes)) {
+    if (attribute.name.startsWith("aria-")) parts.push(`${attribute.name}="${attribute.value}"`);
+  }
+
+  const tag = target.tagName.toLowerCase();
+  const tabIndex = target.getAttribute("tabindex");
+  const disabled = target.hasAttribute("disabled");
+  const focusable = !disabled && (NATIVELY_FOCUSABLE.has(tag) || (!!tabIndex && tabIndex !== "-1"));
+
+  parts.push(focusable ? "focusable" : "not focusable");
+  if (disabled) parts.push("disabled");
+  if (tabIndex) parts.push(`tabindex="${tabIndex}"`);
 
   return parts.join(", ");
 }
 
 // -----------------------------------------------------------------------------
+// Predicates
+// -----------------------------------------------------------------------------
 
-/** `position: fixed|sticky` anywhere up the chain means the marker must not scroll. */
+/**
+ * True when the element or any ancestor is taken out of the scroll flow.
+ *
+ * Markers on such elements must be positioned against the viewport instead of the
+ * document, or they drift away as soon as the page scrolls.
+ */
 export function isFixedPosition(target: Element): boolean {
   let current: Element | null = target;
   let depth = 0;
-  while (current && depth < 20) {
-    const position = window.getComputedStyle(current).position;
+
+  while (current && depth < 40) {
+    const position = getComputedStyle(current).position;
     if (position === "fixed" || position === "sticky") return true;
-    current = current.parentElement;
+    current = parentCrossingShadow(current);
     depth++;
   }
+
   return false;
 }
 
-/**
- * Elements we must never hand back as an annotation target.
- *
- * Note this deliberately does NOT reject elements carrying the bridge's probe
- * attribute. That attribute is on the element precisely because we are inspecting
- * it — an earlier version excluded it, which silently swallowed any click that
- * landed while a hover lookup was still in flight.
- */
+const NOT_ANNOTATABLE = new Set(["HTML", "BODY", "HEAD", "SCRIPT", "STYLE", "META", "LINK", "TITLE"]);
+
+/** Whether it makes sense to pin a note to this node at all. */
 export function isAnnotatable(element: Element | null): element is Element {
-  if (!element) return false;
+  if (!element || !(element instanceof Element)) return false;
+  if (NOT_ANNOTATABLE.has(element.tagName)) return false;
   if (isOurUi(element)) return false;
-  const tag = element.tagName.toLowerCase();
-  return tag !== "html" && tag !== "body";
+  return true;
 }
