@@ -139,12 +139,11 @@ export class Toolbar {
       return;
     }
 
+    // No framework on the page is the ordinary case for a universal annotator, not a
+    // problem worth a warning colour. The report simply carries no component data.
     if (!page.detected) {
-      this.stackBadge.style.display = "inline-flex";
-      this.stackBadge.dataset.warn = "true";
-      this.stackBadge.textContent = "No Vue detected";
-      this.stackBadge.title =
-        "No Vue runtime found on this page. Annotations still work, but there will be no component or source information.";
+      this.stackBadge.style.display = "none";
+      delete this.stackBadge.dataset.warn;
       return;
     }
 

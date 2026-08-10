@@ -440,8 +440,12 @@ async function main() {
 
     // The retry in boot() waits 1.5s before giving up on a late-hydrating app.
     await plain.waitForTimeout(2_000);
-    const plainBadge = (await plain.locator(".stack-badge").textContent())?.trim() ?? "";
-    check("non-Vue pages say so", plainBadge === "No Vue detected", `badge read "${plainBadge}"`);
+    const plainBadgeVisible = await plain.locator(".stack-badge").isVisible();
+    check(
+      "non-framework pages show no stack badge",
+      !plainBadgeVisible,
+      `badge visible: ${plainBadgeVisible}`,
+    );
 
     await plain.locator(".tool--brand").click();
     await plain.locator(".cta").click();
