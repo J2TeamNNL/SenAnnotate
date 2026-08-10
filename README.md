@@ -253,6 +253,42 @@ Fixtures under `test/fixtures/` reproduce what `@vitejs/plugin-vue` emits
 (`__name`, `__file`, `data-v-inspector`) so the source-resolution path is
 exercised end to end.
 
+### The two `verify-*` scripts
+
+`npm test` is hermetic — it serves its own fixtures and always runs. Two extra
+checks cover what fixtures cannot, and are kept out of the suite because each needs
+something it cannot guarantee:
+
+```bash
+npm run verify:sites     # needs network
+npm run verify:tracer    # needs a running Nuxt dev server
+```
+
+- **`verify:sites`** drives the extension against real third-party pages
+  (`example.com`, `react.dev`) and asserts the no-framework path: the toolbar
+  appears, no stack badge, and the copied report never says "Vue" nor carries a
+  `Stack:` line. Assertions are loose on purpose — an upstream redesign should not
+  read as a regression.
+- **`verify:tracer`** confirms `file:line:column` against a **real**
+  `vite-plugin-vue-tracer`, by reading the plugin's own
+  `globalThis.__vue_tracer__` store out of the page. A `:12:5` in a report does not
+  by itself prove the tracer produced it, and this is precisely the path the first
+  version got wrong. Start a dev server first:
+
+  ```bash
+  cd ../../storefront_v5
+  TMPDIR=/tmp/nx ./node_modules/.bin/nuxt dev --port 3005
+  ```
+
+  The short `TMPDIR` is required on macOS — Nuxt's vite-node socket path otherwise
+  exceeds the 104-byte limit, fails to bind silently, and every request 500s. Invoke
+  the local binary rather than `npx`, which under a shell wrapper can stay alive
+  while logging nothing.
+
+Both write screenshots to `test/screenshots/` (gitignored) and share
+`test/verify-harness.mjs`. `e2e.mjs` deliberately does not use that harness — it is
+the only regression net here and stays self-contained.
+
 ## Layout
 
 ```

@@ -11,3 +11,6 @@ test/fixtures/vendor/
 
 # Built by test/build-prod-fixtures.mjs
 test/fixtures/prod/
+
+# Written by the test/verify-*.mjs scripts
+test/screenshots/
