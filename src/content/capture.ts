@@ -57,13 +57,13 @@ export async function captureDraft(
   const box = subject.getBoundingClientRect();
   const fixed = isFixedPosition(subject);
 
-  const vue = await inspectElement(
+  const framework = await inspectElement(
     subject,
     settings.componentMode,
     settings.maxComponents,
     settings.includeProps,
   );
-  const source = resolveSource(subject, vue);
+  const source = resolveSource(subject, framework);
 
   const isMultiSelect = elements.length > 1;
   const detail = settings.detailLevel;
@@ -87,7 +87,7 @@ export async function captureDraft(
 
     selectedText: options.selectedText,
     cssClasses: getElementClasses(subject) || undefined,
-    vue: vue ?? undefined,
+    framework: framework ?? undefined,
     source: source ?? undefined,
   };
 

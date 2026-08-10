@@ -15,7 +15,7 @@ import {
   type Diagnostics,
   type InspectMode,
   type OutputDetailLevel,
-  type PageVueInfo,
+  type PageFrameworkInfo,
   type Settings,
 } from "../shared/types";
 import {
@@ -68,7 +68,7 @@ window.__senannotateInstalled = true;
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
 let annotations: Annotation[] = [];
-let page: PageVueInfo | null = null;
+let page: PageFrameworkInfo | null = null;
 /** Mirror of the MAIN world's buffers, kept current by pushed events. */
 let diagnosticsCache: Diagnostics | null = null;
 
@@ -273,8 +273,8 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
     { primary: draft.element, secondary: formatSource(draft.source) },
   );
 
-  const props = draft.vue?.props
-    ? Object.entries(draft.vue.props)
+  const props = draft.framework?.props
+    ? Object.entries(draft.framework.props)
         .slice(0, 4)
         .map(([key, value]) => `${key}=${value}`)
         .join(", ")
@@ -286,7 +286,7 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
     {
       title: draft.element,
       source: formatSource(draft.source),
-      components: draft.vue?.path ?? null,
+      components: draft.framework?.path ?? null,
       props: props || null,
       selectedText: draft.selectedText,
       elementCount: draft.elementBoundingBoxes?.length,

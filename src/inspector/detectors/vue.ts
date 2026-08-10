@@ -19,10 +19,19 @@
 
 import type {
   ComponentDetectionMode,
-  PageVueInfo,
-  VueElementInfo,
-  VueMajor,
-} from "../shared/types";
+  ElementFrameworkInfo,
+  PageFrameworkInfo,
+} from "../../shared/types";
+import { componentNameFromFile, relativizeFile } from "./relativize";
+import {
+  emptyElementInfo,
+  formatComponentPath,
+  isEmptyElementInfo,
+  type FrameworkDetector,
+  type InspectOptions,
+} from "./types";
+
+type VueMajor = 2 | 3;
 
 // -----------------------------------------------------------------------------
 // Loose structural types for the runtime objects we read
@@ -285,46 +294,7 @@ function shouldInclude(
 // Source file resolution
 // -----------------------------------------------------------------------------
 
-/**
- * Turn the compiler's absolute `__file` into something you can `grep` for.
- *
- *   /Users/me/app/src/components/BaseButton.vue?vue&type=script
- *     → src/components/BaseButton.vue
- */
-const PATH_MARKERS = [
-  "/src/",
-  "/app/",
-  "/pages/",
-  "/components/",
-  "/layouts/",
-  "/views/",
-  "/composables/",
-  "/plugins/",
-  "/modules/",
-];
-
-export function relativizeFile(file: string): string {
-  const clean = file.split("?")[0].replace(/\\/g, "/");
-
-  // Already relative (vue-tracer hands these over) — leave it alone. Running the
-  // marker/tail logic below on a short relative path would truncate it.
-  if (!clean.startsWith("/") && !/^[a-zA-Z]:\//.test(clean)) return clean;
-
-  for (const marker of PATH_MARKERS) {
-    const at = clean.indexOf(marker);
-    if (at !== -1) return clean.slice(at + 1);
-  }
-
-  // Unknown layout: the trailing few segments are still a usable grep target.
-  const segments = clean.split("/").filter(Boolean);
-  return segments.slice(-3).join("/");
-}
-
-function basename(file: string): string {
-  const relative = relativizeFile(file);
-  const last = relative.split("/").pop() ?? relative;
-  return last.replace(/\.(vue|tsx?|jsx?)$/, "");
-}
+// `relativizeFile` and `basename` moved to ./relativize.ts — every detector needs them.
 
 // -----------------------------------------------------------------------------
 // Name resolution
@@ -344,7 +314,7 @@ function nameFromVue3Type(type: Vue3Instance["type"]): string | null {
   if (type.__name) return type.__name;
   if (type.name) return type.name;
   if (type.displayName) return type.displayName;
-  if (type.__file) return basename(type.__file);
+  if (type.__file) return componentNameFromFile(type.__file);
   return null;
 }
 
@@ -352,7 +322,7 @@ function nameFromVue2(vm: Vue2Instance): string | null {
   const options = vm.$options || {};
   if (options.name) return options.name;
   if (options._componentTag) return options._componentTag;
-  if (options.__file) return basename(options.__file);
+  if (options.__file) return componentNameFromFile(options.__file);
   return null;
 }
 
@@ -548,28 +518,18 @@ function globalProperties3(instance: Vue3Instance | null, root: Probe | null): R
   );
 }
 
-export function detectPage(): PageVueInfo {
+function detectVuePage(): PageFrameworkInfo | null {
   const { element, major } = probePage();
+
+  // Not a Vue page at all — let the dispatcher try the next detector rather than
+  // claiming the page with a `detected: false` result.
+  if (!element || !major) return null;
+
   const nuxt = "__NUXT__" in window || !!document.getElementById("__nuxt");
-
-  if (!element || !major) {
-    return {
-      detected: false,
-      major: null,
-      flavour: null,
-      version: null,
-      devMetadata: false,
-      hasInspectorAttrs: false,
-      hasTracer: false,
-      stateManager: null,
-      routePath: null,
-    };
-  }
-
   const hasInspectorAttrs = !!document.querySelector("[data-v-inspector]");
   const hasTracer = !!tracerStore()?.hasData;
   let version: string | null = null;
-  let stateManager: "pinia" | "vuex" | null = null;
+  let stateManager: string | null = null;
   let routePath: string | null = null;
   let devMetadata = false;
 
@@ -599,12 +559,13 @@ export function detectPage(): PageVueInfo {
 
   return {
     detected: true,
-    major,
-    flavour: nuxt ? (major === 3 ? "nuxt3" : "nuxt2") : major === 3 ? "vue3" : "vue2",
+    framework: "vue",
+    // The label the toolbar and the report show. Kept here rather than mapped
+    // elsewhere so a new framework never means editing a switch in output.ts.
+    flavour: nuxt ? (major === 3 ? "Nuxt 3/4" : "Nuxt 2") : major === 3 ? "Vue 3" : "Vue 2",
     version,
     devMetadata,
-    hasInspectorAttrs,
-    hasTracer,
+    hasSourcePositions: hasTracer || hasInspectorAttrs,
     stateManager,
     routePath,
   };
@@ -614,25 +575,33 @@ export function detectPage(): PageVueInfo {
 // Element-level inspection
 // -----------------------------------------------------------------------------
 
-export interface InspectOptions {
-  mode: ComponentDetectionMode;
-  maxComponents: number;
-  includeProps: boolean;
+/**
+ * Source breadcrumbs Vue leaves on the element itself, independent of whether a
+ * component owner was found: the tracer position, and any scoped-style hashes.
+ */
+function emptyInfo(element: Element): ElementFrameworkInfo {
+  const info = emptyElementInfo();
+  const tracer = readTracerPosition(element);
+  if (tracer) {
+    info.source = { ...tracer, precision: "exact" };
+  }
+  info.grepHandles = scopeIdsOf(element);
+  return info;
 }
 
-function emptyInfo(element: Element): VueElementInfo {
-  return {
-    path: null,
-    components: [],
-    ownerComponent: null,
-    sourceFile: null,
-    tracer: readTracerPosition(element),
-    scopeIds: scopeIdsOf(element),
-    props: {},
-  };
+/**
+ * Record a file-level path, but never over an exact one.
+ *
+ * `emptyInfo` may already have set an exact tracer position, which outranks any
+ * `__file`. The guard is what preserves the old precedence now that both live in the
+ * same field.
+ */
+function recordFile(info: ElementFrameworkInfo, file: string | undefined): void {
+  if (info.source || !file) return;
+  info.source = { file: relativizeFile(file), precision: "file" };
 }
 
-function inspectVue3(element: Element, options: InspectOptions): VueElementInfo | null {
+function inspectVue3(element: Element, options: InspectOptions): ElementFrameworkInfo | null {
   const owner = findVue3Owner(element);
   if (!owner) return null;
 
@@ -642,9 +611,9 @@ function inspectVue3(element: Element, options: InspectOptions): VueElementInfo 
   info.ownerComponent = nameFromVue3Type(owner.type);
 
   const ownerType = typeof owner.type === "object" ? owner.type : null;
-  if (ownerType?.__file) info.sourceFile = relativizeFile(ownerType.__file);
-  if (ownerType?.__scopeId && !info.scopeIds.includes(ownerType.__scopeId)) {
-    info.scopeIds.push(ownerType.__scopeId);
+  recordFile(info, ownerType?.__file);
+  if (ownerType?.__scopeId && !info.grepHandles.includes(ownerType.__scopeId)) {
+    info.grepHandles.push(ownerType.__scopeId);
   }
   if (options.includeProps) info.props = snapshotProps(owner.props);
 
@@ -657,26 +626,17 @@ function inspectVue3(element: Element, options: InspectOptions): VueElementInfo 
       if (info.components[info.components.length - 1] !== name) info.components.push(name);
     }
     // Fall back to the nearest ancestor's file when the owner had none of its own.
-    if (!info.sourceFile) {
-      const type = typeof current.type === "object" ? current.type : null;
-      if (type?.__file) info.sourceFile = relativizeFile(type.__file);
-    }
+    const type = typeof current.type === "object" ? current.type : null;
+    recordFile(info, type?.__file);
     current = current.parent;
     depth++;
   }
 
-  info.path = info.components.length
-    ? info.components
-        .slice()
-        .reverse()
-        .map((name) => `<${name}>`)
-        .join(" ")
-    : null;
-
+  info.path = formatComponentPath(info.components);
   return info;
 }
 
-function inspectVue2(element: Element, options: InspectOptions): VueElementInfo | null {
+function inspectVue2(element: Element, options: InspectOptions): ElementFrameworkInfo | null {
   const owner = findVue2Owner(element);
   if (!owner) return null;
 
@@ -684,7 +644,7 @@ function inspectVue2(element: Element, options: InspectOptions): VueElementInfo 
   const domClasses = options.mode === "smart" ? collectAncestorClasses(element) : null;
 
   info.ownerComponent = nameFromVue2(owner);
-  if (owner.$options?.__file) info.sourceFile = relativizeFile(owner.$options.__file);
+  recordFile(info, owner.$options?.__file);
   if (options.includeProps) info.props = snapshotProps(owner.$props);
 
   let current: Vue2Instance | null = owner;
@@ -694,31 +654,42 @@ function inspectVue2(element: Element, options: InspectOptions): VueElementInfo 
     if (name && !isMinified(name) && shouldInclude(name, options.mode, domClasses)) {
       if (info.components[info.components.length - 1] !== name) info.components.push(name);
     }
-    if (!info.sourceFile && current.$options?.__file) {
-      info.sourceFile = relativizeFile(current.$options.__file);
-    }
+    recordFile(info, current.$options?.__file);
     current = current.$parent;
     depth++;
   }
 
-  info.path = info.components.length
-    ? info.components
-        .slice()
-        .reverse()
-        .map((name) => `<${name}>`)
-        .join(" ")
-    : null;
-
+  info.path = formatComponentPath(info.components);
   return info;
 }
 
-export function inspectElement(element: Element, options: InspectOptions): VueElementInfo | null {
-  if (options.mode === "off") return null;
+export const vueDetector: FrameworkDetector = {
+  id: "vue",
 
-  try {
-    return inspectVue3(element, options) ?? inspectVue2(element, options) ?? emptyInfo(element);
-  } catch {
-    // A corrupted instance tree must never take the toolbar down with it.
-    return emptyInfo(element);
-  }
-}
+  detect() {
+    try {
+      return detectVuePage();
+    } catch {
+      return null;
+    }
+  },
+
+  inspect(element, options) {
+    if (options.mode === "off") return null;
+
+    try {
+      const owned = inspectVue3(element, options) ?? inspectVue2(element, options);
+      if (owned) return owned;
+
+      // No component owner on this element. Vue may still have left breadcrumbs — a
+      // tracer position or a scoped-style hash — which are worth reporting. If it left
+      // nothing, return null so the dispatcher tries the next framework instead of
+      // this detector silently claiming every element on the page.
+      const breadcrumbs = emptyInfo(element);
+      return isEmptyElementInfo(breadcrumbs) ? null : breadcrumbs;
+    } catch {
+      // A corrupted instance tree must never take the toolbar down with it.
+      return null;
+    }
+  },
+};

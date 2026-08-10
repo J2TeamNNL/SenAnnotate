@@ -27,17 +27,26 @@ export interface Rect {
 }
 
 // -----------------------------------------------------------------------------
-// Vue-specific detection results
+// Framework detection results
 // -----------------------------------------------------------------------------
+//
+// Framework-neutral by design: one detector per framework implements
+// `FrameworkDetector` (src/inspector/detectors/types.ts) and fills these in. Nothing
+// outside `src/inspector/detectors/` should know which frameworks exist — display
+// labels come from the detector, not from a switch elsewhere.
 
-export type VueMajor = 2 | 3;
-export type VueFlavour = "vue2" | "vue3" | "nuxt2" | "nuxt3";
+export type FrameworkId = "vue" | "react" | "svelte" | "angular";
 
 /** Whole-page detection, answered once per page (and re-answered on demand). */
-export interface PageVueInfo {
+export interface PageFrameworkInfo {
   detected: boolean;
-  major: VueMajor | null;
-  flavour: VueFlavour | null;
+  framework: FrameworkId | null;
+  /**
+   * Display label chosen by the detector — "Vue 3", "Nuxt 3/4", "SvelteKit", "Next.js".
+   * Kept as free text so adding a framework never means editing a label mapping
+   * somewhere else.
+   */
+  flavour: string | null;
   /** Reported by the runtime when available, e.g. "3.5.13". */
   version: string | null;
   /**
@@ -45,11 +54,14 @@ export interface PageVueInfo {
    * production build, where the report degrades to selectors + DOM path.
    */
   devMetadata: boolean;
-  /** Legacy `vite-plugin-vue-inspector` is emitting `data-v-inspector`. */
-  hasInspectorAttrs: boolean;
-  /** `vite-plugin-vue-tracer` is recording positions — current Nuxt DevTools. */
-  hasTracer: boolean;
-  stateManager: "pinia" | "vuex" | null;
+  /**
+   * Exact `file:line:column` is obtainable, not just a filename. True for Vue's
+   * tracer or `data-v-inspector`, Svelte's `__svelte_meta`, React's pre-19
+   * `_debugSource`.
+   */
+  hasSourcePositions: boolean;
+  /** e.g. "pinia", "vuex", "redux", "ngrx". Free text for the same reason as `flavour`. */
+  stateManager: string | null;
   routePath: string | null;
 }
 
@@ -60,31 +72,43 @@ export interface SourceRef {
   line?: number;
   column?: number;
   /**
-   * - `tracer`    exact, from `vite-plugin-vue-tracer`'s global store — what
-   *               current Nuxt DevTools ships (line + column)
-   * - `inspector` exact, from the legacy `data-v-inspector` DOM attribute
-   * - `__file`    file-level, from the component options the compiler injected
-   * - `scope-id`  no path at all; a `data-v-*` hash to grep for
+   * - `exact`        line and column, straight from the framework's own records
+   * - `dom-attr`     line and column, read off a build-plugin DOM attribute
+   * - `file`         file-level only, from component metadata the compiler injected
+   * - `grep-handle`  no path at all; an opaque but unique string to grep for
    */
-  origin: "tracer" | "inspector" | "__file" | "scope-id";
+  origin: "exact" | "dom-attr" | "file" | "grep-handle";
 }
 
 /** Per-element detection result. */
-export interface VueElementInfo {
+export interface ElementFrameworkInfo {
   /** Ancestry rendered outermost → innermost, e.g. `<App> <TheSidebar> <BaseButton>`. */
   path: string | null;
   /** Component names, innermost → outermost. */
   components: string[];
   /** The component that owns this element (innermost, unfiltered). */
   ownerComponent: string | null;
-  /** Resolved from the owner's `__file`, if the compiler injected one. */
-  sourceFile: string | null;
-  /** Exact position from `vite-plugin-vue-tracer`, when Nuxt DevTools is on. */
-  tracer: { file: string; line?: number; column?: number } | null;
-  /** Scoped-style hashes present on the element (`data-v-7ba5bd90`). */
-  scopeIds: string[];
+  /**
+   * Best location the framework itself knows about.
+   *
+   * `precision` matters to `resolveSource()`: `exact` wins outright, while `file`
+   * has to compete with a DOM attribute that may carry line and column but may have
+   * been inherited from a wrapper in a different file.
+   */
+  source: {
+    file: string;
+    line?: number;
+    column?: number;
+    precision: "exact" | "file";
+  } | null;
   /** Shallow, truncated snapshot of the owner component's resolved props. */
   props: Record<string, string>;
+  /**
+   * Opaque strings that survive minification and are unique enough to `grep -r`.
+   * Vue fills this with scoped-style hashes (`data-v-7ba5bd90`); most frameworks
+   * have no equivalent and leave it empty.
+   */
+  grepHandles: string[];
 }
 
 // -----------------------------------------------------------------------------
@@ -174,7 +198,12 @@ export interface Annotation {
   accessibility?: string;
   fullPath?: string;
 
-  vue?: VueElementInfo;
+  /**
+   * Renamed from `vue` in 0.3.0. Annotations persisted by an older build keep the old
+   * key and simply lose their component line when reloaded — they are per-review
+   * scratch data, so no migration is worth carrying.
+   */
+  framework?: ElementFrameworkInfo;
   source?: SourceRef;
   /** Filename of the PNG the user downloaded for this annotation, if any. */
   screenshot?: string;

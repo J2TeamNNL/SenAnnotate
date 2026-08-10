@@ -27,7 +27,7 @@ import {
   setDiagnosticsListener,
 } from "./diagnostics";
 import { freeze, originalSetTimeout, unfreeze } from "./freeze";
-import { detectPage, inspectElement } from "./vue-internals";
+import { detectPage, inspectElement } from "./detectors";
 
 // Installed immediately, not on demand: this script runs at `document_start`, and
 // the whole point is to be in place before the page's first request or first

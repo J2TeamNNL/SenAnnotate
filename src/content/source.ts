@@ -17,7 +17,7 @@
 // =============================================================================
 
 import { INSPECTOR_ATTR } from "../shared/protocol";
-import type { SourceRef, VueElementInfo } from "../shared/types";
+import type { SourceRef, ElementFrameworkInfo } from "../shared/types";
 
 /**
  * Read `data-v-inspector` off the element or the nearest ancestor carrying one.
@@ -51,55 +51,60 @@ export function parseInspectorValue(raw: string): SourceRef | null {
       file: match[1],
       line: Number(match[2]),
       column: Number(match[3]),
-      origin: "inspector",
+      origin: "dom-attr",
     };
   }
 
   const fileOnly = raw.match(/^(.*?):(\d+)$/);
   if (fileOnly) {
-    return { file: fileOnly[1], line: Number(fileOnly[2]), origin: "inspector" };
+    return { file: fileOnly[1], line: Number(fileOnly[2]), origin: "dom-attr" };
   }
 
-  return raw ? { file: raw, origin: "inspector" } : null;
+  return raw ? { file: raw, origin: "dom-attr" } : null;
 }
 
 /**
  * Pick the best available source reference for an element.
  *
- * The tracer wins outright when present: it is exact, it comes from the vnode
- * that actually rendered this element, and it is what current Nuxt DevTools
- * provides.
+ * An `exact` position from the framework wins outright: it names the very node that
+ * rendered this element, with line and column.
  *
- * Failing that, `data-v-inspector` wins on precision — but only when it agrees
- * with the component the inspector found. When they disagree (the attribute was
- * inherited from a wrapper in a *different* file) the component's own `__file` is
- * the more honest answer, so it takes precedence.
+ * Failing that, the DOM attribute wins on precision — but only when it agrees with the
+ * file the framework reported. When they disagree (the attribute was inherited from a
+ * wrapper in a *different* file) the framework's own answer is the more honest one, so
+ * it takes precedence.
+ *
+ * This function knows nothing about which framework produced the info; that is the
+ * point. Vue-specific ranking lives in the Vue detector.
  */
-export function resolveSource(element: Element, vue: VueElementInfo | null): SourceRef | null {
-  if (vue?.tracer) {
+export function resolveSource(
+  element: Element,
+  info: ElementFrameworkInfo | null,
+): SourceRef | null {
+  if (info?.source?.precision === "exact") {
     return {
-      file: vue.tracer.file,
-      line: vue.tracer.line,
-      column: vue.tracer.column,
-      origin: "tracer",
+      file: info.source.file,
+      line: info.source.line,
+      column: info.source.column,
+      origin: "exact",
     };
   }
 
   const fromAttribute = readInspectorAttribute(element);
-  const fromComponent = vue?.sourceFile
-    ? ({ file: vue.sourceFile, origin: "__file" } as SourceRef)
+  const fromFramework = info?.source
+    ? ({ file: info.source.file, origin: "file" } as SourceRef)
     : null;
 
-  if (fromAttribute && fromComponent) {
-    const sameFile = basename(fromAttribute.file) === basename(fromComponent.file);
-    return sameFile ? fromAttribute : fromComponent;
+  if (fromAttribute && fromFramework) {
+    const sameFile = basename(fromAttribute.file) === basename(fromFramework.file);
+    return sameFile ? fromAttribute : fromFramework;
   }
 
   if (fromAttribute) return fromAttribute;
-  if (fromComponent) return fromComponent;
+  if (fromFramework) return fromFramework;
 
-  const scopeId = vue?.scopeIds?.[0];
-  if (scopeId) return { file: scopeId, origin: "scope-id" };
+  const handle = info?.grepHandles?.[0];
+  if (handle) return { file: handle, origin: "grep-handle" };
 
   return null;
 }

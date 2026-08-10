@@ -12,14 +12,14 @@ import type {
   Annotation,
   Diagnostics,
   OutputDetailLevel,
-  PageVueInfo,
+  PageFrameworkInfo,
   SourceRef,
 } from "./types";
 
 /** Rendered form for a report line: `src/components/Foo.vue:12:5`. */
 export function formatSource(source: SourceRef | undefined | null): string | null {
   if (!source) return null;
-  if (source.origin === "scope-id") return `(no path — grep for \`[${source.file}]\`)`;
+  if (source.origin === "grep-handle") return `(no path — grep for \`[${source.file}]\`)`;
   if (source.line && source.column) return `${source.file}:${source.line}:${source.column}`;
   if (source.line) return `${source.file}:${source.line}`;
   return source.file;
@@ -32,17 +32,11 @@ function formatProps(props: Record<string, string> | undefined): string | null {
   return entries.map(([key, value]) => `${key}=${value}`).join(", ");
 }
 
-function describeStack(page: PageVueInfo | null): string | null {
+function describeStack(page: PageFrameworkInfo | null): string | null {
   if (!page?.detected) return null;
 
-  const label =
-    page.flavour === "nuxt3"
-      ? "Nuxt 3/4"
-      : page.flavour === "nuxt2"
-        ? "Nuxt 2"
-        : page.flavour === "vue3"
-          ? "Vue 3"
-          : "Vue 2";
+  // The detector names itself, so adding a framework never means editing this.
+  const label = page.flavour ?? page.framework ?? "detected";
 
   const bits = [page.version ? `${label} ${page.version}` : label];
   if (page.stateManager) bits.push(page.stateManager);
@@ -53,7 +47,7 @@ function describeStack(page: PageVueInfo | null): string | null {
 export interface OutputContext {
   pathname: string;
   href: string;
-  page: PageVueInfo | null;
+  page: PageFrameworkInfo | null;
   diagnostics?: Diagnostics | null;
   actions?: ActionEntry[];
 }
@@ -176,12 +170,12 @@ export function generateOutput(
         lines.push("*Multi-element selection — forensic detail is for the first element.*");
       }
       if (source) lines.push(`**Source:** ${source}`);
-      if (annotation.vue?.path) lines.push(`**Components:** ${annotation.vue.path}`);
-      if (annotation.vue?.ownerComponent) lines.push(`**Owner:** <${annotation.vue.ownerComponent}>`);
-      const props = formatProps(annotation.vue?.props);
+      if (annotation.framework?.path) lines.push(`**Components:** ${annotation.framework.path}`);
+      if (annotation.framework?.ownerComponent) lines.push(`**Owner:** <${annotation.framework.ownerComponent}>`);
+      const props = formatProps(annotation.framework?.props);
       if (props) lines.push(`**Props:** ${props}`);
-      if (annotation.vue?.scopeIds.length) {
-        lines.push(`**Scope IDs:** ${annotation.vue.scopeIds.join(", ")}`);
+      if (annotation.framework?.grepHandles.length) {
+        lines.push(`**Grep handles:** ${annotation.framework.grepHandles.join(", ")}`);
       }
       lines.push(`**Selector:** \`${annotation.selector}\``);
       if (annotation.fullPath) lines.push(`**Full DOM path:** ${annotation.fullPath}`);
@@ -205,12 +199,12 @@ export function generateOutput(
 
     // standard + detailed
     if (source) lines.push(`**Source:** ${source}`);
-    if (annotation.vue?.path) lines.push(`**Components:** ${annotation.vue.path}`);
+    if (annotation.framework?.path) lines.push(`**Components:** ${annotation.framework.path}`);
     lines.push(`**Location:** ${annotation.elementPath}`);
 
     if (detailLevel === "detailed") {
       lines.push(`**Selector:** \`${annotation.selector}\``);
-      const props = formatProps(annotation.vue?.props);
+      const props = formatProps(annotation.framework?.props);
       if (props) lines.push(`**Props:** ${props}`);
       if (annotation.cssClasses) lines.push(`**Classes:** ${annotation.cssClasses}`);
       if (annotation.boundingBox) lines.push(`**Position:** ${formatBox(annotation)}`);

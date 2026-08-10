@@ -2,7 +2,7 @@
 // Floating toolbar
 // =============================================================================
 
-import type { InspectMode, PageVueInfo } from "../../shared/types";
+import type { InspectMode, PageFrameworkInfo } from "../../shared/types";
 import { h, icon } from "./dom";
 
 export interface ToolbarState {
@@ -11,7 +11,7 @@ export interface ToolbarState {
   frozen: boolean;
   panelOpen: boolean;
   count: number;
-  page: PageVueInfo | null;
+  page: PageFrameworkInfo | null;
 }
 
 export interface ToolbarCallbacks {
@@ -133,7 +133,7 @@ export class Toolbar {
    * The badge is the honest answer to "why is my Source line missing?" — it says
    * up front when the page is a production build with no component metadata.
    */
-  private applyStackBadge(page: PageVueInfo | null): void {
+  private applyStackBadge(page: PageFrameworkInfo | null): void {
     if (!page) {
       this.stackBadge.style.display = "none";
       return;
@@ -147,14 +147,8 @@ export class Toolbar {
       return;
     }
 
-    const label =
-      page.flavour === "nuxt3"
-        ? "Nuxt 3/4"
-        : page.flavour === "nuxt2"
-          ? "Nuxt 2"
-          : page.flavour === "vue3"
-            ? "Vue 3"
-            : "Vue 2";
+    // The detector supplies its own label, so this stays framework-agnostic.
+    const label = page.flavour ?? page.framework ?? "Detected";
 
     this.stackBadge.style.display = "inline-flex";
     this.stackBadge.textContent = page.version ? `${label} ${page.version}` : label;
@@ -162,13 +156,12 @@ export class Toolbar {
     if (!page.devMetadata) {
       this.stackBadge.dataset.warn = "true";
       this.stackBadge.title =
-        "Production build — Vue strips component names and file paths. Reports will fall back to selectors and DOM paths.";
+        "Production build — component names and file paths are stripped. Reports will fall back to selectors and DOM paths.";
     } else {
       delete this.stackBadge.dataset.warn;
-      this.stackBadge.title =
-        page.hasTracer || page.hasInspectorAttrs
-          ? "Dev build with the Vue component tracer — source lines include line and column numbers."
-          : "Dev build — source lines will be file-level only. Turn on Nuxt DevTools (devtools: { enabled: true }) to get line and column numbers.";
+      this.stackBadge.title = page.hasSourcePositions
+        ? "Dev build with source positions — source lines include line and column numbers."
+        : "Dev build — source lines will be file-level only. A source-position plugin (Nuxt DevTools, for instance) adds line and column numbers.";
     }
   }
 

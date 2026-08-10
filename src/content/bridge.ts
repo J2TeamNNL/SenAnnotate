@@ -14,8 +14,8 @@ import {
 import type {
   ComponentDetectionMode,
   Diagnostics,
-  PageVueInfo,
-  VueElementInfo,
+  PageFrameworkInfo,
+  ElementFrameworkInfo,
 } from "../shared/types";
 
 const TIMEOUT_MS = 500;
@@ -76,7 +76,7 @@ function send(payload: BridgeRequest): Promise<BridgeResult | null> {
 // Typed wrappers
 // -----------------------------------------------------------------------------
 
-export async function detectPage(): Promise<PageVueInfo | null> {
+export async function detectPage(): Promise<PageFrameworkInfo | null> {
   const result = await send({ kind: "detect" });
   return result?.kind === "detect" ? result.page : null;
 }
@@ -124,7 +124,7 @@ export async function inspectElement(
   mode: ComponentDetectionMode,
   maxComponents: number,
   includeProps: boolean,
-): Promise<VueElementInfo | null> {
+): Promise<ElementFrameworkInfo | null> {
   if (mode === "off") return null;
 
   const probeId = acquireProbe(element);

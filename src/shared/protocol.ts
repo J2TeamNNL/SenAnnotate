@@ -12,7 +12,7 @@
 // `querySelector` and the attribute is removed straight afterwards.
 // =============================================================================
 
-import type { ComponentDetectionMode, Diagnostics, PageVueInfo, VueElementInfo } from "./types";
+import type { ComponentDetectionMode, Diagnostics, PageFrameworkInfo, ElementFrameworkInfo } from "./types";
 
 export const NS = "senannotate";
 
@@ -55,8 +55,8 @@ export type BridgeRequest =
   | { kind: "clear-diagnostics" };
 
 export type BridgeResult =
-  | { kind: "detect"; page: PageVueInfo }
-  | { kind: "inspect"; info: VueElementInfo | null }
+  | { kind: "detect"; page: PageFrameworkInfo }
+  | { kind: "inspect"; info: ElementFrameworkInfo | null }
   | { kind: "diagnostics"; diagnostics: Diagnostics }
   | { kind: "ack" };
 
