@@ -261,7 +261,7 @@ function installFetchCapture(): void {
 }
 
 interface TrackedXhr extends XMLHttpRequest {
-  __vuetation?: { method: string; url: string; start: number };
+  __senannotate?: { method: string; url: string; start: number };
 }
 
 function installXhrCapture(): void {
@@ -271,7 +271,7 @@ function installXhrCapture(): void {
 
   proto.open = function patchedOpen(this: TrackedXhr, method: string, url: string | URL, ...rest: unknown[]) {
     try {
-      this.__vuetation = { method: String(method), url: String(url), start: 0 };
+      this.__senannotate = { method: String(method), url: String(url), start: 0 };
     } catch {
       // ignore
     }
@@ -279,7 +279,7 @@ function installXhrCapture(): void {
   } as typeof proto.open;
 
   proto.send = function patchedSend(this: TrackedXhr, ...args: unknown[]) {
-    const meta = this.__vuetation;
+    const meta = this.__senannotate;
     if (meta) {
       meta.start = Date.now();
       this.addEventListener("loadend", () => {
@@ -315,7 +315,7 @@ export function installDiagnostics(): void {
     installFetchCapture();
     installXhrCapture();
   } catch (error) {
-    console.warn("[vuetation] diagnostics capture failed to install:", error);
+    console.warn("[senannotate] diagnostics capture failed to install:", error);
   }
 }
 

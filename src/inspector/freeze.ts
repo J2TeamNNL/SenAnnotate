@@ -16,7 +16,7 @@
 
 import { UI_ATTR } from "../shared/protocol";
 
-const STYLE_ID = "vuetation-freeze-styles";
+const STYLE_ID = "senannotate-freeze-styles";
 
 /** Our own overlay must keep animating while everything else is held still. */
 const NOT_OURS = `:not([${UI_ATTR}]):not([${UI_ATTR}] *)`;
@@ -131,7 +131,7 @@ export function freeze(): void {
 
   for (const video of Array.from(document.querySelectorAll("video"))) {
     if (!video.paused) {
-      video.dataset.vuetationWasPlaying = "true";
+      video.dataset.senannotateWasPlaying = "true";
       video.pause();
     }
   }
@@ -155,7 +155,7 @@ export function unfreeze(): void {
       try {
         callback();
       } catch (error) {
-        console.warn("[vuetation] queued timeout threw on replay:", error);
+        console.warn("[senannotate] queued timeout threw on replay:", error);
       }
     }, 0);
   }
@@ -186,8 +186,8 @@ export function unfreeze(): void {
   document.getElementById(STYLE_ID)?.remove();
 
   for (const video of Array.from(document.querySelectorAll("video"))) {
-    if (video.dataset.vuetationWasPlaying === "true") {
-      delete video.dataset.vuetationWasPlaying;
+    if (video.dataset.senannotateWasPlaying === "true") {
+      delete video.dataset.senannotateWasPlaying;
       void video.play().catch(() => {});
     }
   }

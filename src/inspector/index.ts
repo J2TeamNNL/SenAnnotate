@@ -104,7 +104,7 @@ window.addEventListener("message", (event: MessageEvent) => {
   try {
     respond(id, handle(payload));
   } catch (error) {
-    console.warn("[vuetation] inspector failed:", error);
+    console.warn("[senannotate] inspector failed:", error);
     respond(id, { kind: "ack" });
   }
 });

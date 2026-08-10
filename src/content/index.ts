@@ -56,11 +56,11 @@ import { Toolbar } from "./ui/toolbar";
 // the declarative content script would otherwise give you two toolbars).
 declare global {
   interface Window {
-    __vuetationInstalled?: boolean;
+    __senannotateInstalled?: boolean;
   }
 }
-if (window.__vuetationInstalled) throw new Error("vuetation: already installed");
-window.__vuetationInstalled = true;
+if (window.__senannotateInstalled) throw new Error("senannotate: already installed");
+window.__senannotateInstalled = true;
 
 // -----------------------------------------------------------------------------
 // State
@@ -410,7 +410,7 @@ async function captureScreenshot(target: Draft | Annotation): Promise<void> {
     return;
   }
 
-  const filename = `vuetation-${Date.now()}.png`;
+  const filename = `senannotate-${Date.now()}.png`;
   const saved = await cropAndDownload(response.dataUrl, box, filename);
 
   if (saved) {
