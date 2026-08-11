@@ -47,3 +47,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" senannotate-*.zip --generate-notes
+
+      # Ships the same zip to the Web Store. Runs after the GitHub release on purpose: the
+      # release is ours and always succeeds, while this depends on Google, and a Store
+      # outage should not cost us the release artifact.
+      #
+      # The script skips itself, exit 0, when none of these are set — so tagging keeps
+      # working before the Store item exists — and fails loudly when only some are, which
+      # is what a renamed or rotated secret looks like. Secrets stay scoped to this step
+      # rather than the job, so nothing else in the run can read them.
+      - name: Publish to the Chrome Web Store
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+          # Set the repository variable CWS_UPLOAD_ONLY to "true" to upload without
+          # submitting for review, when a release should reach the Store but wait.
+          CWS_UPLOAD_ONLY: ${{ vars.CWS_UPLOAD_ONLY }}
+        run: node scripts/publish-store.mjs

@@ -68,6 +68,13 @@ notes typed into it were silently dropped. Its `changelog.md` records the `fill(
 measurement that nearly hid the second bug, and the one case that stays broken with the
 alternatives rejected.
 
+## [`chrome-store-publish/`](./chrome-store-publish/) — Web Store automation
+
+Tagging a release now also uploads the packed zip to the Chrome Web Store and submits it for
+review. Its `context.md` has the setup steps and two findings worth knowing before copying
+any other recipe for this: the v1.1 API stops serving on 15 October 2026, and refresh tokens
+expire after seven days while the OAuth consent screen is in "Testing".
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from

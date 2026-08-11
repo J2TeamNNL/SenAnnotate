@@ -16,15 +16,24 @@ limit per field.
 
 ## Single purpose description
 
+Three short paragraphs rather than one long sentence: Google asks for "narrow and
+easy-to-understand", so the first line is the single purpose, the second is how it is
+achieved, and the third answers the two questions a reviewer asks on seeing `<all_urls>` —
+does it alter the page, and where does the data go.
+
 ```
-SenAnnotate lets a developer or tester point at an element on a web page, attach a written
-note to it, and copy a structured Markdown report that identifies exactly that element — its
-DOM path, a re-resolvable CSS selector, and, on pages built with Vue, React, Svelte or
-Angular, the component and source file the framework itself reports — so the note can be
-handed to an AI coding assistant or a colleague without anyone having to guess which element
-was meant. That is its only function. It does not modify, block or inject anything into the
-pages it inspects beyond its own floating toolbar, and it has no server: everything it
-produces stays on the user's device until the user copies a report or saves a screenshot.
+SenAnnotate has one purpose: to describe a web page element precisely enough that someone
+else can act on a note about it.
+
+The user turns on inspect mode, clicks an element, and types a note. The extension then
+produces a Markdown report that names that element — its DOM path, a re-resolvable CSS
+selector, and, on pages built with Vue, React, Svelte or Angular, the component and the
+source file the framework itself reports — so the note can be handed to an AI coding
+assistant or a colleague without anyone guessing which element was meant.
+
+That is its only function. It does not modify, block or inject anything into the pages it
+inspects beyond its own floating toolbar, and it has no server: everything it produces stays
+on the user's device until the user copies the report or saves a screenshot.
 ```
 
 ---

@@ -1,0 +1,26 @@
+name: Store credentials check
+
+# Run by hand from the Actions tab. Exists so a wrong secret is found now rather than
+# halfway through a release: `--check` only calls `:fetchStatus`, which reads the item and
+# changes nothing.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # No `npm ci`: the script has no dependencies, and installing would only slow down
+      # the one thing this workflow is for.
+      - name: Check the Chrome Web Store credentials
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/publish-store.mjs --check

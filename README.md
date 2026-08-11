@@ -412,7 +412,13 @@ git push && git push --tags
 ```
 
 `.github/workflows/release.yml` then builds, packs, and creates a GitHub Release with
-`senannotate-<version>.zip` attached and generated release notes.
+`senannotate-<version>.zip` attached and generated release notes — and, once the Chrome Web
+Store credentials are configured, uploads that same zip to the Store and submits it for
+review. Until they are, that step skips itself rather than failing the release. Setup and the
+two traps worth knowing are in [`docs/chrome-store-publish/context.md`](./docs/chrome-store-publish/context.md).
+
+Publishing through the API still means *submitted for review*, and the host permission makes
+that review a manual one — days, not minutes.
 
 If the tag and `package.json` disagree, the workflow fails before installing anything and
 creates nothing. Fix `package.json`, then delete and re-push the tag:
