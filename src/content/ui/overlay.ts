@@ -11,6 +11,9 @@ export interface HighlightLabel {
   secondary?: string | null;
 }
 
+/** Gap kept between a clamped label and the viewport edge. */
+const LABEL_EDGE = 6;
+
 /** Anything with a viewport-space box — `DOMRect` satisfies it structurally. */
 export interface HighlightRect {
   left: number;
@@ -76,8 +79,36 @@ export class Overlay {
 
       // Only the first box gets a label, and only when one was supplied.
       box.replaceChildren();
-      if (index === 0 && label) box.append(this.buildLabel(rect, label));
+      if (index === 0 && label) {
+        const element = this.buildLabel(rect, label);
+        box.append(element);
+        // After appending, because the shift depends on the rendered width.
+        this.clampLabel(element, rect);
+      }
     });
+  }
+
+  /**
+   * Keep the label inside the viewport.
+   *
+   * It is anchored to the box's left edge and grows rightward, so hovering anything near the
+   * right edge — a header action, a table's last column — ran the label off screen and cut
+   * off the source path, which is the half worth reading. There was already a vertical
+   * equivalent of this (`data-flip` when the box is too near the top); this is the
+   * horizontal one, which was simply missing.
+   *
+   * Shifting rather than right-aligning to the box: a narrow element near the edge has no
+   * room either way, and shifting keeps the label's left edge next to the thing it names.
+   * One layout read, and only when the label is (re)built — hover changes and scroll syncs,
+   * not every pointermove.
+   */
+  private clampLabel(element: HTMLElement, rect: HighlightRect): void {
+    const overflow = rect.left + element.offsetWidth - (window.innerWidth - LABEL_EDGE);
+    if (overflow <= 0) return;
+
+    // Never fix the right edge by pushing the left edge off instead.
+    const shift = Math.min(overflow, Math.max(0, rect.left - LABEL_EDGE));
+    if (shift > 0) element.style.left = `${-shift}px`;
   }
 
   private buildLabel(rect: HighlightRect, label: HighlightLabel): HTMLElement {

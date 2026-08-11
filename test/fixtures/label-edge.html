@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hover-label edge fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; }
+      /* Flush against the right edge, which is where the label used to run off screen —
+         a header action or a table's last column in any real layout. */
+      .row { display: flex; justify-content: flex-end; padding: 60px 0 0; }
+      .edge-button {
+        padding: 8px 14px; border: 1px solid #d0d4da; border-radius: 6px; background: #fff;
+      }
+      /* Also test the left edge, so a fix that over-corrects and pushes the label off the
+         other side fails instead of passing. */
+      .left-row { display: flex; justify-content: flex-start; padding: 40px 0 0; }
+    </style>
+  </head>
+  <body>
+    <!-- No framework here on purpose: `data-v-inspector` is read straight off the DOM by
+         the isolated world, so it gives a long source line — and therefore a wide label —
+         with nothing to boot. -->
+    <div class="row">
+      <button
+        class="edge-button"
+        data-v-inspector="src/components/settings/NotificationPreferencesPanel.vue:128:9"
+      >
+        Save
+      </button>
+    </div>
+
+    <div class="left-row">
+      <button
+        class="left-button"
+        data-v-inspector="src/components/settings/NotificationPreferencesPanel.vue:128:9"
+      >
+        Cancel
+      </button>
+    </div>
+  </body>
+</html>

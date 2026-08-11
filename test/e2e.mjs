@@ -782,6 +782,54 @@ async function main() {
     await focusTrap.keyboard.press("Escape");
 
     // -------------------------------------------------------------------------
+    // The hover label stays inside the viewport
+    // -------------------------------------------------------------------------
+    //
+    // The label is anchored to the highlighted box's left edge and grows rightward, so
+    // hovering anything near the right edge — a header action, a table's last column — used
+    // to run it off screen and cut off the source path, the half worth reading. Found while
+    // shooting the Web Store screenshots, where it sat clipped over the page.
+    //
+    // A negative `style.left` is the clamp having engaged, which is also the proof the
+    // overflow was real: without the shift the label would have been exactly that far out.
+    const edge = await context.newPage();
+    await edge.goto(`${base}/label-edge.html`);
+    await edge.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await edge.locator(".tool--brand").click();
+    const viewportWidth = await edge.evaluate(() => window.innerWidth);
+
+    const labelAt = async (selector) => {
+      const box = await edge.locator(selector).boundingBox();
+      await edge.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+      const label = edge.locator(".highlight__label").first();
+      await label.waitFor({ state: "visible", timeout: 5_000 });
+      await edge.waitForTimeout(200);
+      return {
+        rect: await label.boundingBox(),
+        shift: await label.evaluate((el) => parseFloat(el.style.left) || 0),
+      };
+    };
+
+    const atRight = await labelAt(".edge-button");
+    check(
+      "a label on a right-edge element stays inside the viewport",
+      atRight.rect.x + atRight.rect.width <= viewportWidth,
+      `label spans ${Math.round(atRight.rect.x)}–${Math.round(atRight.rect.x + atRight.rect.width)} of ${viewportWidth}`,
+    );
+    check(
+      "the label was actually shifted to achieve that",
+      atRight.shift < 0,
+      `style.left was ${atRight.shift}px`,
+    );
+
+    const atLeft = await labelAt(".left-button");
+    check(
+      "a label on a left-edge element is not shifted off the other side",
+      atLeft.shift === 0 && atLeft.rect.x >= 0,
+      `style.left was ${atLeft.shift}px, x was ${Math.round(atLeft.rect.x)}`,
+    );
+
+    // -------------------------------------------------------------------------
     // Screenshots — saved with no `downloads` permission
     // -------------------------------------------------------------------------
     //

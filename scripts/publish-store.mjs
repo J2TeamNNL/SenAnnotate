@@ -219,7 +219,20 @@ async function main() {
           `or the service account has not been added under Developer Dashboard → Account.`,
       );
     }
-    console.log(`credentials work. Store says:\n${status.text}`);
+    // Print the state, not the whole body. `publicKey` is public by design — it ships inside
+    // every CRX and the item id is derived from it — so dumping it leaked nothing, but
+    // echoing an entire API response into a CI log is a habit that ages badly: the next
+    // field Google adds lands in the log too, and nobody re-reads this line before it does.
+    // Failures still print verbatim, where the whole body is the diagnostic.
+    let state = status.text;
+    try {
+      const { publicKey, ...rest } = JSON.parse(status.text);
+      void publicKey;
+      state = JSON.stringify(rest, null, 2);
+    } catch {
+      // Not JSON. Whatever it is, seeing it raw beats hiding it.
+    }
+    console.log(`credentials work. Store says:\n${state}`);
     return;
   }
 

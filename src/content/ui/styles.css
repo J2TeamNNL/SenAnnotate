@@ -328,7 +328,9 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 480px;
+  /* The viewport term matters on a narrow window, where 480px alone is wider than the
+     screen and no amount of shifting could bring the label fully into view. */
+  max-width: min(480px, calc(100vw - 12px));
   padding: 2px 7px;
   border-radius: 5px;
   background: var(--sa-accent);

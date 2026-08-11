@@ -75,6 +75,13 @@ review. Its `context.md` has the setup steps and two findings worth knowing befo
 any other recipe for this: the v1.1 API stops serving on 15 October 2026, and refresh tokens
 expire after seven days while the OAuth consent screen is in "Testing".
 
+## [`hover-label-clamp/`](./hover-label-clamp/) — 0.5.3
+
+The hover label was anchored to the highlighted element's left edge with nothing bounding it
+against the right of the viewport, so hovering anything near the edge cut off the source path.
+Found while shooting the Web Store screenshots rather than from a bug report — its
+`changelog.md` notes what that says about photographing your own product.
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from
