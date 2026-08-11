@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate — promo tiles</title>
+    <style>
+      /* Each tile is screenshotted by locator, so its box must be the exact canvas the
+         Web Store asks for: 440x280 and 1400x560. No alpha anywhere — both are saved as
+         JPEG, and a transparent pixel would come out black. */
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; padding: 40px; background: #e9eaee;
+        font: 16px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .tile { overflow: hidden; position: relative; background: #171b26; color: #fff; }
+
+      /* A soft warm glow, so the dark tiles do not read as a flat black rectangle. */
+      .tile::after {
+        content: ""; position: absolute; inset: 0;
+        background: radial-gradient(120% 90% at 88% 8%, rgba(249, 115, 22, 0.42), transparent 58%);
+      }
+      .tile > * { position: relative; z-index: 1; }
+
+      .mark { border-radius: 22%; display: block; }
+      .name { font-weight: 700; letter-spacing: -0.025em; }
+      .pitch { color: #c3cad8; }
+      .accent { color: #fb923c; }
+
+      /* ---------------- small: 440x280 ---------------- */
+      #small {
+        width: 440px; height: 280px; padding: 30px 32px;
+        display: flex; flex-direction: column; justify-content: space-between;
+      }
+      #small .mark { width: 60px; height: 60px; }
+      #small .name { font-size: 31px; margin-top: 17px; }
+      #small .pitch { font-size: 15px; margin-top: 7px; }
+
+      /* ---------------- marquee: 1400x560 ---------------- */
+      #marquee {
+        width: 1400px; height: 560px; margin-top: 40px; padding: 0 74px;
+        display: grid; grid-template-columns: 1fr 560px; align-items: center; gap: 56px;
+      }
+      #marquee .mark { width: 84px; height: 84px; }
+      #marquee .name { font-size: 58px; margin-top: 24px; }
+      #marquee .pitch { font-size: 22px; margin-top: 14px; max-width: 30ch; line-height: 1.45; }
+
+      /* A real report, shown as the thing you paste to your agent. */
+      .report {
+        background: #0f1219; border: 1px solid #2b3243; border-radius: 13px;
+        padding: 22px 24px; font: 14.5px/1.85 ui-monospace, SFMono-Regular, Menlo, monospace;
+        box-shadow: 0 22px 50px rgba(0, 0, 0, 0.4);
+      }
+      .report .h { color: #93a1b8; }
+      .report .k { color: #fdba74; }
+      .report .v { color: #e7ebf3; }
+      .report .c { color: #6b7789; }
+    </style>
+  </head>
+  <body>
+    <div class="tile" id="small">
+      <div>
+        <img class="mark" src="/dist/icons/icon-128.png" alt="" />
+        <div class="name">SenAnnotate</div>
+        <div class="pitch">Click an element. Get a report your <span class="accent">AI agent</span> can act on.</div>
+      </div>
+    </div>
+
+    <div class="tile" id="marquee">
+      <div>
+        <img class="mark" src="/dist/icons/icon-128.png" alt="" />
+        <div class="name">SenAnnotate</div>
+        <div class="pitch">
+          Point at any element on any site and hand your coding agent the
+          <span class="accent">exact file, line and component</span> behind it.
+        </div>
+      </div>
+      <div class="report">
+        <div class="h">## Page feedback: /orders</div>
+        <div class="c">&nbsp;</div>
+        <div><span class="h">### 1. button "New order"</span></div>
+        <div><span class="k">**Source:**</span> <span class="v">app/components/PrimaryButton.vue:12:5</span></div>
+        <div><span class="k">**Components:**</span> <span class="v">&lt;App&gt; &lt;PrimaryButton&gt;</span></div>
+        <div><span class="k">**Feedback:**</span> <span class="v">Make this the primary action.</span></div>
+      </div>
+    </div>
+  </body>
+</html>

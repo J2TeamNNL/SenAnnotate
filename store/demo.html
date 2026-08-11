@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Northwind Admin — Orders</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+        color: #1f2430;
+        background: #f6f7f9;
+        -webkit-font-smoothing: antialiased;
+      }
+      .shell { display: grid; grid-template-columns: 216px 1fr; min-height: 100vh; }
+
+      /* --- sidebar --- */
+      .side { background: #171b26; color: #b9c0cf; padding: 20px 14px; }
+      .brand { display: flex; align-items: center; gap: 9px; padding: 0 8px 22px; }
+      .brand-mark {
+        width: 26px; height: 26px; border-radius: 7px;
+        background: linear-gradient(140deg, #f97316, #ea580c);
+      }
+      .brand-name { color: #fff; font-weight: 650; letter-spacing: -0.01em; }
+      .nav-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 10px; border-radius: 7px; margin-bottom: 2px;
+        font-weight: 500; cursor: pointer;
+      }
+      .nav-item.is-active { background: #262c3b; color: #fff; }
+      .nav-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.5; }
+      .nav-group { padding: 18px 10px 7px; font-size: 11px; text-transform: uppercase;
+                   letter-spacing: 0.07em; opacity: 0.45; }
+
+      /* --- main --- */
+      .main { padding: 26px 30px; }
+      .head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
+      .title { font-size: 22px; font-weight: 680; letter-spacing: -0.02em; margin: 0 0 3px; }
+      .subtitle { color: #6b7383; margin: 0; }
+      .actions { display: flex; gap: 8px; }
+
+      .primary-button {
+        padding: 9px 16px; border: 0; border-radius: 8px; cursor: pointer;
+        background: #f97316; color: #fff; font: inherit; font-weight: 600;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1);
+      }
+      .ghost-button {
+        padding: 9px 15px; border: 1px solid #dcdfe6; border-radius: 8px; cursor: pointer;
+        background: #fff; color: #364152; font: inherit; font-weight: 550;
+      }
+
+      .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+      .stat-card {
+        background: #fff; border: 1px solid #e6e8ee; border-radius: 11px; padding: 15px 16px;
+      }
+      .stat-label { color: #6b7383; font-size: 12.5px; margin-bottom: 7px; }
+      .stat-value { font-size: 23px; font-weight: 680; letter-spacing: -0.02em; }
+      .stat-delta { font-size: 12.5px; font-weight: 600; margin-top: 5px; }
+      .stat-delta.up { color: #067647; }
+      .stat-delta.down { color: #b42318; }
+
+      .table-card { background: #fff; border: 1px solid #e6e8ee; border-radius: 11px; overflow: hidden; }
+      .table-card-head { display: flex; align-items: center; justify-content: space-between;
+                    padding: 14px 16px; border-bottom: 1px solid #eceef3; }
+      .table-card-title { font-weight: 640; }
+      .filter-chip { padding: 5px 11px; border: 1px solid #dcdfe6; border-radius: 999px;
+                     font-size: 12.5px; color: #4a5364; background: #fff; }
+
+      table { width: 100%; border-collapse: collapse; }
+      th {
+        text-align: left; padding: 9px 16px; font-size: 11.5px; font-weight: 620;
+        text-transform: uppercase; letter-spacing: 0.05em; color: #79818f;
+        background: #fafbfc; border-bottom: 1px solid #eceef3;
+      }
+      td { padding: 12px 16px; border-bottom: 1px solid #f1f2f6; }
+      tr:last-child td { border-bottom: 0; }
+      .cell-id { font-variant-numeric: tabular-nums; color: #6b7383; }
+      .cell-name { font-weight: 570; }
+      .cell-total { font-variant-numeric: tabular-nums; font-weight: 570; text-align: right; }
+      .status {
+        display: inline-block; padding: 2px 9px; border-radius: 999px;
+        font-size: 12px; font-weight: 600;
+      }
+      .status--paid { background: #ecfdf3; color: #067647; }
+      .status--pending { background: #fffaeb; color: #b54708; }
+      .status--refunded { background: #fef3f2; color: #b42318; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <script src="/test/fixtures/vendor/vue.global.js"></script>
+    <script>
+      // Same shape as `vite-plugin-vue-tracer` (what Nuxt DevTools ships): positions live
+      // in a global WeakMap keyed by each vnode's `props` object, nothing is written to the
+      // DOM. Mirrored here so the store screenshots show the real source-resolution path
+      // rather than a mocked-up caption.
+      const store = { hasData: true, vnodeToPos: new WeakMap(), fileToVNode: new Map(), posToVNode: new Map() };
+      Object.defineProperty(globalThis, "__vue_tracer__", {
+        value: store,
+        configurable: true,
+        enumerable: false,
+      });
+
+      const { createApp } = Vue;
+
+      const PrimaryButton = {
+        __name: "PrimaryButton",
+        __file: "/build/app/app/components/PrimaryButton.vue",
+        props: { label: String },
+        template: `<button class="primary-button">{{ label }}</button>`,
+      };
+
+      const StatCard = {
+        __name: "StatCard",
+        __file: "/build/app/app/components/StatCard.vue",
+        props: { label: String, value: String, delta: String, dir: String },
+        template: `
+          <div class="stat-card">
+            <div class="stat-label">{{ label }}</div>
+            <div class="stat-value">{{ value }}</div>
+            <div class="stat-delta" :class="dir">{{ delta }}</div>
+          </div>`,
+      };
+
+      const OrderTable = {
+        __name: "OrderTable",
+        __file: "/build/app/app/components/OrderTable.vue",
+        props: { rows: Array },
+        template: `
+          <div class="table-card">
+            <div class="table-card-head">
+              <span class="table-card-title">Recent orders</span>
+              <span class="filter-chip">Last 7 days</span>
+            </div>
+            <table>
+              <thead>
+                <tr><th>Order</th><th>Customer</th><th>Status</th><th style="text-align:right">Total</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in rows" :key="row.id">
+                  <td class="cell-id">{{ row.id }}</td>
+                  <td class="cell-name">{{ row.customer }}</td>
+                  <td><span class="status" :class="'status--' + row.state">{{ row.status }}</span></td>
+                  <td class="cell-total">{{ row.total }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>`,
+      };
+
+      const SideNav = {
+        __name: "SideNav",
+        __file: "/build/app/app/components/SideNav.vue",
+        template: `
+          <aside class="side">
+            <div class="brand">
+              <div class="brand-mark"></div>
+              <div class="brand-name">Northwind</div>
+            </div>
+            <div class="nav-item"><span class="nav-dot"></span>Overview</div>
+            <div class="nav-item is-active"><span class="nav-dot"></span>Orders</div>
+            <div class="nav-item"><span class="nav-dot"></span>Customers</div>
+            <div class="nav-item"><span class="nav-dot"></span>Products</div>
+            <div class="nav-group">Settings</div>
+            <div class="nav-item"><span class="nav-dot"></span>Team</div>
+            <div class="nav-item"><span class="nav-dot"></span>Billing</div>
+          </aside>`,
+      };
+
+      const App = {
+        __name: "App",
+        __file: "/build/app/app/app.vue",
+        components: { SideNav, StatCard, OrderTable, PrimaryButton },
+        data: () => ({
+          rows: [
+            { id: "#10482", customer: "Priya Raman", status: "Paid", state: "paid", total: "$248.00" },
+            { id: "#10481", customer: "Tomas Beck", status: "Pending", state: "pending", total: "$96.50" },
+            { id: "#10480", customer: "Aiko Tanaka", status: "Paid", state: "paid", total: "$412.20" },
+            { id: "#10479", customer: "Noah Whitfield", status: "Refunded", state: "refunded", total: "$64.00" },
+            { id: "#10478", customer: "Lena Fischer", status: "Paid", state: "paid", total: "$180.75" },
+          ],
+        }),
+        template: `
+          <div class="shell">
+            <SideNav />
+            <main class="main">
+              <div class="head">
+                <div>
+                  <h1 class="title">Orders</h1>
+                  <p class="subtitle">1,284 orders this month across 3 storefronts.</p>
+                </div>
+                <div class="actions">
+                  <button class="ghost-button">Export</button>
+                  <PrimaryButton label="New order" />
+                </div>
+              </div>
+              <div class="stats">
+                <StatCard label="Revenue" value="$48,210" delta="+12.4%" dir="up" />
+                <StatCard label="Orders" value="1,284" delta="+3.1%" dir="up" />
+                <StatCard label="Refund rate" value="2.8%" delta="+0.6%" dir="down" />
+                <StatCard label="Avg. order" value="$37.55" delta="+1.2%" dir="up" />
+              </div>
+              <OrderTable :rows="rows" />
+            </main>
+          </div>`,
+      };
+
+      createApp(App).mount("#app");
+
+      // Positions the plugin would have recorded during render.
+      const record = (selector, source, line, column) => {
+        const el = document.querySelector(selector);
+        if (!el || !el.__vnode) return;
+        const vnode = el.__vnode;
+        vnode.props ||= {};
+        store.vnodeToPos.set(vnode.props, [source, line, column]);
+      };
+
+      record(".primary-button", "app/components/PrimaryButton.vue", 12, 5);
+      record(".stat-card", "app/components/StatCard.vue", 8, 3);
+      record(".table-card", "app/components/OrderTable.vue", 24, 3);
+      record(".side", "app/components/SideNav.vue", 6, 3);
+      record(".shell", "app/app.vue", 31, 5);
+
+      // Real diagnostics for the "what was captured" screenshot: one failing request and
+      // one uncaught error, exactly the pair a tester would hit on a broken screen.
+      fetch("/api/orders/summary?access_token=demo-secret-value").catch(() => {});
+      setTimeout(() => {
+        console.error("[orders] Cannot read properties of undefined (reading 'currency')");
+      }, 150);
+    </script>
+  </body>
+</html>
