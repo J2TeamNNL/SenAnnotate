@@ -94,11 +94,20 @@ the line and column.
 | Annotate several elements | mode <kbd>3</kbd>, then drag a box around them |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
+| Collapse the toolbar | <kbd>H</kbd>, or the `»` button |
 | Copy the report | **Copy report** in the panel |
 | Cancel / exit | <kbd>Esc</kbd> |
 
 The line under the toolbar always names what the current mode does and which keys
 switch to the others, so nothing above needs memorising.
+
+The toolbar is docked bottom-right, which is exactly where a page tends to put its
+chat widget, cookie bar or footer actions. <kbd>H</kbd> collapses it to a single dot
+that still carries the annotation count, and takes an accent ring while inspect mode
+is on — collapsing hides the controls and nothing else, so clicking still annotates.
+The state is a setting rather than a session flag, so a reload does not put the pill
+back over the corner you were looking at. <kbd>H</kbd> works whether or not inspect
+mode is on, unlike the mode keys.
 
 Dragging a box selects **everything it fully contains**, at the shallowest level
 contained — draw around three cards and you get three cards, not the `<div>`s

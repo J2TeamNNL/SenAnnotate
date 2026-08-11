@@ -39,6 +39,19 @@ zip. Its `context.md` explains why the Playwright suite is deliberately **not** 
 CI — it borrows Playwright and Vue from sibling monorepo directories that a bare
 checkout does not have.
 
+## [`marquee-select/`](./marquee-select/) — 0.4.0
+
+Reworking drag-select to take what the box **fully contains**, at the shallowest level
+contained, instead of everything it touches — plus the hint line under the toolbar,
+added because a mode nothing on screen mentioned went unused for three releases.
+
+## [`toolbar-collapse/`](./toolbar-collapse/) — 0.5.0
+
+Collapsing the toolbar to a single handle, because it is docked in the corner pages use
+for chat widgets and cookie bars. Its `changelog.md` is worth reading for two traps: the
+keyboard focus ring that only a screenshot caught, and why the collapsed handle's count
+badge could not reuse the `.count` class.
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from

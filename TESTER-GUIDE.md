@@ -63,12 +63,17 @@ requests**, and **the steps you just took**.
 | <kbd>3</kbd> | Drag-select multiple elements |
 | <kbd>F</kbd> | Freeze animations (to catch the exact moment of a bug) |
 | <kbd>A</kbd> | Open the notes list |
+| <kbd>H</kbd> | Collapse the toolbar to a dot / bring it back |
 | <kbd>Esc</kbd> | Cancel / exit Inspect |
 
 #### Tips
 
 - **Bug only happens mid-animation?** Press <kbd>F</kbd> to freeze it, then
   annotate.
+- **Toolbar covering the thing you need to look at?** Press <kbd>H</kbd> (or click
+  the `»` button on the toolbar) to shrink it to a dot in the corner. The dot keeps
+  showing how many notes you have, and clicking it brings the toolbar back. Inspect
+  mode keeps working while collapsed — the dot gets an orange ring to say so.
 - **Need a screenshot?** The note box has a camera icon — saves a cropped shot of
   the element straight to your Downloads folder.
 - **Detail level** is a dropdown next to the Copy button. **Standard** is enough
@@ -192,12 +197,16 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 | <kbd>3</kbd> | Kéo chọn nhiều element |
 | <kbd>F</kbd> | Đóng băng animation (để bắt đúng khoảnh khắc lỗi) |
 | <kbd>A</kbd> | Mở danh sách ghi chú |
+| <kbd>H</kbd> | Thu toolbar thành một dot / mở lại |
 | <kbd>Esc</kbd> | Huỷ / thoát Inspect |
 
 #### Mẹo
 
 - **Bug chỉ xuất hiện lúc animation đang chạy?** Bấm <kbd>F</kbd> để đóng băng, rồi
   mới annotate.
+- **Toolbar che đúng chỗ cần xem?** Bấm <kbd>H</kbd> (hoặc nút `»` trên toolbar) để
+  thu nó lại thành một dot ở góc. Dot vẫn hiện số ghi chú đang có, click vào là mở
+  lại. Inspect vẫn chạy bình thường khi đã thu — lúc đó dot có viền cam để báo.
 - **Cần ảnh?** Trong ô ghi chú có icon máy ảnh — lưu ảnh cắt sẵn vùng element vào
   thư mục Downloads.
 - **Độ chi tiết** đổi được ở dropdown cạnh nút Copy. Mặc định **Standard** là đủ.
