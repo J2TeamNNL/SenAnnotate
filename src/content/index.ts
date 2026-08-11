@@ -49,6 +49,7 @@ import { listen } from "./ui/dom";
 import { Markers } from "./ui/markers";
 import {
   hitsInRect,
+  MAX_MARQUEE_ELEMENTS,
   snapshotCandidates,
   toViewport,
   type Candidate,
@@ -585,6 +586,14 @@ listen(document, "mouseup", () => {
 
 // --- marquee -----------------------------------------------------------------
 
+function marqueeHint(hits: MarqueeHits): string {
+  if (hits.capped) return `${MAX_MARQUEE_ELEMENTS} elements (limit) · release to annotate`;
+
+  const count = hits.elements.length;
+  if (count === 0) return "Nothing inside the box yet";
+  return `${count} element${count === 1 ? "" : "s"} selected · release to annotate`;
+}
+
 function resetMarquee(): void {
   if (marqueeFrame) {
     cancelAnimationFrame(marqueeFrame);
@@ -595,6 +604,7 @@ function resetMarquee(): void {
   marqueeCandidates = [];
   marqueeHits = { elements: [], rects: [], capped: false };
   overlay.hideMarquee();
+  toolbar.setHint(null);
 }
 
 /** Recompute and repaint the drag. Cheap: arithmetic over the snapshot, no DOM reads. */
@@ -611,6 +621,7 @@ function drawMarquee(): void {
   overlay.showMarquee(toViewport(box));
   marqueeHits = hitsInRect(marqueeCandidates, box);
   overlay.showHighlights(marqueeHits.rects.map(toViewport), undefined, { preview: true });
+  toolbar.setHint(marqueeHint(marqueeHits));
 }
 
 listen(
@@ -625,6 +636,7 @@ listen(
     marqueeCandidates = snapshotCandidates();
     marqueeHits = { elements: [], rects: [], capped: false };
     overlay.hideHighlights();
+    toolbar.setHint(marqueeHint(marqueeHits));
   },
   { capture: true },
 );

@@ -514,6 +514,11 @@ async function main() {
       previewCount === 2,
       `previewed ${previewCount}`,
     );
+    check(
+      "the hint counts the selection while dragging",
+      ((await hint.textContent())?.trim() ?? "") === "2 elements selected · release to annotate",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
 
     await marquee.mouse.up();
     const previewMeta = (await marquee.locator(".composer__meta").textContent())?.trim() ?? "";
@@ -543,6 +548,24 @@ async function main() {
     );
     await marquee.keyboard.press("Escape");
     await marquee.evaluate(() => window.scrollTo(0, 0));
+
+    // A box over empty page area: the hint says so rather than going blank.
+    const emptyY = cardA.y + cardA.height + 60;
+    await marquee.mouse.move(cardA.x, emptyY);
+    await marquee.mouse.down();
+    await marquee.mouse.move(cardA.x + 120, emptyY + 60, { steps: 4 });
+    check(
+      "an empty box says nothing is inside it",
+      ((await hint.textContent())?.trim() ?? "") === "Nothing inside the box yet",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
+    await marquee.mouse.up();
+
+    check(
+      "the hint returns to the mode line after a drag",
+      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
 
     // -------------------------------------------------------------------------
     // Diagnostics — the tester workflow on a page that misbehaves
