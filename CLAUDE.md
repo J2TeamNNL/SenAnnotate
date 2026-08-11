@@ -1,0 +1,156 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+SenAnnotate — a Chrome MV3 extension: click any element on any page, annotate it, and copy a
+Markdown report an AI coding agent can act on. Zero runtime dependencies; `esbuild` +
+`typescript` at build time only. TypeScript `strict`, no test framework, no linter.
+
+`README.md` is the user-facing reference (install, keybindings, framework support matrix,
+production-build measurements). This file covers what you need to *change* the code.
+
+## Commands
+
+```bash
+npm run dev          # esbuild watch → dist/ (reload the unpacked extension after each rebuild)
+npm run typecheck    # tsc --noEmit — the only static gate
+npm run build        # icons + three bundles + static passthrough
+npm test             # build, then drive a real headed Chromium against test/fixtures/
+npm run pack         # → senannotate-<version>.zip (dist/ + TESTER-GUIDE.md)
+```
+
+### Running the test suite on this machine
+
+`npm test` needs Playwright with browsers, supplied by env var — the repo deliberately
+records no default (see the header of `test/e2e.mjs` for the reasoning):
+
+```bash
+SENANNOTATE_PLAYWRIGHT_DIR=/Users/thangnm/Documents/Works/storefront_playwright_test npm test
+```
+
+`SENANNOTATE_VUE_GLOBAL` is only needed on a fresh checkout —
+`test/fixtures/vendor/vue.global.js` is gitignored but cached once copied.
+`SENANNOTATE_PNPM_STORE` is only for `test/build-prod-fixtures.mjs`.
+
+**There is no single-test filter.** `test/e2e.mjs` is one sequential `main()` driving ~98
+`check()` assertions across a shared browser context; to iterate on one area, comment out the
+page blocks above it. The suite launches **headed** Chromium — extensions need a persistent,
+headed context.
+
+Two extra checks are kept out of the suite because each needs something it cannot guarantee:
+`npm run verify:sites` (network) and `npm run verify:tracer` (a Nuxt dev server on :3005, and
+`TMPDIR=/tmp/nx` on macOS or vite-node's socket path silently exceeds 104 bytes).
+
+## Architecture
+
+Frameworks write their metadata (`__vueParentComponent`, `__reactFiber$…`, `__svelte_meta`)
+as JS properties on DOM nodes, and Chrome gives each isolated world its own view of those.
+That single fact forces the three-context split:
+
+| Bundle | World | Entry | Owns |
+|---|---|---|---|
+| `inspector.js` (IIFE) | MAIN, `document_start` | `src/inspector/` | framework detectors, motion freeze, diagnostics capture |
+| `content.js` (IIFE) | ISOLATED, `document_idle` | `src/content/` | shadow-DOM UI, element identification, storage, clipboard, screenshot crop |
+| `background.js` (ESM) | service worker | `src/background/` | `captureVisibleTab`, toolbar badge, keyboard command |
+| `popup.js` (IIFE) | popup page | `src/popup/` | settings |
+
+`src/shared/` is the only code all four import: `types.ts`, `protocol.ts` (wire protocol +
+storage keys), `output.ts` (the Markdown report).
+
+Rules that fall out of this and are easy to violate:
+
+- **`world: "MAIN"` is declared in the manifest, never injected at runtime.** Declarative
+  content scripts are exempt from the page's CSP; an injected `<script>` is not.
+- **The inspector must not snapshot anything at module load** — it runs before the app mounts.
+  It is purely reactive: it sits on the bridge and answers.
+- **Freeze and diagnostics have to live in MAIN.** Patching `setTimeout` from ISOLATED patches
+  only that script's own timers; the page's animation loops are in another heap.
+- **DOM nodes cannot cross `postMessage`.** The content script stamps the target with
+  `data-senannotate-probe="<id>"` (reference-counted — a hover lookup and a click capture can
+  be in flight on the same element) and sends the id; the inspector re-resolves via
+  `querySelector`. Bridge RPC times out at 500 ms and resolves `null`.
+- **The content script mirrors the diagnostics buffers.** Copying a report must not `await`
+  before touching the clipboard — an await spends the click's user activation and
+  `navigator.clipboard.writeText` silently stops working.
+- The whole overlay lives in one `pointer-events: none` shadow host attached to
+  `documentElement` (not `body`, which an app may replace), marked `data-senannotate-ui` so
+  freeze CSS and hit-testing can exclude it.
+
+### Adding or changing a framework detector
+
+`src/inspector/detectors/index.ts` is the only module that knows which frameworks exist.
+Adding one should mean **one new file implementing `FrameworkDetector` + one line in
+`DETECTORS`**. If it forces edits to `shared/output.ts`, `content/ui/toolbar.ts` or
+`content/source.ts`, the abstraction has leaked — fix that instead of working around it.
+
+`detect()` and `inspect()` must not throw, and must return `null` when the framework does not
+own the page/element so the dispatcher can try the next one. Returning a mostly-empty object
+stops the search — that is what would break a Vue island inside a React page. Detection is
+per-element by design; the page-level answer only picks which detector to try first.
+
+`src/content/identify.ts` (labels, selectors, DOM paths) reads only the DOM, needs no bridge
+round-trip, and works identically with no framework at all. Keep it that way.
+
+## Conventions and traps
+
+- **Version lives only in `package.json`.** `build.mjs` stamps `dist/manifest.json` from it, so
+  the `"version"` in `static/manifest.json` is dead and will look stale — do not "fix" it there.
+- **Every module opens with a banner comment explaining *why*, not what.** Match that density;
+  the comments are load-bearing documentation here, not decoration.
+- **The e2e suite asserts on shadow-DOM class names** (`.tool--brand`, `.composer`,
+  `.stack-badge`, `.toolbar-hint`, `.count`, …). Renaming a class in `src/content/ui/` breaks
+  tests that look unrelated.
+- **Our UI must never deliver pointer events, or take focus, from the page.** `createUiRoot`
+  stops nine pointer event types plus `focusin`/`focusout` at the shadow host, and cancels
+  `mousedown` (text fields exempted) so a click takes no focus. Without these a toolbar click
+  reads as an "outside click" and dismisses the page's modal, or trips its focus trap into
+  stealing the composer's keystrokes (`docs/modal-click-leak/`, `docs/modal-focus-leak/`).
+  Keyboard events and `pointermove` are deliberately excluded.
+- **`waitForFunction` cannot observe a frozen page.** Freeze parks `requestAnimationFrame`
+  *and* `setTimeout`, so any in-page polling loop — including Playwright's, whichever
+  `polling` you pass — is held by the state it is waiting for. Use a Node-side
+  `waitForTimeout` plus one `evaluate`.
+- **Privacy guarantees have tests and must not regress:** field *values* are never recorded
+  (the trail says `Edited Password`), request/response bodies are never recorded, and
+  credential-looking query params are `[redacted]` before storage.
+- Annotations are keyed on `origin + pathname` — query string deliberately excluded. Settings
+  go in `chrome.storage.sync`, annotations in `local`. Both keys live in `shared/protocol.ts`
+  because the popup needs the same strings.
+- Chrome 111 minimum (`world: "MAIN"`); esbuild targets `chrome111`.
+
+## Licensing constraint
+
+The project began as a port of [`agentation`](https://github.com/benjitaylor/agentation), which
+is **PolyForm Shield** — source-available, not open source. Three modules were reimplemented
+from scratch in 0.3.1 so this repo could be MIT. **Do not consult or copy upstream
+`agentation` source** when working on `content/identify.ts`, `inspector/freeze.ts` or
+`shared/output.ts`. See `NOTICE.md`.
+
+## Releasing
+
+CI (`.github/workflows/ci.yml`) runs typecheck + build + pack on every push to `main` and
+attaches the zip as a 14-day artifact. It deliberately does **not** run `npm test` — a runner
+has nothing to point the env vars at, and the suite needs a headed browser. `npm test` is a
+manual gate before tagging (`docs/ci-cd/context.md` has the full argument).
+
+```bash
+npm test                                    # 1. run it yourself
+# edit "version" in package.json            # 2. the only place that matters
+git commit -am "chore: release 0.6.0"
+git tag v0.6.0 && git push && git push --tags   # 3. commit first, then the tag
+```
+
+`release.yml` refuses to release if the tag and `package.json` disagree, before installing
+anything. To fix: correct `package.json`, then
+`git tag -d v0.6.0 && git push origin :refs/tags/v0.6.0`.
+
+## Design record
+
+`docs/` is one folder per task (`brief.md`, `context.md`, `plan.md`, `changelog.md`), written
+during the work — the changelogs include what went wrong and which assumptions turned out
+false. **Read `docs/README.md` first**; it says which folder covers what and gives a reading
+order. `docs/history/vuetation/context.md` is the best explanation of the three-world split and
+ranks the four Vue source-resolution strategies best-to-worst.
+
+Some of these files also exist as copies at the monorepo root and can drift — the copy in this
+repo is canonical.
