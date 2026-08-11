@@ -27,14 +27,52 @@ MIT licensed. See [`LICENSE`](./LICENSE).
 
 ## Install
 
+Chrome only, and unpacked either way — this is not on the Web Store. Take the
+first route unless you intend to change the code.
+
+### From a release — no Node, no build
+
+1. Download `senannotate-<version>.zip` from the
+   [latest release](https://github.com/thangnm93/SenAnnotate/releases/latest).
+2. Unzip it into a folder you intend to **keep** — not `Downloads`, which gets
+   swept. Chrome loads the extension off disk on every launch, so moving or
+   deleting that folder breaks it.
+3. Open `chrome://extensions`.
+4. Turn on **Developer mode**, top-right.
+5. Click **Load unpacked** and choose the unzipped folder — the one with
+   `manifest.json` directly inside it.
+
+An orange **S** appears in the toolbar. That is the whole install.
+
+### From source — for working on the extension
+
 ```bash
 npm install
 npm run build
 ```
 
+Then steps 3–5 above, choosing the `dist/` folder instead of an unzipped one.
+
+### Either way
+
+**Chrome 111 or newer** — the extension declares `world: "MAIN"` content scripts,
+which earlier versions do not support.
+
+**Chrome will nag.** A "Disable developer mode extensions" popup appears on every
+launch. Click **Cancel**, not Disable. Chrome shows it for any unpacked extension;
+nothing is wrong.
+
+**To update:** replace the files in the same folder, click ⟳ on SenAnnotate's card
+in `chrome://extensions`, then reload the tabs you had open — the old content
+script is still running in them until you do.
+
+Handing this to someone who does not write code? [`TESTER-GUIDE.md`](./TESTER-GUIDE.md)
+covers the same install plus the reporting workflow, in English and Vietnamese.
+
 ### Getting line numbers out of a Nuxt project
 
-Nothing to install — `@nuxt/devtools` already bundles the tracer. Just make sure
+One optional setting, in *your* app rather than the extension. `@nuxt/devtools`
+already bundles the tracer, so there is nothing to install — just make sure
 DevTools is on in `nuxt.config.ts`:
 
 ```ts
@@ -45,14 +83,6 @@ export default defineNuxtConfig({
 
 With it off you still get the component ancestry and the `.vue` file, just not
 the line and column.
-
-Then in Chrome:
-
-1. `chrome://extensions`
-2. Turn on **Developer mode**
-3. **Load unpacked** → pick the `dist/` folder
-
-Requires Chrome 111+ (the extension needs `world: "MAIN"` content scripts).
 
 ## Use
 
@@ -204,8 +234,11 @@ page's styles cannot reach it and it never blocks a real click.
 npm run pack     # → senannotate-<version>.zip, guide included
 ```
 
-Testers install it with `chrome://extensions` → Load unpacked. Full walkthrough,
-in Vietnamese, in [`TESTER-GUIDE.md`](./TESTER-GUIDE.md).
+The zip is the same artifact the release workflow attaches, so testers can equally
+fetch it themselves from the [latest release](https://github.com/thangnm93/SenAnnotate/releases/latest).
+Either way they install it as [above](#from-a-release--no-node-no-build). The full
+walkthrough — install plus the reporting workflow, in English and Vietnamese — is
+[`TESTER-GUIDE.md`](./TESTER-GUIDE.md), which `npm run pack` includes in the zip.
 
 ### What gets captured automatically
 
