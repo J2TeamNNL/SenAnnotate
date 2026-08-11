@@ -441,7 +441,28 @@ async function main() {
     await marquee.goto(`${base}/marquee.html`);
     await marquee.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
     await marquee.locator(".tool--brand").click();
+
+    const hint = marquee.locator(".toolbar-hint");
+    await hint.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the hint names the default mode and the keys for the others",
+      ((await hint.textContent())?.trim() ?? "") === "Click an element · 2 text · 3 area",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
+
+    await marquee.locator('.tool[title^="Select text"]').click();
+    check(
+      "the hint follows the mode",
+      ((await hint.textContent())?.trim() ?? "") === "Select text · 1 point · 3 area",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
+
     await marquee.locator('.tool[title^="Drag"]').click();
+    check(
+      "the hint says the drag mode is a drag",
+      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
 
     const cardA = await marquee.locator("#card-a").boundingBox();
     const cardC = await marquee.locator("#card-c").boundingBox();

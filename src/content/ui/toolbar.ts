@@ -27,6 +27,17 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
   { mode: "area", iconName: "marquee", title: "Drag across elements (3)" },
 ];
 
+/**
+ * One line of standing instruction. The mode buttons are icon-only and appear
+ * only once inspect mode is on, so without this nothing on screen says a drag
+ * mode exists — which is exactly how mode `area` went unused for three releases.
+ */
+const MODE_HINTS: Record<InspectMode, string> = {
+  point: "Click an element · 2 text · 3 area",
+  text: "Select text · 1 point · 3 area",
+  area: "Drag across elements · 1 point · 2 text",
+};
+
 export class Toolbar {
   readonly element: HTMLElement;
 
@@ -38,6 +49,10 @@ export class Toolbar {
   private readonly panelButton: HTMLButtonElement;
   private readonly countBadge: HTMLElement;
   private readonly stackBadge: HTMLElement;
+  private readonly hintElement: HTMLElement;
+  /** Transient text from a drag; `null` means "show the mode's own hint". */
+  private hintOverride: string | null = null;
+  private modeHint = MODE_HINTS.point;
 
   constructor(layer: HTMLElement, callbacks: ToolbarCallbacks) {
     this.brandLabel = h("span", { class: "tool__label", text: "Inspect" });
@@ -97,7 +112,9 @@ export class Toolbar {
 
     this.stackBadge = h("span", { class: "stack-badge", style: { display: "none" } });
 
-    this.element = h(
+    this.hintElement = h("div", { class: "toolbar-hint", style: { display: "none" } });
+
+    const bar = h(
       "div",
       { class: "toolbar" },
       this.stackBadge,
@@ -108,6 +125,10 @@ export class Toolbar {
       this.panelButton,
     );
 
+    // The dock owns the fixed position; `.toolbar` stays the pill so the e2e
+    // locators and every existing style keep working.
+    this.element = h("div", { class: "toolbar-dock" }, this.hintElement, bar);
+
     layer.append(this.element);
   }
 
@@ -115,6 +136,10 @@ export class Toolbar {
     this.brandButton.setAttribute("aria-pressed", String(state.active));
     this.brandLabel.textContent = state.active ? "Inspecting" : "Inspect";
     this.modeGroup.style.display = state.active ? "flex" : "none";
+
+    this.modeHint = MODE_HINTS[state.mode];
+    this.hintElement.style.display = state.active ? "block" : "none";
+    if (this.hintOverride === null) this.hintElement.textContent = this.modeHint;
 
     for (const [mode, button] of this.modeButtons) {
       button.setAttribute("aria-pressed", String(state.active && state.mode === mode));
@@ -163,6 +188,17 @@ export class Toolbar {
         ? "Dev build with source positions — source lines include line and column numbers."
         : "Dev build — source lines will be file-level only. A source-position plugin (Nuxt DevTools, for instance) adds line and column numbers.";
     }
+  }
+
+  /**
+   * Override the hint for the duration of a drag. Separate from `update()`
+   * because the drag rewrites this at animation-frame rate, and routing that
+   * through the orchestrator's `render()` would rebuild the whole toolbar
+   * sixty times a second. `null` hands the line back to the current mode.
+   */
+  setHint(text: string | null): void {
+    this.hintOverride = text;
+    this.hintElement.textContent = text ?? this.modeHint;
   }
 
   destroy(): void {
