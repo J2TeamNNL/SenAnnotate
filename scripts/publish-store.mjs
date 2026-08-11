@@ -143,9 +143,9 @@ async function accessToken() {
 // Upload and publish
 // -----------------------------------------------------------------------------
 
-async function call(url, token, { body, contentType } = {}) {
+async function call(url, token, { body, contentType, method = "POST" } = {}) {
   const response = await fetch(url, {
-    method: "POST",
+    method,
     headers: {
       authorization: `Bearer ${token}`,
       ...(contentType ? { "content-type": contentType } : {}),
@@ -202,9 +202,16 @@ async function main() {
   // `--check` proves the credential chain and the two ids without touching the listing:
   // `:fetchStatus` only reads. Worth having, because the alternative way to discover that a
   // secret is wrong is a failed release, mid-release.
-  if (process.argv.includes("--check")) {
+  //
+  // GET, unlike every other method here. The API's own overview page lists fetchStatus in a
+  // table of POST methods; the method reference page is the one that is right, and the first
+  // run of this against POST came back as Google's generic HTML 404 — a route that does not
+  // exist, not a JSON error about a missing item. Worth the note: an HTML error page from
+  // this API means the URL or verb is wrong, and a JSON one means the request reached the
+  // API and was rejected.
+  if (checkOnly) {
     const token = await accessToken();
-    const status = await call(`${API}/v2/${item}:fetchStatus`, token);
+    const status = await call(`${API}/v2/${item}:fetchStatus`, token, { method: "GET" });
     if (!status.ok) {
       fail(
         `fetchStatus failed (HTTP ${status.status}).\n${status.text}\n\n` +
