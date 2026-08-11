@@ -482,6 +482,47 @@ async function main() {
       (await marquee.locator(".composer__meta").count()) === 0,
     );
 
+    // The preview must show exactly what releasing would annotate.
+    await marquee.mouse.move(dragFrom.x, dragFrom.y);
+    await marquee.mouse.down();
+    await marquee.mouse.move(dragTo.x, dragTo.y, { steps: 8 });
+
+    const previewCount = await marquee.locator(".highlight--preview").count();
+    check(
+      "the drag previews the elements it would take",
+      previewCount === 2,
+      `previewed ${previewCount}`,
+    );
+
+    await marquee.mouse.up();
+    const previewMeta = (await marquee.locator(".composer__meta").textContent())?.trim() ?? "";
+    check(
+      "the previewed set is the annotated set",
+      previewMeta.includes("2 elements"),
+      `meta read "${previewMeta}"`,
+    );
+    await marquee.keyboard.press("Escape");
+
+    // Scrolling mid-drag: the box is anchored to the page, not the viewport.
+    const scrollBy = 200;
+    await marquee.mouse.move(dragFrom.x, dragFrom.y);
+    await marquee.mouse.down();
+    await marquee.mouse.wheel(0, scrollBy);
+    await marquee.waitForFunction((y) => window.scrollY >= y, scrollBy);
+    await marquee.mouse.move(dragTo.x, dragTo.y - scrollBy, { steps: 8 });
+    await marquee.mouse.up();
+
+    const scrolledMeta = marquee.locator(".composer__meta");
+    await scrolledMeta.waitFor({ state: "visible", timeout: 5_000 });
+    const scrolledText = (await scrolledMeta.textContent())?.trim() ?? "";
+    check(
+      "scrolling mid-drag keeps the box on the page, not the viewport",
+      scrolledText.includes("2 elements"),
+      `meta read "${scrolledText}"`,
+    );
+    await marquee.keyboard.press("Escape");
+    await marquee.evaluate(() => window.scrollTo(0, 0));
+
     // -------------------------------------------------------------------------
     // Diagnostics — the tester workflow on a page that misbehaves
     // -------------------------------------------------------------------------
