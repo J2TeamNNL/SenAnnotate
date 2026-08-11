@@ -32,6 +32,8 @@ const NOT_OURS = `:not([${UI_ATTR}]):not([${UI_ATTR}] *)`;
 export const originalSetTimeout = window.setTimeout.bind(window);
 const originalSetInterval = window.setInterval.bind(window);
 const originalRequestAnimationFrame = window.requestAnimationFrame.bind(window);
+const originalClearTimeout = window.clearTimeout.bind(window);
+const originalCancelAnimationFrame = window.cancelAnimationFrame.bind(window);
 
 let frozen = false;
 
@@ -106,11 +108,26 @@ function resumeWebAnimations(): void {
   pausedAnimations.clear();
 }
 
-/** True for animations belonging to our own overlay, which must keep running. */
+/**
+ * True for animations belonging to our own overlay, which must keep running.
+ *
+ * The overlay lives inside an open shadow root whose HOST carries the UI attribute, and
+ * plain `closest()` stops at the shadow boundary — so the walk hops from each shadow
+ * root to its host, or every one of our own animations would be judged "not ours" and
+ * frozen along with the page.
+ */
 function isOurs(animation: Animation): boolean {
   const target = (animation.effect as KeyframeEffect | null)?.target;
   if (!(target instanceof Element)) return false;
-  return !!target.closest(`[${UI_ATTR}]`);
+
+  let current: Element | null = target;
+  while (current) {
+    if (current.closest(`[${UI_ATTR}]`)) return true;
+    const root = current.getRootNode();
+    if (!(root instanceof ShadowRoot)) return false;
+    current = root.host;
+  }
+  return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -150,85 +167,112 @@ function resumeVideos(): void {
 // 4. JS-driven motion
 // -----------------------------------------------------------------------------
 //
-// Timers are *held*, not dropped: callbacks queued during a freeze run on unfreeze, so a
-// paused animation loop resumes rather than dying. Dropping them would leave apps in a
-// half-finished state — a spinner that never stops, a queue that never drains.
+// The design constraint that shapes everything here: **the id a caller gets back must be
+// a real timer id at all times**, so that `clearTimeout` / `clearInterval` /
+// `cancelAnimationFrame` keep working with no correspondence table. An earlier version
+// handed out decoy ids while frozen and held callbacks in a side queue — which meant a
+// cancelled timer replayed anyway, a 60-second timeout fired 59 seconds early, and an
+// interval cancelled by the page resurrected on unfreeze and could never be cleared
+// again.
 //
-// rAF callbacks are held the same way and replayed with a fresh timestamp, since the one
-// they would have received is long stale by then.
+// So instead: the scheduling functions are wrapped ONCE, at document_start (the same
+// approach diagnostics.ts takes with fetch/XHR — this script runs before the page's
+// first line, so every page timer passes through the wrapper). Timers run on their real
+// schedule; the wrapper checks `frozen` at *fire time*:
+//
+//   setTimeout   fires while frozen → the callback is parked, keyed by its real id,
+//                and replayed on unfreeze. Fires while thawed → runs untouched. A
+//                long timeout that comes due after unfreeze keeps its full delay.
+//   rAF          same, replayed with a fresh timestamp — the original is long stale.
+//   setInterval  ticks that land during a freeze are swallowed, not queued: replaying
+//                a backlog would fire them in a burst, which no interval expects.
+//
+// The cancel functions stay wrapped for one reason only: a callback that already fired
+// into the parked state looks still-pending to the page, so cancelling it must remove
+// the parked entry too.
 
-type Held = { run: () => void };
+const parkedTimeouts = new Map<number, () => void>();
+const parkedFrames = new Map<number, FrameRequestCallback>();
 
-const heldTimeouts: Held[] = [];
-const heldFrames: Held[] = [];
+let timersWrapped = false;
 
-/** Intervals cannot be held — replaying a backlog would fire them in a burst. */
-const suspendedIntervals = new Map<number, { handler: TimerHandler; delay: number; args: unknown[] }>();
+function wrapTimers(): void {
+  if (timersWrapped) return;
+  timersWrapped = true;
 
-function patchTimers(): void {
   window.setTimeout = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
-    if (!frozen) return originalSetTimeout(handler, delay, ...args);
-    // Handed back a real id so callers can clearTimeout it; the callback is queued.
-    const id = originalSetTimeout(() => {}, 0);
-    heldTimeouts.push({ run: () => invoke(handler, args) });
+    // String handlers are eval-equivalent; passed straight through, never parked.
+    if (typeof handler !== "function") return originalSetTimeout(handler, delay);
+
+    const id: number = originalSetTimeout(() => {
+      if (frozen) parkedTimeouts.set(id, () => handler(...args));
+      else handler(...args);
+    }, delay);
     return id;
   }) as typeof window.setTimeout;
 
+  window.clearTimeout = ((id?: number) => {
+    if (typeof id === "number") parkedTimeouts.delete(id);
+    originalClearTimeout(id);
+  }) as typeof window.clearTimeout;
+
   window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
-    if (!frozen) return originalRequestAnimationFrame(callback);
-    const id = originalRequestAnimationFrame(() => {});
-    heldFrames.push({ run: () => callback(performance.now()) });
+    const id: number = originalRequestAnimationFrame((timestamp) => {
+      if (frozen) parkedFrames.set(id, callback);
+      else callback(timestamp);
+    });
     return id;
   }) as typeof window.requestAnimationFrame;
 
+  window.cancelAnimationFrame = ((id: number) => {
+    parkedFrames.delete(id);
+    originalCancelAnimationFrame(id);
+  }) as typeof window.cancelAnimationFrame;
+
   window.setInterval = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
-    if (!frozen) return originalSetInterval(handler, delay, ...args);
-    // Registered but never started while frozen; started for real on unfreeze.
-    const id = originalSetTimeout(() => {}, 0);
-    suspendedIntervals.set(id, { handler, delay: delay ?? 0, args });
-    return id;
+    if (typeof handler !== "function") return originalSetInterval(handler, delay);
+    // Real interval, real id — `clearInterval` needs no wrapping at all.
+    return originalSetInterval(() => {
+      if (!frozen) handler(...args);
+    }, delay);
   }) as typeof window.setInterval;
 }
 
-function restoreTimers(): void {
-  window.setTimeout = originalSetTimeout as typeof window.setTimeout;
-  window.setInterval = originalSetInterval as typeof window.setInterval;
-  window.requestAnimationFrame = originalRequestAnimationFrame;
-}
-
-function invoke(handler: TimerHandler, args: unknown[]): void {
-  if (typeof handler === "function") handler(...args);
-  // A string handler is `eval`-equivalent; deliberately not replayed.
-}
-
 /**
- * Drain the held queues. Each callback is isolated: one throwing must not strand the
- * rest, or a single bad animation loop takes the whole page's motion with it.
+ * Replay everything that came due during the freeze. Each callback is isolated: one
+ * throwing must not strand the rest, or a single bad animation loop takes the whole
+ * page's motion with it.
  *
- * The arrays are emptied before draining, because a replayed callback commonly schedules
- * the next frame and would otherwise append to the array being iterated.
+ * The maps are drained before iterating, because a replayed callback commonly schedules
+ * the next frame and would otherwise mutate the collection being iterated.
  */
-function replayHeld(): void {
-  const timeouts = heldTimeouts.splice(0);
-  const frames = heldFrames.splice(0);
+function replayParked(): void {
+  const timeouts = [...parkedTimeouts.values()];
+  const frames = [...parkedFrames.values()];
+  parkedTimeouts.clear();
+  parkedFrames.clear();
 
-  for (const held of [...timeouts, ...frames]) {
+  for (const run of timeouts) {
     try {
-      held.run();
+      run();
     } catch (error) {
-      console.warn("[senannotate] held callback threw on replay:", error);
+      console.warn("[senannotate] parked timeout threw on replay:", error);
     }
   }
 
-  for (const [, spec] of suspendedIntervals) {
+  const now = performance.now();
+  for (const frame of frames) {
     try {
-      originalSetInterval(spec.handler, spec.delay, ...spec.args);
+      frame(now);
     } catch (error) {
-      console.warn("[senannotate] suspended interval threw on restart:", error);
+      console.warn("[senannotate] parked frame threw on replay:", error);
     }
   }
-  suspendedIntervals.clear();
 }
+
+// Wrapped immediately: this module is evaluated at document_start, before any page
+// script runs, so no timer can be scheduled behind the wrapper's back.
+wrapTimers();
 
 // -----------------------------------------------------------------------------
 // Public API
@@ -238,7 +282,7 @@ export function freeze(): void {
   if (frozen) return;
   frozen = true;
 
-  patchTimers();
+  // Timers were wrapped at module load; the flag alone is what parks their callbacks.
   injectFreezeStyles();
   pauseWebAnimations();
   pauseVideos();
@@ -248,9 +292,8 @@ export function unfreeze(): void {
   if (!frozen) return;
   frozen = false;
 
-  restoreTimers();
   removeFreezeStyles();
   resumeWebAnimations();
   resumeVideos();
-  replayHeld();
+  replayParked();
 }

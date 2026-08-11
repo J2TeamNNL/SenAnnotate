@@ -231,6 +231,50 @@ async function main() {
     check("annotations survive a reload", (await page.locator(".marker").count()) === 1);
 
     // -------------------------------------------------------------------------
+    // Freeze: cancellation must stick
+    // -------------------------------------------------------------------------
+    //
+    // Regression tests for a decoy-id design this file once shipped: timers scheduled
+    // during a freeze got fake ids, so clearTimeout/clearInterval silently did nothing
+    // and the "cancelled" work replayed on unfreeze — a cleared interval came back
+    // permanently and could never be cleared again. page.evaluate runs in the MAIN
+    // world, which is exactly where the wrappers live.
+
+    await page.locator('.tool[title^="Freeze"]').click();
+    await page.evaluate(() => {
+      const state = { kept: 0, cancelledTimeout: 0, cancelledInterval: 0 };
+      window.__freezeTest = state;
+
+      window.setTimeout(() => state.kept++, 50);
+
+      const doomed = window.setTimeout(() => state.cancelledTimeout++, 50);
+      window.clearTimeout(doomed);
+
+      const interval = window.setInterval(() => state.cancelledInterval++, 50);
+      window.clearInterval(interval);
+    });
+    await page.waitForTimeout(400); // both timers come due while still frozen
+    await page.locator('.tool[title^="Freeze"]').click(); // unfreeze → replay
+    await page.waitForTimeout(400);
+
+    const freezeState = await page.evaluate(() => window.__freezeTest);
+    check(
+      "a timeout kept through a freeze replays exactly once",
+      freezeState.kept === 1,
+      JSON.stringify(freezeState),
+    );
+    check(
+      "a timeout cancelled during a freeze never fires",
+      freezeState.cancelledTimeout === 0,
+      JSON.stringify(freezeState),
+    );
+    check(
+      "an interval cancelled during a freeze does not resurrect",
+      freezeState.cancelledInterval === 0,
+      JSON.stringify(freezeState),
+    );
+
+    // -------------------------------------------------------------------------
     // Forensic element identification
     // -------------------------------------------------------------------------
     //

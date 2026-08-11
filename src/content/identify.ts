@@ -57,20 +57,6 @@ export function isOurUi(element: Element | null): boolean {
   return !!closestCrossingShadow(element, `[${UI_ATTR}]`);
 }
 
-/** The deepest element actually under the pointer, following shadow roots down. */
-function deepestAt(element: Element): Element {
-  let current = element;
-  // A custom element retargets events to itself; its shadow content is the real subject.
-  for (let depth = 0; depth < 10; depth++) {
-    const root = (current as Element & { shadowRoot?: ShadowRoot | null }).shadowRoot;
-    if (!root) break;
-    const inner = root.activeElement;
-    if (!(inner instanceof Element) || inner === current) break;
-    current = inner;
-  }
-  return current;
-}
-
 // -----------------------------------------------------------------------------
 // Class names
 // -----------------------------------------------------------------------------
@@ -181,20 +167,40 @@ function parentCrossingShadow(element: Element): Element | null {
 // Selector
 // -----------------------------------------------------------------------------
 
+/** Attributes put on elements specifically so tools can find them again. */
+const TEST_HOOKS = ["data-testid", "data-test", "data-cy", "data-qa"];
+
 /**
- * A selector that resolves back to this element.
+ * A selector that `document.querySelector` will actually resolve back to this element.
  *
- * Anchored on the nearest ancestor with an id, which keeps it short and stable; without
- * one it runs to `body`. Each step is disambiguated with `:nth-of-type` when the tag
- * repeats among its siblings, since a class list alone is frequently shared.
+ * That last clause is load-bearing twice over:
+ *
+ * - `querySelector` cannot cross a shadow boundary. For an element inside a shadow root
+ *   the honest answer is a selector for its **outermost host** — the deepest thing the
+ *   document can reach — rather than a plausible-looking path through the boundary that
+ *   never matches anything.
+ * - An id is only an anchor if it is **unique**. Real markup repeats ids constantly
+ *   (three widgets, each with `id="card"`), and `#card > button` silently resolves to
+ *   the first one — the wrong-element failure mode, worse than no match at all.
+ *
+ * Anchors are tried best-first on each ancestor: a test hook (put there precisely so
+ * tools can find the element), then a verified-unique id. Failing both, the path runs to
+ * `body` with `:nth-of-type` disambiguation.
  */
 export function buildSelector(target: Element): string {
+  // Climb out of any shadow trees first; the selector describes the light-DOM element.
+  let subject = target;
+  while (subject.getRootNode() instanceof ShadowRoot) {
+    subject = (subject.getRootNode() as ShadowRoot).host;
+  }
+
   const steps: string[] = [];
-  let current: Element | null = target;
+  let current: Element | null = subject;
 
   while (current && steps.length < 12) {
-    if (current.id) {
-      steps.unshift(`#${cssEscape(current.id)}`);
+    const anchor = anchorFor(current);
+    if (anchor) {
+      steps.unshift(anchor);
       return steps.join(" > ");
     }
 
@@ -204,10 +210,27 @@ export function buildSelector(target: Element): string {
     }
 
     steps.unshift(selectorStep(current));
-    current = parentCrossingShadow(current);
+    current = current.parentElement;
   }
 
   return steps.join(" > ");
+}
+
+/** A selector fragment that provably matches only this element, or null. */
+function anchorFor(element: Element): string | null {
+  for (const hook of TEST_HOOKS) {
+    const value = element.getAttribute(hook);
+    if (!value) continue;
+    const candidate = `[${hook}="${value.replace(/"/g, '\\"')}"]`;
+    if (element.ownerDocument.querySelectorAll(candidate).length === 1) return candidate;
+  }
+
+  if (element.id) {
+    const candidate = `#${cssEscape(element.id)}`;
+    if (element.ownerDocument.querySelectorAll(candidate).length === 1) return candidate;
+  }
+
+  return null;
 }
 
 function selectorStep(element: Element): string {
@@ -261,7 +284,7 @@ const TEXTUAL = new Set([
  * would identify the thing themselves.
  */
 export function identifyElement(target: Element): { name: string; path: string } {
-  const element = deepestAt(target);
+  const element = target;
   const tag = element.tagName.toLowerCase();
   const path = getElementPath(element);
 

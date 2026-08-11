@@ -26,6 +26,12 @@ Angular, by making the detector layer pluggable first. Its `context.md` has the 
 of what each framework actually exposes — the reason the design does not flatten them
 into one shape, and why Angular and React 19 report no source line at all.
 
+## [`hardening/`](./hardening/) — 0.3.2
+
+A full-codebase security and correctness review, then the fixes. All six confirmed
+defects were in the 0.3.1 clean-room rewrite; its changelog explains why the freeze
+timer design had to be replaced rather than patched.
+
 ## [`ci-cd/`](./ci-cd/) — GitHub Actions
 
 Build/typecheck on every push, and a tag-triggered GitHub Release carrying the packed

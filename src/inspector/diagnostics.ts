@@ -71,17 +71,14 @@ const SENSITIVE_PARAM = /^(.*(token|secret|password|passwd|signature|sig|apikey|
 export function redactUrl(raw: string): string {
   try {
     const url = new URL(raw, location.href);
-    let redacted = false;
 
     for (const key of Array.from(url.searchParams.keys())) {
-      if (!SENSITIVE_PARAM.test(key)) continue;
-      url.searchParams.set(key, "[redacted]");
-      redacted = true;
+      if (SENSITIVE_PARAM.test(key)) url.searchParams.set(key, "[redacted]");
     }
 
     // Same-origin URLs read better relative — that is how they appear in code.
     const text = url.origin === location.origin ? `${url.pathname}${url.search}` : url.href;
-    return truncate(redacted ? text : text, 500);
+    return truncate(text, 500);
   } catch {
     // Not a parseable URL (blob:, data:, or a relative string with no base).
     return truncate(raw.split("?")[0], 500);

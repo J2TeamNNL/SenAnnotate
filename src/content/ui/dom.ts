@@ -43,7 +43,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   }
   if (attrs.on) {
     for (const [event, handler] of Object.entries(attrs.on)) {
-      element.addEventListener(event, handler as EventListener);
+      element.addEventListener(event, guarded(event, handler as EventListener));
     }
   }
 
@@ -53,6 +53,26 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   }
 
   return element;
+}
+
+/**
+ * The shadow root is `mode: "open"` — it has to be, or the e2e suite's locators could
+ * not reach it — which means page scripts can reach in and dispatch synthetic events at
+ * our buttons: a hostile page could "click" the screenshot button and drop files into
+ * the user's Downloads, or clear their annotations.
+ *
+ * Synthetic events carry `isTrusted: false`, so activation events from a script are
+ * dropped here, centrally. Real input — mouse, keyboard, and automation via CDP, which
+ * is how the tests click — is `isTrusted: true` and unaffected.
+ */
+const ACTIVATION_EVENTS = new Set(["click", "mousedown", "mouseup", "pointerdown", "pointerup"]);
+
+function guarded(event: string, handler: EventListener): EventListener {
+  if (!ACTIVATION_EVENTS.has(event)) return handler;
+  return (domEvent: Event) => {
+    if (!domEvent.isTrusted) return;
+    handler(domEvent);
+  };
 }
 
 export function clear(element: Element): void {
