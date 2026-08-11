@@ -919,6 +919,105 @@ async function main() {
       !angular.report.includes("**Source:**"),
       angular.report.slice(0, 400),
     );
+
+    // -------------------------------------------------------------------------
+    // Collapse — the toolbar must get out of the way
+    // -------------------------------------------------------------------------
+    //
+    // Last in the run, and expanded again at the end: `toolbarCollapsed` lives in
+    // chrome.storage.sync, so a collapsed state left behind would follow every
+    // other page in this profile and break their `.tool--brand` clicks.
+    //
+    // marquee.html is used because it has no stored annotations — its own scenario
+    // escapes every composer it opens.
+    const collapsed = await context.newPage();
+    await collapsed.goto(`${base}/marquee.html`);
+    await collapsed.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const dock = collapsed.locator(".toolbar-dock");
+    const pill = collapsed.locator(".toolbar");
+    const handle = collapsed.locator(".tool--collapse");
+    const collapseBrand = collapsed.locator(".tool--brand");
+    const collapseHint = collapsed.locator(".toolbar-hint");
+
+    await collapseBrand.click(); // inspect on, so the hint line is showing too
+    await collapseHint.waitFor({ state: "visible", timeout: 5_000 });
+
+    await handle.click();
+
+    check("collapsing hides the toolbar controls", !(await collapseBrand.isVisible()));
+    check("collapsing hides the hint line", !(await collapseHint.isVisible()));
+    check(
+      "the collapsed toolbar stays on screen as a handle",
+      (await pill.isVisible()) && (await handle.isVisible()),
+    );
+
+    // A pill that shrank to a logo has nothing left saying inspect mode is armed,
+    // which would leave the next page click opening a composer out of nowhere.
+    check(
+      "the collapsed handle still marks inspect mode as on",
+      (await dock.getAttribute("data-inspecting")) === "true",
+      `data-inspecting read "${await dock.getAttribute("data-inspecting")}"`,
+    );
+
+    const handleBox = await handle.boundingBox();
+    check(
+      "the collapsed toolbar is about one button wide",
+      handleBox.width <= 44,
+      `handle measured ${Math.round(handleBox.width)}px`,
+    );
+
+    const handleCount = collapsed.locator(".handle-count");
+    check(
+      "the collapsed handle shows no count with nothing noted yet",
+      !(await handleCount.isVisible()),
+    );
+
+    // Collapsing is a display change, not a mode change.
+    await collapsed.locator("#card-a").click();
+    await collapsed.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    check("a collapsed toolbar still annotates", await collapsed.locator(".composer").isVisible());
+    await collapsed.locator(".composer__input").fill("Noted while the toolbar was collapsed.");
+    await collapsed.locator(".composer .button--primary").click();
+    await collapsed.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    check(
+      "the collapsed handle carries the annotation count",
+      ((await handleCount.textContent())?.trim() ?? "") === "1",
+      `handle count read "${(await handleCount.textContent())?.trim() ?? ""}"`,
+    );
+
+    await collapsed.reload();
+    await collapsed.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await collapsed.waitForTimeout(600); // settings load is async
+    check("the collapsed state survives a reload", !(await collapseBrand.isVisible()));
+    check(
+      "the count is back on the handle after a reload",
+      ((await handleCount.textContent())?.trim() ?? "") === "1",
+      `handle count read "${(await handleCount.textContent())?.trim() ?? ""}"`,
+    );
+
+    // Inspect mode is off after a reload, so this also proves `h` is handled above
+    // the guard that gates 1/2/3/f/a on inspect mode being on.
+    check(
+      "a reload leaves inspect mode off",
+      (await dock.getAttribute("data-inspecting")) === "false",
+      `data-inspecting read "${await dock.getAttribute("data-inspecting")}"`,
+    );
+    await collapsed.keyboard.press("h");
+    await collapsed.waitForTimeout(200);
+    check("h expands the toolbar with inspect mode off", await collapseBrand.isVisible());
+    check(
+      "the expanded toolbar shows the count once, on the panel button",
+      !(await handleCount.isVisible()) && (await collapsed.locator(".count").isVisible()),
+    );
+
+    await collapsed.keyboard.press("h");
+    await collapsed.waitForTimeout(200);
+    check("h collapses it again", !(await collapseBrand.isVisible()));
+
+    await handle.click(); // and the handle is the way back for the mouse
+    check("clicking the handle expands the toolbar", await collapseBrand.isVisible());
   } finally {
     await context.close();
     server.close();

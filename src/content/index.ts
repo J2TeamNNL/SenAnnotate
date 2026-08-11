@@ -131,6 +131,7 @@ const toolbar = new Toolbar(ui.cardLayer, {
   },
   onToggleFreeze: () => toggleFreeze(),
   onTogglePanel: () => togglePanel(),
+  onToggleCollapse: () => toggleCollapsed(),
 });
 
 let panel: Panel | null = null;
@@ -161,7 +162,15 @@ const panelCallbacks = {
 };
 
 function render(): void {
-  toolbar.update({ active, mode, frozen, panelOpen, count: annotations.length, page });
+  toolbar.update({
+    active,
+    mode,
+    frozen,
+    panelOpen,
+    collapsed: settings.toolbarCollapsed,
+    count: annotations.length,
+    page,
+  });
   markers.render(annotations, settings.showMarkers && !!annotations.length);
   panel?.render(annotations, settings.detailLevel);
   void notifyBadge();
@@ -216,6 +225,20 @@ function togglePanel(force?: boolean): void {
     overlay.hideHighlights();
   }
 
+  render();
+}
+
+/**
+ * The collapsed state is a setting rather than a session flag, so that a reload of
+ * the page being reviewed does not put the pill back over the corner you were
+ * looking at. `onSettingsChanged` carries it to the other open tabs for free.
+ */
+function toggleCollapsed(force?: boolean): void {
+  const next = force ?? !settings.toolbarCollapsed;
+  if (next === settings.toolbarCollapsed) return;
+
+  settings = { ...settings, toolbarCollapsed: next };
+  void saveSettings(settings);
   render();
 }
 
@@ -706,6 +729,14 @@ listen(document, "keydown", (event) => {
   if (target?.isContentEditable) return;
   if (target && /^(input|textarea|select)$/i.test(target.tagName)) return;
   if (keyboard.metaKey || keyboard.ctrlKey || keyboard.altKey) return;
+
+  // Above the `active` guard on purpose: the pill covers the bottom-right corner
+  // whether or not you are inspecting, so getting it out of the way must not require
+  // turning inspect mode on first.
+  if (keyboard.key === "h") {
+    toggleCollapsed();
+    return;
+  }
 
   if (!active) return;
 

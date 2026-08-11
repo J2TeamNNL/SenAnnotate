@@ -10,6 +10,8 @@ export interface ToolbarState {
   mode: InspectMode;
   frozen: boolean;
   panelOpen: boolean;
+  /** Shrunk to a single handle, so the pill stops covering the page. */
+  collapsed: boolean;
   count: number;
   page: PageFrameworkInfo | null;
 }
@@ -19,6 +21,7 @@ export interface ToolbarCallbacks {
   onModeChange(mode: InspectMode): void;
   onToggleFreeze(): void;
   onTogglePanel(): void;
+  onToggleCollapse(): void;
 }
 
 const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
@@ -47,7 +50,14 @@ export class Toolbar {
   private readonly modeGroup: HTMLElement;
   private readonly freezeButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
+  private readonly collapseButton: HTMLButtonElement;
   private readonly countBadge: HTMLElement;
+  /**
+   * The count again, on the collapsed handle. A separate node rather than a moved
+   * one: `.count` is read by an e2e assertion, and two elements sharing that class
+   * would make the locator ambiguous.
+   */
+  private readonly handleCount: HTMLElement;
   private readonly stackBadge: HTMLElement;
   private readonly hintElement: HTMLElement;
   /** Transient text from a drag; `null` means "show the mode's own hint". */
@@ -112,6 +122,29 @@ export class Toolbar {
 
     this.stackBadge = h("span", { class: "stack-badge", style: { display: "none" } });
 
+    // Both icons live in the button and the stylesheet picks one. `update()` runs on
+    // every state change — panel toggles, hover-driven counts — and swapping an SVG
+    // node there would be needless churn for a button that only has two faces.
+    const collapseIcon = icon("chevron");
+    collapseIcon.classList.add("tool__icon--collapse");
+    const expandIcon = icon("s", 17);
+    expandIcon.classList.add("tool__icon--expand");
+
+    this.handleCount = h("span", { class: "handle-count", text: "0", style: { display: "none" } });
+
+    this.collapseButton = h(
+      "button",
+      {
+        class: "tool tool--collapse",
+        title: "Collapse toolbar (H)",
+        attrs: { "aria-expanded": "true" },
+        on: { click: () => callbacks.onToggleCollapse() },
+      },
+      collapseIcon,
+      expandIcon,
+      this.handleCount,
+    );
+
     this.hintElement = h("div", { class: "toolbar-hint", style: { display: "none" } });
 
     const bar = h(
@@ -123,6 +156,7 @@ export class Toolbar {
       h("span", { class: "divider" }),
       this.freezeButton,
       this.panelButton,
+      this.collapseButton,
     );
 
     // The dock owns the fixed position; `.toolbar` stays the pill so the e2e
@@ -133,6 +167,8 @@ export class Toolbar {
   }
 
   update(state: ToolbarState): void {
+    this.applyCollapse(state);
+
     this.brandButton.setAttribute("aria-pressed", String(state.active));
     this.brandLabel.textContent = state.active ? "Inspecting" : "Inspect";
     this.modeGroup.style.display = state.active ? "flex" : "none";
@@ -152,6 +188,32 @@ export class Toolbar {
     this.countBadge.style.display = state.count > 0 ? "inline-flex" : "none";
 
     this.applyStackBadge(state.page);
+  }
+
+  /**
+   * Collapsing is a display change and nothing more: inspect mode, freeze and the
+   * annotations all carry on. Which is why `data-inspecting` goes on the dock — with
+   * the label gone, the handle is the only thing left that can say inspect mode is
+   * armed, and an unmarked handle would leave the next page click opening a composer
+   * for no visible reason.
+   */
+  private applyCollapse({ collapsed, active, count }: ToolbarState): void {
+    this.element.dataset.collapsed = String(collapsed);
+    this.element.dataset.inspecting = String(active);
+    this.collapseButton.setAttribute("aria-expanded", String(!collapsed));
+
+    // The handle carries the count so that collapsing does not cost you the one
+    // number worth knowing at a glance: how much you have already noted.
+    this.handleCount.textContent = String(count);
+    this.handleCount.style.display = collapsed && count > 0 ? "inline-flex" : "none";
+
+    if (!collapsed) {
+      this.collapseButton.title = "Collapse toolbar (H)";
+      return;
+    }
+    this.collapseButton.title = count
+      ? `Show toolbar (H) — ${count} annotation${count === 1 ? "" : "s"}`
+      : "Show toolbar (H)";
   }
 
   /**

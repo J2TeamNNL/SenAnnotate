@@ -155,6 +155,88 @@ button {
   letter-spacing: 0.01em;
 }
 
+/* ==========================================================================
+   Collapsed toolbar
+   ========================================================================== */
+
+/*
+ * `!important` is load-bearing, not decoration. `Toolbar.update()` writes `display`
+ * inline on the stack badge, the mode group, the count and the hint line, and an
+ * author `!important` declaration is what outranks a normal one in a style attribute.
+ *
+ * The pill itself stays visible and becomes the handle. Hiding `.toolbar` outright
+ * would take away the only way back — and ten e2e scenarios wait on it being visible.
+ */
+.toolbar-dock[data-collapsed="true"] .toolbar > :not(.tool--collapse),
+.toolbar-dock[data-collapsed="true"] .toolbar-hint {
+  display: none !important;
+}
+
+.toolbar-dock[data-collapsed="true"] .toolbar {
+  padding: 3px;
+  border-radius: 999px;
+}
+
+/* Inspect mode survives a collapse, so it still needs to be legible on the handle. */
+.toolbar-dock[data-collapsed="true"][data-inspecting="true"] .toolbar {
+  border-color: var(--sa-accent);
+  box-shadow: var(--sa-shadow), 0 0 0 2px color-mix(in srgb, var(--sa-accent) 45%, transparent);
+}
+
+/*
+ * Circular to match the pill it has become. Without this the hover fill and the
+ * browser's keyboard focus ring stay rounded-square, and a square ring drawn around
+ * a round handle reads as a rendering bug rather than as focus.
+ */
+.toolbar-dock[data-collapsed="true"] .tool--collapse {
+  position: relative;
+  border-radius: 999px;
+  color: var(--sa-accent);
+}
+
+/*
+ * Collapsing must not cost you the count. Deliberately not the `.count` class: an
+ * e2e assertion reads `.count` by itself, and a second element under that name would
+ * make the locator ambiguous.
+ */
+.handle-count {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  border: 1.5px solid var(--sa-bg-solid);
+  background: var(--sa-accent);
+  color: var(--sa-accent-ink);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Down rotated counter-clockwise points right, in a y-down coordinate system: `»`,
+   the direction the pill folds away in, being docked to the right edge. */
+.tool--collapse .tool__icon--collapse {
+  transform: rotate(-90deg);
+}
+
+.tool--collapse .tool__icon--expand {
+  display: none;
+}
+
+.toolbar-dock[data-collapsed="true"] .tool--collapse .tool__icon--collapse {
+  display: none;
+}
+
+.toolbar-dock[data-collapsed="true"] .tool--collapse .tool__icon--expand {
+  display: block;
+}
+
 .divider {
   width: 1px;
   height: 20px;

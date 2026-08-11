@@ -231,6 +231,12 @@ export interface Settings {
    * tester on a built site, where component and source data are unavailable.
    */
   captureDiagnostics: boolean;
+  /**
+   * Shrink the toolbar to a single handle. Persisted rather than session-only so
+   * that reviewing a page whose bottom-right corner matters — a chat widget, a
+   * cookie bar — does not mean re-collapsing after every reload.
+   */
+  toolbarCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -242,6 +248,7 @@ export const DEFAULT_SETTINGS: Settings = {
   includeProps: true,
   maxComponents: 6,
   captureDiagnostics: true,
+  toolbarCollapsed: false,
 };
 
 export const OUTPUT_DETAIL_OPTIONS: { value: OutputDetailLevel; label: string; hint: string }[] = [
