@@ -61,11 +61,20 @@ Requires Chrome 111+ (the extension needs `world: "MAIN"` content scripts).
 | Toggle inspect mode | click **Inspect**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> |
 | Annotate an element | click it |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
-| Annotate several elements | mode <kbd>3</kbd>, then drag across them |
+| Annotate several elements | mode <kbd>3</kbd>, then drag a box around them |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Copy the report | **Copy report** in the panel |
 | Cancel / exit | <kbd>Esc</kbd> |
+
+The line under the toolbar always names what the current mode does and which keys
+switch to the others, so nothing above needs memorising.
+
+Dragging a box selects **everything it fully contains**, at the shallowest level
+contained — draw around three cards and you get three cards, not the `<div>`s
+inside them. Elements the box merely clips are left out. The selection is
+highlighted live while you drag and counted in the line under the toolbar, so you
+can adjust before letting go.
 
 Annotations are stored per `origin + pathname`, so they survive a reload and come
 back when you return to the same screen.

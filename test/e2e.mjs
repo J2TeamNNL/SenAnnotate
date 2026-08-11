@@ -464,6 +464,14 @@ async function main() {
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
+    // The drag repaints on requestAnimationFrame, so a read taken straight after
+    // a mouse move can land on the frame before the one that reflects it. Every
+    // mid-drag assertion waits this out first.
+    const nextFrame = () =>
+      marquee.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
+
     const cardA = await marquee.locator("#card-a").boundingBox();
     const cardC = await marquee.locator("#card-c").boundingBox();
 
@@ -507,6 +515,8 @@ async function main() {
     await marquee.mouse.move(dragFrom.x, dragFrom.y);
     await marquee.mouse.down();
     await marquee.mouse.move(dragTo.x, dragTo.y, { steps: 8 });
+
+    await nextFrame();
 
     const previewCount = await marquee.locator(".highlight--preview").count();
     check(
@@ -554,6 +564,7 @@ async function main() {
     await marquee.mouse.move(cardA.x, emptyY);
     await marquee.mouse.down();
     await marquee.mouse.move(cardA.x + 120, emptyY + 60, { steps: 4 });
+    await nextFrame();
     check(
       "an empty box says nothing is inside it",
       ((await hint.textContent())?.trim() ?? "") === "Nothing inside the box yet",
