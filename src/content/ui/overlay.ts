@@ -11,6 +11,14 @@ export interface HighlightLabel {
   secondary?: string | null;
 }
 
+/** Anything with a viewport-space box — `DOMRect` satisfies it structurally. */
+export interface HighlightRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 export class Overlay {
   private readonly boxes: HTMLElement[] = [];
   private readonly marquee: HTMLElement;
@@ -27,10 +35,21 @@ export class Overlay {
   // ---------------------------------------------------------------------------
 
   /**
-   * Draw a highlight around each rect. The first one carries the label; the rest
-   * are drawn muted, which is what a marquee selection looks like.
+   * Draw a highlight around each rect.
+   *
+   * Normally the first one carries the label and the rest are drawn muted, which
+   * is what a saved multi-element annotation looks like. `preview` is the marquee
+   * case: every box is the live selection, so none of them is secondary, and the
+   * position transition is dropped because a pooled box reused for a different
+   * element would otherwise slide across the page at drag speed.
    */
-  showHighlights(rects: DOMRect[], label?: HighlightLabel): void {
+  showHighlights(
+    rects: HighlightRect[],
+    label?: HighlightLabel,
+    options?: { preview?: boolean },
+  ): void {
+    const preview = options?.preview ?? false;
+
     // Reuse the boxes we already have rather than thrashing the DOM on every
     // pointermove — this runs at mouse-move frequency.
     while (this.boxes.length < rects.length) {
@@ -40,6 +59,9 @@ export class Overlay {
     }
     for (let i = rects.length; i < this.boxes.length; i++) {
       this.boxes[i].style.display = "none";
+      // Cleared as well as hidden, so a class never outlives the box's use and
+      // `.highlight--preview` can be counted directly.
+      this.boxes[i].classList.remove("highlight--muted", "highlight--preview");
     }
 
     rects.forEach((rect, index) => {
@@ -49,7 +71,8 @@ export class Overlay {
       box.style.top = `${rect.top}px`;
       box.style.width = `${rect.width}px`;
       box.style.height = `${rect.height}px`;
-      box.classList.toggle("highlight--muted", index > 0);
+      box.classList.toggle("highlight--muted", !preview && index > 0);
+      box.classList.toggle("highlight--preview", preview);
 
       // Only the first box gets a label, and only when one was supplied.
       box.replaceChildren();
@@ -57,7 +80,7 @@ export class Overlay {
     });
   }
 
-  private buildLabel(rect: DOMRect, label: HighlightLabel): HTMLElement {
+  private buildLabel(rect: HighlightRect, label: HighlightLabel): HTMLElement {
     const element = h(
       "div",
       { class: "highlight__label" },
@@ -93,43 +116,4 @@ export class Overlay {
     this.hideHighlights();
     this.hideMarquee();
   }
-}
-
-// -----------------------------------------------------------------------------
-// Marquee hit-testing
-// -----------------------------------------------------------------------------
-
-const MAX_MARQUEE_ELEMENTS = 30;
-const MIN_MARQUEE_SIZE = 6;
-
-/**
- * Every element whose box intersects the marquee, keeping only the deepest ones.
- *
- * Without the ancestor pass you select the element AND every wrapper around it,
- * which produces a report full of anonymous `<div>`s. Dropping any element that
- * contains another hit leaves exactly the leaves the user drew across.
- */
-export function elementsInRect(
-  rect: { left: number; top: number; right: number; bottom: number },
-  isEligible: (element: Element) => boolean,
-): Element[] {
-  if (rect.right - rect.left < MIN_MARQUEE_SIZE || rect.bottom - rect.top < MIN_MARQUEE_SIZE) {
-    return [];
-  }
-
-  const hits: Element[] = [];
-
-  for (const element of Array.from(document.body.querySelectorAll("*"))) {
-    if (!isEligible(element)) continue;
-
-    const box = element.getBoundingClientRect();
-    if (box.width === 0 || box.height === 0) continue;
-    const intersects =
-      box.left < rect.right && box.right > rect.left && box.top < rect.bottom && box.bottom > rect.top;
-    if (intersects) hits.push(element);
-  }
-
-  const leaves = hits.filter((element) => !hits.some((other) => other !== element && element.contains(other)));
-
-  return leaves.slice(0, MAX_MARQUEE_ELEMENTS);
 }

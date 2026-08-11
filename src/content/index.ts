@@ -47,7 +47,14 @@ import {
 import { Composer } from "./ui/composer";
 import { listen } from "./ui/dom";
 import { Markers } from "./ui/markers";
-import { elementsInRect, Overlay } from "./ui/overlay";
+import {
+  hitsInRect,
+  snapshotCandidates,
+  toViewport,
+  type Candidate,
+  type MarqueeHits,
+} from "./ui/marquee";
+import { Overlay } from "./ui/overlay";
 import { Panel } from "./ui/panel";
 import { createUiRoot } from "./ui/root";
 import { Toolbar } from "./ui/toolbar";
@@ -79,7 +86,14 @@ let panelOpen = false;
 
 let hoveredElement: Element | null = null;
 let composer: Composer | null = null;
+/** Drag anchor, in document coordinates so a mid-drag scroll cannot move it. */
 let marqueeStart: { x: number; y: number } | null = null;
+/** Latest pointer position, document coordinates. Read by the rAF callback. */
+let marqueePoint: { x: number; y: number } | null = null;
+/** Measured once per drag — see `snapshotCandidates`. */
+let marqueeCandidates: Candidate[] = [];
+let marqueeHits: MarqueeHits = { elements: [], rects: [], capped: false };
+let marqueeFrame = 0;
 
 /** Elements the composer is currently about — kept live for screenshotting. */
 let composerTargets: Element[] = [];
@@ -110,6 +124,7 @@ const toolbar = new Toolbar(ui.cardLayer, {
   onToggleActive: () => setActive(!active),
   onModeChange: (next) => {
     mode = next;
+    resetMarquee();
     overlay.hideAll();
     render();
   },
@@ -164,10 +179,10 @@ function setActive(next: boolean): void {
   if (active && !page?.detected) void ensureDetection();
 
   if (!active) {
+    resetMarquee();
     overlay.hideAll();
     hoveredElement = null;
     hoverLabel = null;
-    marqueeStart = null;
     document.body.style.removeProperty("cursor");
   } else {
     document.body.style.setProperty("cursor", "crosshair", "important");
@@ -570,13 +585,45 @@ listen(document, "mouseup", () => {
 
 // --- marquee -----------------------------------------------------------------
 
+function resetMarquee(): void {
+  if (marqueeFrame) {
+    cancelAnimationFrame(marqueeFrame);
+    marqueeFrame = 0;
+  }
+  marqueeStart = null;
+  marqueePoint = null;
+  marqueeCandidates = [];
+  marqueeHits = { elements: [], rects: [], capped: false };
+  overlay.hideMarquee();
+}
+
+/** Recompute and repaint the drag. Cheap: arithmetic over the snapshot, no DOM reads. */
+function drawMarquee(): void {
+  if (!marqueeStart || !marqueePoint) return;
+
+  const box = {
+    left: Math.min(marqueeStart.x, marqueePoint.x),
+    top: Math.min(marqueeStart.y, marqueePoint.y),
+    right: Math.max(marqueeStart.x, marqueePoint.x),
+    bottom: Math.max(marqueeStart.y, marqueePoint.y),
+  };
+
+  overlay.showMarquee(toViewport(box));
+  marqueeHits = hitsInRect(marqueeCandidates, box);
+  overlay.showHighlights(marqueeHits.rects.map(toViewport), undefined, { preview: true });
+}
+
 listen(
   document,
   "pointerdown",
   (event) => {
     if (!active || composer || mode !== "area") return;
     if (isOurUi(event.target as Element)) return;
-    marqueeStart = { x: event.clientX, y: event.clientY };
+
+    marqueeStart = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY };
+    marqueePoint = marqueeStart;
+    marqueeCandidates = snapshotCandidates();
+    marqueeHits = { elements: [], rects: [], capped: false };
     overlay.hideHighlights();
   },
   { capture: true },
@@ -587,11 +634,12 @@ listen(
   "pointermove",
   (event) => {
     if (!marqueeStart) return;
-    overlay.showMarquee({
-      left: Math.min(marqueeStart.x, event.clientX),
-      top: Math.min(marqueeStart.y, event.clientY),
-      width: Math.abs(event.clientX - marqueeStart.x),
-      height: Math.abs(event.clientY - marqueeStart.y),
+    marqueePoint = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY };
+    // One repaint per frame however fast the pointer reports.
+    if (marqueeFrame) return;
+    marqueeFrame = requestAnimationFrame(() => {
+      marqueeFrame = 0;
+      drawMarquee();
     });
   },
   { passive: true },
@@ -600,22 +648,25 @@ listen(
 listen(
   document,
   "pointerup",
-  (event) => {
+  () => {
     if (!marqueeStart) return;
-    const start = marqueeStart;
-    marqueeStart = null;
-    overlay.hideMarquee();
 
-    const rect = {
-      left: Math.min(start.x, event.clientX),
-      top: Math.min(start.y, event.clientY),
-      right: Math.max(start.x, event.clientX),
-      bottom: Math.max(start.y, event.clientY),
-    };
+    // Flush a pending frame rather than dropping it, so what was annotated is
+    // exactly what was highlighted when the button came up.
+    if (marqueeFrame) {
+      cancelAnimationFrame(marqueeFrame);
+      marqueeFrame = 0;
+      drawMarquee();
+    }
 
-    const hits = elementsInRect(rect, eligible);
-    if (!hits.length) return;
-    void beginAnnotation(hits);
+    const hits = marqueeHits;
+    resetMarquee();
+
+    if (!hits.elements.length) {
+      overlay.hideHighlights();
+      return;
+    }
+    void beginAnnotation(hits.elements);
   },
   { capture: true },
 );
@@ -649,16 +700,19 @@ listen(document, "keydown", (event) => {
   switch (keyboard.key) {
     case "1":
       mode = "point";
+      resetMarquee();
       overlay.hideAll();
       render();
       break;
     case "2":
       mode = "text";
+      resetMarquee();
       overlay.hideAll();
       render();
       break;
     case "3":
       mode = "area";
+      resetMarquee();
       overlay.hideAll();
       render();
       break;

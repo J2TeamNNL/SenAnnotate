@@ -203,6 +203,15 @@ button {
   background: color-mix(in srgb, var(--sa-fg-muted) 8%, transparent);
 }
 
+/*
+ * Boxes drawn while the marquee is being dragged. No transition: a pooled box
+ * reused for a different element would otherwise animate across the page at
+ * drag speed, which reads as the selection sliding around rather than changing.
+ */
+.highlight--preview {
+  transition: none;
+}
+
 .highlight__label {
   position: absolute;
   left: 0;

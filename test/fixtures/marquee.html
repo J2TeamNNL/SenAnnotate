@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Marquee fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; }
+      /* Pushes the grid down the page so there is room to scroll up into. */
+      #spacer-top { height: 300px; }
+      #grid { display: flex; gap: 40px; padding: 40px; }
+      .card { width: 180px; height: 120px; box-sizing: border-box; border: 1px solid #ccc; padding: 10px; }
+      .card-title { height: 20px; font-weight: 600; }
+      .card-body { height: 60px; }
+      #spacer-bottom { height: 1200px; }
+    </style>
+  </head>
+  <body>
+    <div id="spacer-top"></div>
+    <div id="grid">
+      <div class="card" id="card-a">
+        <div class="card-title">Card A</div>
+        <div class="card-body">Body A</div>
+      </div>
+      <div class="card" id="card-b">
+        <div class="card-title">Card B</div>
+        <div class="card-body">Body B</div>
+      </div>
+      <div class="card" id="card-c">
+        <div class="card-title">Card C</div>
+        <div class="card-body">Body C</div>
+      </div>
+    </div>
+    <div id="spacer-bottom"></div>
+  </body>
+</html>

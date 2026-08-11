@@ -435,6 +435,54 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // Marquee — contained + outermost
+    // -------------------------------------------------------------------------
+    const marquee = await context.newPage();
+    await marquee.goto(`${base}/marquee.html`);
+    await marquee.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await marquee.locator(".tool--brand").click();
+    await marquee.locator('.tool[title^="Drag"]').click();
+
+    const cardA = await marquee.locator("#card-a").boundingBox();
+    const cardC = await marquee.locator("#card-c").boundingBox();
+
+    // Fully around A and B; the right edge lands 20px inside C.
+    const dragFrom = { x: cardA.x - 10, y: cardA.y - 10 };
+    const dragTo = { x: cardC.x + 20, y: cardA.y + cardA.height + 10 };
+
+    await marquee.mouse.move(dragFrom.x, dragFrom.y);
+    await marquee.mouse.down();
+    await marquee.mouse.move(dragTo.x, dragTo.y, { steps: 8 });
+    await marquee.mouse.up();
+
+    const composerMeta = marquee.locator(".composer__meta");
+    await composerMeta.waitFor({ state: "visible", timeout: 5_000 });
+    const metaText = (await composerMeta.textContent())?.trim() ?? "";
+
+    check(
+      "a marquee selects the elements it fully contains",
+      metaText.includes("2 elements"),
+      `meta read "${metaText}"`,
+    );
+    check(
+      "a marquee keeps the outermost element, not the leaves",
+      !metaText.includes("card-title") && !metaText.includes("card-body"),
+      `meta read "${metaText}"`,
+    );
+
+    await marquee.keyboard.press("Escape");
+
+    // A stray click in area mode must not open the composer.
+    await marquee.mouse.move(cardA.x + 40, cardA.y + 40);
+    await marquee.mouse.down();
+    await marquee.mouse.move(cardA.x + 42, cardA.y + 42);
+    await marquee.mouse.up();
+    check(
+      "a drag under the minimum size selects nothing",
+      (await marquee.locator(".composer__meta").count()) === 0,
+    );
+
+    // -------------------------------------------------------------------------
     // Diagnostics — the tester workflow on a page that misbehaves
     // -------------------------------------------------------------------------
     const buggy = await context.newPage();
