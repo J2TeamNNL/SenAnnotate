@@ -1,0 +1,72 @@
+name: Publish a tag to the Chrome Web Store
+
+# The retry path for the Store half of a release.
+#
+# `release.yml` does this automatically on a tag, but the Store can refuse for reasons that
+# have nothing to do with the release — most commonly because the item is already in review,
+# which blocks any upload until it finishes. Re-running `release.yml` is not the answer: it
+# would try to create a GitHub Release that already exists.
+#
+# So this exists to ship an already-released tag whenever the Store is willing to take it.
+# It rebuilds and repacks from the tag rather than downloading the release asset, so it goes
+# through exactly the same build path as the original.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish, e.g. v0.5.3'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      # Validated before it is used as a ref. Only someone with write access can dispatch a
+      # workflow, so this is not an anonymous attack surface, but an input that decides what
+      # code gets checked out and then published to real users is worth constraining to the
+      # one shape it is ever meant to have. Needs no repository, so it runs before checkout.
+      - name: Validate the tag
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          printf '%s' "$TAG_INPUT" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::Tag must look like v1.2.3 — got '$TAG_INPUT'."
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Same guard release.yml uses: refuse if the tag and package.json disagree, so this
+      # cannot publish a zip whose manifest version is not the one named in the tag. Read
+      # through the environment, never `${{ }}` inside the script.
+      - name: Check the tag matches package.json
+        env:
+          TAG_INPUT: ${{ inputs.tag }}
+        run: |
+          TAG="${TAG_INPUT#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          echo "tag=$TAG package.json=$PKG"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag $TAG_INPUT does not match package.json version $PKG."
+            exit 1
+          fi
+
+      - run: npm run pack
+
+      - name: Publish to the Chrome Web Store
+        env:
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_SERVICE_ACCOUNT_JSON: ${{ secrets.CWS_SERVICE_ACCOUNT_JSON }}
+          CWS_UPLOAD_ONLY: ${{ vars.CWS_UPLOAD_ONLY }}
+        run: node scripts/publish-store.mjs

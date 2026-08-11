@@ -257,12 +257,20 @@ async function main() {
   });
 
   if (!upload.ok) {
-    // The most common cause by far, and the message Google returns for it is not obvious:
-    // the manifest version must be strictly higher than the published one.
+    // Two causes worth telling apart, because the advice is opposite. Printing the
+    // version-conflict hint for an in-review rejection — which the first real run did — sends
+    // you bumping a version that was never the problem.
+    const inReview = /NOT_UPDATEABLE|item that is in review/i.test(upload.text);
     fail(
       `Upload failed (HTTP ${upload.status}).\n${upload.text}\n\n` +
-        `If this mentions a version conflict: ${version} is not higher than what is already\n` +
-        `on the Store. Bump package.json — the build stamps the manifest from it.`,
+        (inReview
+          ? `The item is in review, and the Store refuses to accept an upload until that\n` +
+            `finishes — it does not queue the new version or replace the pending submission.\n` +
+            `Nothing is wrong with this release: the GitHub Release and its zip are already\n` +
+            `published. When the review completes, run the "Publish a tag to the Chrome Web\n` +
+            `Store" workflow from the Actions tab with tag v${version}.`
+          : `If this mentions a version conflict: ${version} is not higher than what is\n` +
+            `already on the Store. Bump package.json — the build stamps the manifest from it.`),
     );
   }
   console.log(`  uploaded${upload.text.trim() ? `: ${upload.text.trim()}` : ""}`);

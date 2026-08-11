@@ -51,3 +51,35 @@ It also raises the stakes on a decision recorded in `../ci-cd/context.md`: CI de
 does not run the Playwright suite, so `npm test` before tagging is a manual gate. A tag now
 reaches the update channel of everyone who installed from the Store, so that gate matters
 more than it did when a tag only produced a zip.
+
+## First real run: rejected, and what it taught
+
+`v0.5.3` was the first tag to exercise the upload. It failed:
+
+```
+400 FAILED_PRECONDITION  NOT_UPDATEABLE
+"You may not edit or publish an item that is in review."
+```
+
+The listing's first submission was still in review, and the Store **refuses any upload while
+that is true**. Worth correcting an earlier claim in this record: it does not queue the new
+version, and it does not replace the pending submission — it rejects the request outright.
+
+Two flaws this exposed, both now fixed:
+
+**The error advice was wrong for this case.** The upload failure printed the version-conflict
+hint — "0.5.3 is not higher than what is already on the Store" — which is the most common
+cause but not this one, and it points at bumping a version that was never the problem. The
+message now branches on `NOT_UPDATEABLE` and says to wait for review instead.
+
+**There was no retry path.** Re-running `release.yml` cannot work: it would try to create a
+GitHub Release that already exists. So `store-publish.yml` takes a tag as a
+`workflow_dispatch` input, rebuilds and repacks from it, and publishes — the same build path
+as the original, runnable whenever the Store is willing to accept it. Its tag input is
+validated against `^v[0-9]+\.[0-9]+\.[0-9]+$` before it is used as a checkout ref: dispatch
+needs write access so it is not an anonymous surface, but an input that decides which code
+gets published to real users deserves the constraint.
+
+**The step ordering paid off.** Because the Store call runs after `gh release create`, the
+GitHub Release for `v0.5.3` and its zip were published normally and only the Store step went
+red. That was the stated reason for the ordering, and it held the first time it mattered.
