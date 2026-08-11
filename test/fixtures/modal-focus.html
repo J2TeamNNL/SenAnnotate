@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Focus-trap modal fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; padding: 40px; }
+      .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: none; }
+      .backdrop.open { display: block; }
+      .dialog {
+        position: fixed; left: 50%; transform: translateX(-50%);
+        width: 360px; box-sizing: border-box; padding: 24px; background: #fff;
+      }
+      #dialog-close { top: 80px; }
+      #dialog-restore { top: 80px; }
+    </style>
+  </head>
+  <body>
+    <h1>Focus-trap modal fixture</h1>
+    <button id="open-close">Open the close-on-focus-loss modal</button>
+    <button id="open-restore">Open the restore-focus modal</button>
+
+    <!-- A: dismisses when focus leaves the dialog. -->
+    <div class="backdrop" id="backdrop-close">
+      <div class="dialog" id="dialog-close" tabindex="-1">
+        <h2>Close on focus loss</h2>
+        <p class="close-body">This dialog gives up when focus leaves.</p>
+      </div>
+    </div>
+
+    <!-- B: what real focus traps do — pull focus back rather than close. -->
+    <div class="backdrop" id="backdrop-restore">
+      <div class="dialog" id="dialog-restore" tabindex="-1">
+        <h2>Restore focus</h2>
+        <p class="restore-body">This dialog yanks focus back.</p>
+      </div>
+    </div>
+
+    <script>
+      // Read by test/e2e.mjs: what the page did, so a failing check can say why.
+      window.__focusLog = [];
+
+      const closeBackdrop = document.getElementById("backdrop-close");
+      const closeDialog = document.getElementById("dialog-close");
+      const restoreBackdrop = document.getElementById("backdrop-restore");
+      const restoreDialog = document.getElementById("dialog-restore");
+
+      document.getElementById("open-close").addEventListener("click", () => {
+        closeBackdrop.classList.add("open");
+        closeDialog.focus();
+      });
+      document.getElementById("open-restore").addEventListener("click", () => {
+        restoreBackdrop.classList.add("open");
+        restoreDialog.focus();
+      });
+
+      // Variant A. Deferred, because the incoming focus target is not settled during
+      // focusout — which is what any real implementation has to do too.
+      document.addEventListener("focusout", () => {
+        if (!closeBackdrop.classList.contains("open")) return;
+        setTimeout(() => {
+          if (closeDialog.contains(document.activeElement)) return;
+          closeBackdrop.classList.remove("open");
+          window.__focusLog.push("close:focusout");
+        }, 0);
+      });
+
+      // Variant B. The shape `focus-trap`, Radix and Headless UI all use: watch focus
+      // arriving anywhere outside the dialog and pull it back.
+      document.addEventListener("focusin", (event) => {
+        if (!restoreBackdrop.classList.contains("open")) return;
+        if (restoreDialog.contains(event.target)) return;
+        window.__focusLog.push("restore:focusin target=" + (event.target.tagName || "?").toLowerCase());
+        restoreDialog.focus();
+      });
+    </script>
+  </body>
+</html>

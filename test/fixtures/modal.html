@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Modal fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; padding: 40px; }
+      #backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: none; }
+      #backdrop.open { display: block; }
+      #dialog {
+        position: fixed; left: 50%; top: 100px; transform: translateX(-50%);
+        width: 360px; box-sizing: border-box; padding: 24px; background: #fff;
+      }
+      /* Opacity comes from a forwards-filling animation, so the freeze stylesheet's
+         `animation-play-state: paused` gets exercised on content that is only visible
+         because an animation finished. */
+      #dialog { opacity: 0; animation: appear 0.25s ease forwards; }
+      @keyframes appear { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+  </head>
+  <body>
+    <h1>Modal fixture</h1>
+    <button id="open">Open the modal</button>
+
+    <div id="backdrop">
+      <div id="dialog">
+        <h2>Confirm deletion</h2>
+        <p class="dialog-body">This cannot be undone.</p>
+        <button class="dialog-confirm">Delete</button>
+      </div>
+    </div>
+
+    <script>
+      // What dismissed the modal, so a failing check can say why rather than just
+      // "it closed". Read by test/e2e.mjs.
+      window.__closeLog = [];
+
+      const backdrop = document.getElementById("backdrop");
+      const dialog = document.getElementById("dialog");
+
+      document.getElementById("open").addEventListener("click", () => {
+        backdrop.classList.add("open");
+      });
+
+      // The canonical "dismiss on a pointer event outside the dialog". Deliberately on
+      // `mousedown` on `document`: that is what most hand-rolled versions use, and it
+      // fires before any `click` handler could cancel it.
+      document.addEventListener("mousedown", (event) => {
+        if (!backdrop.classList.contains("open")) return;
+        if (dialog.contains(event.target)) return;
+        backdrop.classList.remove("open");
+        window.__closeLog.push(
+          "mousedown target=" +
+            (event.target === document.documentElement
+              ? "<html>"
+              : event.target.tagName
+                ? event.target.tagName.toLowerCase()
+                : String(event.target)),
+        );
+      });
+    </script>
+  </body>
+</html>

@@ -579,6 +579,209 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // Modals — our own UI must not read as a click outside the page's dialog
+    // -------------------------------------------------------------------------
+    //
+    // Mouse events are `composed: true`, so a click on our toolbar leaves the shadow
+    // root and reaches `document` retargeted to our host — which sits on
+    // `documentElement`, outside every dialog on the page. A site that dismisses on
+    // "a pointer event outside the dialog" then closes the modal the moment the
+    // toolbar is touched, and the modal becomes impossible to annotate.
+    //
+    // The modal is opened with inspect mode OFF, because inspect mode correctly
+    // swallows page-directed clicks.
+    const modal = await context.newPage();
+    await modal.goto(`${base}/modal.html`);
+    await modal.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const modalOpen = () =>
+      modal.locator("#backdrop").evaluate((el) => el.classList.contains("open"));
+    // Names what dismissed it, so a failure says why rather than just "it closed".
+    const closeLog = () => modal.evaluate(() => window.__closeLog.join(", "));
+
+    await modal.locator("#open").click();
+    check("the fixture's modal opens", await modalOpen());
+
+    // Let the dialog's 0.25s entrance animation finish before anything freezes, or the
+    // freeze correctly pauses it mid-fade and the visibility check below would be
+    // asserting on a half-faded dialog rather than on what freeze does to a settled one.
+    await modal.waitForFunction(
+      () => getComputedStyle(document.getElementById("dialog")).opacity === "1",
+      null,
+      { timeout: 5_000 },
+    );
+
+    await modal.locator(".tool--brand").click();
+    check(
+      "toggling inspect does not dismiss the page's modal",
+      await modalOpen(),
+      `closed by: ${await closeLog()}`,
+    );
+
+    await modal.keyboard.press("f");
+    // Freezing crosses the bridge, so it lands a round-trip after the keypress — but this
+    // deliberately does NOT use `waitForFunction`, which polls on requestAnimationFrame:
+    // freeze parks rAF *and* setTimeout callbacks, so any in-page polling loop is held by
+    // the very state it is waiting to observe, and every such wait times out. A Node-side
+    // sleep plus one `evaluate` — neither of which depends on a page timer — is the only
+    // way to observe a frozen page.
+    await modal.waitForTimeout(600);
+    check(
+      "the page really is frozen",
+      await modal.evaluate(() => !!document.getElementById("senannotate-freeze-styles")),
+    );
+    check(
+      "freezing does not dismiss the page's modal",
+      await modalOpen(),
+      `closed by: ${await closeLog()}`,
+    );
+    // The dialog's opacity comes from a forwards-filling animation, so this also
+    // pins that `animation-play-state: paused` does not blank animated content.
+    check(
+      "a frozen modal is still visible",
+      (await modal.locator("#dialog").evaluate((el) => getComputedStyle(el).opacity)) === "1",
+    );
+    await modal.keyboard.press("f");
+
+    await modal.locator('.tool[title^="Annotations"]').click();
+    check(
+      "opening the panel does not dismiss the page's modal",
+      await modalOpen(),
+      `closed by: ${await closeLog()}`,
+    );
+    await modal.locator('.tool[title^="Annotations"]').click();
+
+    await modal.keyboard.press("h");
+    check(
+      "collapsing the toolbar does not dismiss the page's modal",
+      await modalOpen(),
+      `closed by: ${await closeLog()}`,
+    );
+    await modal.keyboard.press("h");
+
+    // The point of all of the above: the modal can actually be annotated.
+    await modal.locator(".dialog-body").click();
+    await modal.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    check("an element inside the modal opens the composer", await modalOpen());
+
+    await modal.locator(".composer__input").fill("This copy should name the item.");
+    await modal.locator(".composer .button--primary").click();
+    await modal.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    await modal.locator('.tool[title^="Annotations"]').click();
+    await modal.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await modal.locator(".panel .button--primary").click();
+    const modalReport = await modal.evaluate(() => navigator.clipboard.readText());
+    check(
+      "the report locates the annotated element inside the dialog",
+      /dialog/.test(modalReport),
+      modalReport.slice(0, 200),
+    );
+
+    // -------------------------------------------------------------------------
+    // Focus traps — our UI must not take focus off the page's dialog
+    // -------------------------------------------------------------------------
+    //
+    // Focus is the default action of `mousedown`, so a toolbar click used to move
+    // `document.activeElement` into our shadow root. Two things then went wrong, both
+    // measured: a modal that closes when focus leaves it was dismissed, and a modal with
+    // a focus trap fought the composer for focus and won — every keystroke of the note
+    // landed in the dialog and the textarea stayed empty.
+    //
+    // Each variant gets its own page: the fixture's two document-level listeners would
+    // otherwise observe each other's dialogs.
+
+    // Variant A — closes when focus leaves the dialog.
+    const focusClose = await context.newPage();
+    await focusClose.goto(`${base}/modal-focus.html`);
+    await focusClose.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const closeOpen = () =>
+      focusClose.locator("#backdrop-close").evaluate((el) => el.classList.contains("open"));
+    const focusLog = (page) => page.evaluate(() => window.__focusLog.join(", "));
+
+    await focusClose.locator("#open-close").click();
+    check("the close-on-focus-loss modal opens", await closeOpen());
+
+    await focusClose.locator(".tool--brand").click();
+    check(
+      "toggling inspect takes no focus off the page's dialog",
+      await closeOpen(),
+      `focus log: ${await focusLog(focusClose)}`,
+    );
+
+    await focusClose.keyboard.press("f");
+    await focusClose.waitForTimeout(600);
+    check(
+      "freezing takes no focus off the page's dialog",
+      await closeOpen(),
+      `focus log: ${await focusLog(focusClose)}`,
+    );
+    await focusClose.keyboard.press("f");
+
+    await focusClose.locator('.tool[title^="Annotations"]').click();
+    check(
+      "opening the panel takes no focus off the page's dialog",
+      await closeOpen(),
+      `focus log: ${await focusLog(focusClose)}`,
+    );
+    await focusClose.locator('.tool[title^="Annotations"]').click();
+
+    // The composer autofocuses its textarea, and the dialog's own `focusout` fires on the
+    // dialog rather than through our host — so this variant does close here, and cannot be
+    // made not to while typing requires focus. What must survive is the annotation: the
+    // element is captured before the composer opens, so the report is unaffected.
+    await focusClose.locator(".close-body").click();
+    await focusClose.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await focusClose.locator(".composer__input").fill("Noted while the dialog gave up.");
+    await focusClose.locator(".composer .button--primary").click();
+    await focusClose.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    await focusClose.locator('.tool[title^="Annotations"]').click();
+    await focusClose.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await focusClose.locator(".panel .button--primary").click();
+    const closeReport = await focusClose.evaluate(() => navigator.clipboard.readText());
+    check(
+      "a dialog that closes on focus loss still yields a report naming its element",
+      /close-body|dialog-close/.test(closeReport),
+      closeReport.slice(0, 200),
+    );
+
+    // Variant B — a real focus trap, which restores focus rather than closing.
+    const focusTrap = await context.newPage();
+    await focusTrap.goto(`${base}/modal-focus.html`);
+    await focusTrap.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const trapOpen = () =>
+      focusTrap.locator("#backdrop-restore").evaluate((el) => el.classList.contains("open"));
+
+    await focusTrap.locator("#open-restore").click();
+    check("the focus-trap modal opens", await trapOpen());
+
+    await focusTrap.locator(".tool--brand").click();
+    check(
+      "a toolbar click does not trip the page's focus trap",
+      (await focusLog(focusTrap)) === "",
+      `focus log: ${await focusLog(focusTrap)}`,
+    );
+
+    await focusTrap.locator(".restore-body").click();
+    await focusTrap.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    check("the focus-trap modal survives being annotated", await trapOpen());
+
+    // Real keystrokes, not `fill()`: `fill()` sets the value over CDP and would pass even
+    // with the page stealing focus back between characters, which is the actual bug.
+    await focusTrap.locator(".composer__input").click();
+    await focusTrap.keyboard.type("Typed inside a focus trap.", { delay: 20 });
+    const typed = await focusTrap.locator(".composer__input").inputValue();
+    check(
+      "a note typed inside a focus trap reaches the composer",
+      typed === "Typed inside a focus trap.",
+      `textarea holds "${typed}" · focus log: ${await focusLog(focusTrap)}`,
+    );
+    await focusTrap.keyboard.press("Escape");
+
+    // -------------------------------------------------------------------------
     // Diagnostics — the tester workflow on a page that misbehaves
     // -------------------------------------------------------------------------
     const buggy = await context.newPage();

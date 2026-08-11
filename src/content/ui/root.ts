@@ -53,6 +53,77 @@ export function createUiRoot(): UiRoot {
   document.documentElement.append(host);
 
   // ---------------------------------------------------------------------------
+  // Containment — our clicks are not the page's clicks
+  // ---------------------------------------------------------------------------
+  //
+  // Pointer events are `composed: true`: a click on a toolbar button leaves the shadow
+  // root, reaches `document`, and is **retargeted to the host** — which hangs off
+  // `documentElement`, outside every dialog on the page. Any site that dismisses on "a
+  // pointer event outside the dialog", far and away the most common pattern, therefore
+  // closed its modal the moment the toolbar was touched, making a modal the one thing
+  // that could not be annotated.
+  //
+  // Bubble phase on the host is the only seam that works. The capture-phase handlers in
+  // `content/index.ts` run before the event reaches our shadow root, so stopping there
+  // would cancel our own buttons instead; here, our inner listeners have already run and
+  // `document` has not been reached yet.
+  //
+  // `stopPropagation`, never `stopImmediatePropagation` — other listeners on the host are
+  // also ours.
+  //
+  // Keyboard events are deliberately absent: `keydown` on `document` is what implements
+  // f / a / h / 1-2-3, and focus sits inside this shadow root after any toolbar click, so
+  // stopping keystrokes here would disable every shortcut. The composer stops its own,
+  // which is the right scope. `pointermove` is absent too — not a dismissal trigger, and
+  // the hover path reads `elementFromPoint` rather than the event target.
+  for (const type of [
+    "pointerdown",
+    "pointerup",
+    "mousedown",
+    "mouseup",
+    "click",
+    "dblclick",
+    "contextmenu",
+    "touchstart",
+    "touchend",
+  ] as const) {
+    host.addEventListener(type, (event) => event.stopPropagation());
+  }
+
+  // Focus is the *default action* of `mousedown`, so cancelling it there is what keeps
+  // `document.activeElement` where it was — inside the page's dialog. Without this, a
+  // toolbar click moves focus into this shadow root, and a modal that closes when focus
+  // leaves it is dismissed exactly as if we had clicked outside.
+  //
+  // Text fields are exempt: the composer's textarea has to be focusable and its caret
+  // placeable. `composedPath()[0]` rather than `event.target`, which retargets to the host
+  // and would hide which inner element was actually hit.
+  //
+  // Buttons still fire `click` after a cancelled `mousedown`; the cost is that text inside
+  // the panel can no longer be selected by dragging, which nothing depends on.
+  host.addEventListener("mousedown", (event) => {
+    const hit = event.composedPath()[0];
+    if (hit instanceof Element && hit.closest("input, textarea, select, [contenteditable]")) {
+      return;
+    }
+    event.preventDefault();
+  });
+
+  // A focus trap — `focus-trap`, Radix, Headless UI all work this way — watches `focusin`
+  // on `document` and pulls focus back when it lands outside the dialog. Ours lands in
+  // this shadow root and retargets to the host, so without this the page fights the
+  // composer for focus and wins: measured, every keystroke of the note went to the dialog
+  // and the textarea stayed empty.
+  //
+  // What this cannot fix: a dialog's own `focusout` fires on the dialog, not in here, so a
+  // modal that closes on focus loss still closes once the composer takes focus. Typing
+  // requires focus, so that one is not solvable — but the annotation is captured before
+  // the composer opens, so the report is complete either way.
+  for (const type of ["focusin", "focusout"] as const) {
+    host.addEventListener(type, (event) => event.stopPropagation());
+  }
+
+  // ---------------------------------------------------------------------------
   // Theme
   // ---------------------------------------------------------------------------
 

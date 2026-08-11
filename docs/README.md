@@ -52,6 +52,22 @@ for chat widgets and cookie bars. Its `changelog.md` is worth reading for two tr
 keyboard focus ring that only a screenshot caught, and why the collapsed handle's count
 badge could not reuse the `.count` class.
 
+## [`modal-click-leak/`](./modal-click-leak/) — 0.5.1
+
+Our own toolbar was retargeting to the shadow host on the way out, so every site that
+dismisses a modal on an outside pointer event closed it the moment the toolbar was touched —
+making a modal the one thing that could not be annotated. Reported as a freeze bug; freeze
+was measured and cleared. Its `changelog.md` also records why `waitForFunction` can never
+observe a frozen page.
+
+## [`modal-focus-leak/`](./modal-focus-leak/) — 0.5.1
+
+The other half: a toolbar click took focus off the page's dialog, so a modal that closes on
+focus loss was dismissed and a modal with a focus trap fought the composer for focus and won —
+notes typed into it were silently dropped. Its `changelog.md` records the `fill()`
+measurement that nearly hid the second bug, and the one case that stays broken with the
+alternatives rejected.
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from
