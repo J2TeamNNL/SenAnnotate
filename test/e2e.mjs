@@ -782,6 +782,35 @@ async function main() {
     await focusTrap.keyboard.press("Escape");
 
     // -------------------------------------------------------------------------
+    // Screenshots — saved with no `downloads` permission
+    // -------------------------------------------------------------------------
+    //
+    // The manifest deliberately does not request `downloads`: the cropped PNG is handed to
+    // the browser the plain DOM way, via a blob URL on a hidden `<a download>`, which needs
+    // no permission at all. That is easy to "fix" by adding the permission back, and the
+    // Web Store rejects unnecessary permissions — so the path is pinned here.
+    const shooter = await context.newPage();
+    await shooter.goto(`${base}/vue3-app.html`);
+    await shooter.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await shooter.locator(".tool--brand").click();
+    await shooter.locator(".base-button").first().click();
+    await shooter.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+
+    const download = shooter
+      .waitForEvent("download", { timeout: 15_000 })
+      .then((d) => d.suggestedFilename())
+      .catch(() => null);
+    await shooter.locator('.composer .button[title^="Capture"]').click();
+    const savedAs = await download;
+
+    check(
+      "the screenshot downloads without a downloads permission",
+      typeof savedAs === "string" && savedAs.endsWith(".png"),
+      `download was ${savedAs === null ? "never offered" : `"${savedAs}"`}`,
+    );
+    await shooter.keyboard.press("Escape");
+
+    // -------------------------------------------------------------------------
     // Diagnostics — the tester workflow on a page that misbehaves
     // -------------------------------------------------------------------------
     const buggy = await context.newPage();

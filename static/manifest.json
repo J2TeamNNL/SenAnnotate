@@ -24,7 +24,7 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["storage", "activeTab", "downloads", "clipboardWrite"],
+  "permissions": ["storage", "activeTab", "clipboardWrite"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
