@@ -12,7 +12,7 @@
 // =============================================================================
 
 import { createServer } from "node:http";
-import { copyFile, readFile } from "node:fs/promises";
+import { copyFile, readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -446,7 +446,8 @@ async function main() {
     await hint.waitFor({ state: "visible", timeout: 5_000 });
     check(
       "the hint names the default mode and the keys for the others",
-      ((await hint.textContent())?.trim() ?? "") === "Click an element · 2 text · 3 area",
+      ((await hint.textContent())?.trim() ?? "") ===
+        "Click an element · C captures hover · 2 text · 3 area",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -830,6 +831,65 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // Hover capture — annotating what a click would destroy
+    // -------------------------------------------------------------------------
+    //
+    // The fixture's menu is open only while the pointer is on it. Clicking an item
+    // to annotate it is impossible to do *and* observe: the click is what closes the
+    // thing. `C` is the whole feature — capture without moving or pressing.
+    const hover = await context.newPage();
+    await hover.goto(`${base}/hover-menu.html`);
+    await hover.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await hover.locator(".tool--brand").click();
+
+    await hover.locator(".menu__trigger").hover();
+    const menuItem = hover.locator("#menu-billing");
+    await menuItem.waitFor({ state: "visible", timeout: 5_000 });
+
+    // Move onto the item itself and leave the pointer there for the keypress.
+    await menuItem.hover();
+    check("the hover-only menu is open with the pointer on it", await menuItem.isVisible());
+
+    await hover.keyboard.press("c");
+    const hoverComposer = hover.locator(".composer");
+    await hoverComposer.waitFor({ state: "visible", timeout: 5_000 });
+
+    const hoverMeta = (await hover.locator(".composer__meta").textContent())?.trim() ?? "";
+    check(
+      "C annotates the hovered menu item with no click",
+      /Billing settings/.test(hoverMeta),
+      `composer described "${hoverMeta}"`,
+    );
+
+    await hover.locator(".composer__input").fill("This item belongs above Sign out.");
+    await hover.locator(".composer .button--primary").click();
+    await hoverComposer.waitFor({ state: "detached", timeout: 5_000 });
+
+    await hover.locator('.tool[title^="Annotations"]').click();
+    await hover.locator(".panel .button--primary").click();
+    const hoverReport = await hover.evaluate(() => navigator.clipboard.readText());
+    check(
+      "the hover-captured note reaches the report intact",
+      hoverReport.includes("Billing settings") && hoverReport.includes("belongs above Sign out"),
+      hoverReport.split("\n").slice(0, 8).join(" / "),
+    );
+
+    // Pressing it over nothing must say so rather than looking broken.
+    const empty = await context.newPage();
+    await empty.goto(`${base}/plain.html`);
+    await empty.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await empty.locator(".tool--brand").click();
+    await empty.keyboard.press("c");
+    const emptyToast = empty.locator(".toast");
+    await emptyToast.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "C with nothing hovered explains itself",
+      /Hover an element first/.test((await emptyToast.textContent()) ?? ""),
+      `toast read "${(await emptyToast.textContent())?.trim() ?? ""}"`,
+    );
+    await empty.close();
+
+    // -------------------------------------------------------------------------
     // Screenshots — saved with no `downloads` permission
     // -------------------------------------------------------------------------
     //
@@ -844,11 +904,39 @@ async function main() {
     await shooter.locator(".base-button").first().click();
     await shooter.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
 
+    // The camera no longer downloads directly — it opens the markup editor, and
+    // nothing reaches the disk until that editor is saved. A cancelled markup must
+    // leave no file behind, which is the second half of this block.
+    await shooter.locator('.composer .button[title^="Capture"]').click();
+    const editor = shooter.locator(".shot-editor");
+    await editor.waitFor({ state: "visible", timeout: 10_000 });
+
+    check("the camera button opens the markup editor", await editor.isVisible());
+
+    // Draw a box, so the saved PNG is a marked-up one rather than the bare crop.
+    const canvasBox = await shooter.locator(".shot-editor__canvas").boundingBox();
+    check("the editor exposes a drawable canvas", canvasBox !== null && canvasBox.width > 0);
+
+    if (canvasBox) {
+      await shooter.mouse.move(canvasBox.x + 12, canvasBox.y + 12);
+      await shooter.mouse.down();
+      await shooter.mouse.move(canvasBox.x + canvasBox.width - 12, canvasBox.y + canvasBox.height - 12, {
+        steps: 8,
+      });
+      await shooter.mouse.up();
+    }
+
+    const undoEnabled = await shooter
+      .locator(".shot-tool", { hasText: "Undo" })
+      .isEnabled()
+      .catch(() => false);
+    check("drawing a shape enables undo", undoEnabled);
+
     const download = shooter
       .waitForEvent("download", { timeout: 15_000 })
       .then((d) => d.suggestedFilename())
       .catch(() => null);
-    await shooter.locator('.composer .button[title^="Capture"]').click();
+    await shooter.locator(".shot-editor .button--primary").click();
     const savedAs = await download;
 
     check(
@@ -856,6 +944,27 @@ async function main() {
       typeof savedAs === "string" && savedAs.endsWith(".png"),
       `download was ${savedAs === null ? "never offered" : `"${savedAs}"`}`,
     );
+
+    // The report has to name a path the reader can open. A bare filename — what
+    // 0.5.x emitted — is unresolvable to both a person and an agent.
+    await shooter.locator(".composer__input").fill("The corner radius is wrong here.");
+    await shooter.locator(".composer .button--primary").click();
+    await shooter.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    await shooter.locator('.tool[title^="Annotations"]').click();
+    await shooter.locator(".panel .button--primary").click();
+    const shotReport = await shooter.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "the report names where the screenshot was saved",
+      /\*\*Screenshot:\*\* ~\/Downloads\/senannotate-\d+\.png/.test(shotReport),
+      `report said: ${shotReport.split("\n").find((line) => line.includes("Screenshot")) ?? "(no screenshot line)"}`,
+    );
+    check(
+      "the default delivery does not embed the image in the report",
+      !shotReport.includes("data:image/"),
+      "a data: URI appeared with screenshotDelivery still on its 'path' default",
+    );
+
     await shooter.keyboard.press("Escape");
 
     // -------------------------------------------------------------------------
@@ -1298,6 +1407,266 @@ async function main() {
 
     await handle.click(); // and the handle is the way back for the mouse
     check("clicking the handle expands the toolbar", await collapseBrand.isVisible());
+
+    // -------------------------------------------------------------------------
+    // Triage — type, status, and what each does to the report
+    // -------------------------------------------------------------------------
+    // Its own fixture: annotations are keyed on origin + pathname and storage is
+    // shared across the whole context, so a page an earlier block annotated starts
+    // this one with notes already on it.
+    const triage = await context.newPage();
+    await triage.goto(`${base}/triage.html`);
+    await triage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await triage.locator(".tool--brand").click();
+
+    // One note typed as a bug…
+    await triage.locator(".cta").click();
+    await triage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await triage.locator('.kind-chip[data-kind="bug"]').click();
+    await triage.locator(".composer__input").fill("Clicking this does nothing at all.");
+    await triage.locator(".composer .button--primary").click();
+    await triage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    // …and one left on the default type.
+    await triage.locator("#headline").click();
+    await triage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await triage.locator(".composer__input").fill("Heading is too tight against the intro.");
+    await triage.locator(".composer .button--primary").click();
+    await triage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    await triage.locator('.tool[title^="Annotations"]').click();
+    await triage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await triage.locator(".panel .button--primary").click();
+    const triageReport = await triage.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "a typed note carries its type into the report heading",
+      /### 1\. \[bug\] /.test(triageReport),
+      triageReport.split("\n").find((line) => line.startsWith("### 1.")) ?? "(no first heading)",
+    );
+    check(
+      "the default type is not printed, so it decorates nothing",
+      !triageReport.includes("[ui]"),
+      "an explicit [ui] tag appeared where the default should stay silent",
+    );
+
+    // Marking one done moves it out of the numbered work list without losing it.
+    await triage.locator(".entry").first().locator(".entry__status").click();
+    await triage.locator(".panel .button--primary").click();
+    const doneReport = await triage.evaluate(() => navigator.clipboard.readText());
+
+    check("a done note gets its own section", doneReport.includes("## Already fixed"));
+    check(
+      "a done note is out of the numbered list",
+      !/### 1\. \[bug\] /.test(doneReport) && /Clicking this does nothing/.test(doneReport),
+      "the done note either stayed numbered or vanished entirely",
+    );
+    check(
+      "the one note still open is renumbered to 1",
+      doneReport.includes("### 1.") && !doneReport.includes("### 2."),
+      "numbering did not close up after a note was marked done",
+    );
+
+    const entriesBefore = await triage.locator(".entry").count();
+    await triage.locator(".panel__filter-button", { hasText: "Open" }).click();
+    const entriesOpen = await triage.locator(".entry").count();
+    check(
+      "the Open filter hides what is done",
+      entriesBefore === 2 && entriesOpen === 1,
+      `${entriesBefore} entries unfiltered, ${entriesOpen} with Open`,
+    );
+
+    await triage.locator(".panel__filter-button", { hasText: "Done" }).click();
+    check("the Done filter shows only what is done", (await triage.locator(".entry").count()) === 1);
+
+    // -------------------------------------------------------------------------
+    // Iframes — the document the top frame cannot reach into
+    // -------------------------------------------------------------------------
+    const framed = await context.newPage();
+    await framed.goto(`${base}/frames.html`);
+    await framed.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    check(
+      "exactly one toolbar exists, however many frames the page has",
+      (await framed.locator(".toolbar").count()) === 1,
+      `${await framed.locator(".toolbar").count()} toolbars`,
+    );
+
+    // The 1×1 frame must not have been instrumented at all.
+    const pixelHosts = await framed
+      .frameLocator("#pixel")
+      .locator("[data-senannotate-ui]")
+      .count()
+      .catch(() => 0);
+    check("a tracking-pixel-sized frame is left alone", pixelHosts === 0, `${pixelHosts} hosts`);
+
+    await framed.locator(".tool--brand").click();
+    // The state broadcast is a postMessage; give it a turn to land.
+    await framed.waitForTimeout(300);
+
+    const inner = framed.frameLocator("#embedded");
+    await inner.locator(".framed-button").click();
+
+    const framedComposer = framed.locator(".composer");
+    await framedComposer.waitFor({ state: "visible", timeout: 5_000 });
+
+    const framedMeta = (await framed.locator(".composer__meta").textContent())?.trim() ?? "";
+    check(
+      "clicking inside a frame annotates the inner element, not the <iframe>",
+      /Pay now/.test(framedMeta) && !/iframe/i.test(framedMeta),
+      `composer described "${framedMeta}"`,
+    );
+
+    // The composer is anchored off the translated box; if the frame's own offset were
+    // dropped, it would sit at the top-left of the page instead of near the button.
+    const composerBox = await framedComposer.boundingBox();
+    const iframeBox = await framed.locator("#embedded").boundingBox();
+    check(
+      "the capture is translated into the top document's coordinates",
+      composerBox !== null && iframeBox !== null && composerBox.x > iframeBox.x - 200,
+      `composer at x=${Math.round(composerBox?.x ?? -1)}, iframe at x=${Math.round(iframeBox?.x ?? -1)}`,
+    );
+
+    await framed.locator(".composer__input").fill("This button should say Place order.");
+    await framed.locator(".composer .button--primary").click();
+    await framedComposer.waitFor({ state: "detached", timeout: 5_000 });
+
+    await framed.locator('.tool[title^="Annotations"]').click();
+    await framed.locator(".panel .button--primary").click();
+    const frameReport = await framed.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "the report names the frame the element came from",
+      /\*\*Frame:\*\*/.test(frameReport) && /preview|frame-inner/.test(frameReport),
+      frameReport.split("\n").find((line) => line.startsWith("**Frame:**")) ?? "(no frame line)",
+    );
+    check(
+      "the framed element is still fully identified",
+      /Pay now/.test(frameReport),
+      "the inner button did not reach the report",
+    );
+
+    // -------------------------------------------------------------------------
+    // Export / import — driven through the real popup
+    // -------------------------------------------------------------------------
+    const [worker] = context.serviceWorkers();
+    const extensionId = worker ? new URL(worker.url()).host : null;
+    check("the extension id is discoverable from its service worker", extensionId !== null);
+
+    if (extensionId) {
+      const popup = await context.newPage();
+      await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+      await popup.locator("#export").waitFor({ state: "visible", timeout: 5_000 });
+
+      // The session report: every annotated page in one document, which is what
+      // walking a multi-screen flow produces and what four separate copies is not.
+      const pageRows = await popup.locator(".page-row").count();
+      check(
+        "the popup lists every page holding notes",
+        pageRows >= 3,
+        `${pageRows} page rows listed`,
+      );
+
+      await popup.locator("#copy-session").click();
+      await popup.waitForTimeout(300);
+
+      // Read it back from a fixture page, not from the popup. `clipboard-read` was
+      // granted for the fixture origin only; asking for it on `chrome-extension://`
+      // raises a permission prompt that nothing in a headed run ever answers, and the
+      // suite hangs rather than failing.
+      const session = await triage.evaluate(() => navigator.clipboard.readText());
+
+      check(
+        "the session report covers more than one page",
+        /^# Review session — \d+ pages/m.test(session) &&
+          (session.match(/^## http/gm) ?? []).length >= 3,
+        `${(session.match(/^## http/gm) ?? []).length} page sections`,
+      );
+      check(
+        "the session report carries notes from separate pages",
+        /Clicking this does nothing/.test(session) && /Place order/.test(session),
+        "notes from two different pages did not both appear",
+      );
+      check(
+        "the session report says why diagnostics are absent rather than omitting them silently",
+        /not kept/.test(session),
+        "no explanation of the missing diagnostics",
+      );
+
+      const exported = popup
+        .waitForEvent("download", { timeout: 15_000 })
+        .then((download) => download.path())
+        .catch(() => null);
+      await popup.locator("#export").click();
+      const exportPath = await exported;
+
+      check("the popup exports a file", typeof exportPath === "string");
+
+      let parsed = null;
+      if (exportPath) {
+        try {
+          parsed = JSON.parse(await readFile(exportPath, "utf8"));
+        } catch {
+          parsed = null;
+        }
+      }
+
+      check(
+        "the export is tagged so import can refuse anything else",
+        parsed?.format === "senannotate/annotations" && parsed?.version === 1,
+        `format was ${JSON.stringify(parsed?.format)}`,
+      );
+      check(
+        "the export carries the notes taken during this run",
+        Array.isArray(parsed?.pages) &&
+          parsed.pages.some((entry) =>
+            entry.annotations?.some((note) => /Clicking this does nothing/.test(note.comment ?? "")),
+          ),
+        `${parsed?.pages?.length ?? 0} pages exported`,
+      );
+
+      // A file that is not ours must be refused rather than written into storage.
+      const junk = join(profile, "not-an-export.json");
+      await writeFile(junk, JSON.stringify({ hello: "world" }), "utf8");
+      await popup.locator("#import-file").setInputFiles(junk);
+      await popup.waitForTimeout(400);
+      check(
+        "a foreign JSON file is refused",
+        /not a SenAnnotate export/i.test((await popup.locator("#archive-hint").textContent()) ?? ""),
+        `hint read "${(await popup.locator("#archive-hint").textContent())?.trim() ?? ""}"`,
+      );
+
+      // And a real one merges back in after the page has been cleared.
+      if (exportPath) {
+        await triage.locator('.card__header .icon-button[title^="Clear"]').click();
+        await triage.waitForTimeout(300);
+        check(
+          "clearing empties the page first",
+          (await triage.locator(".entry").count()) === 0,
+          "entries survived Clear all",
+        );
+
+        await popup.locator("#import-file").setInputFiles(exportPath);
+        await popup.waitForTimeout(600);
+        check(
+          "importing reports what it merged",
+          /Imported \d+ note/.test((await popup.locator("#archive-hint").textContent()) ?? ""),
+          `hint read "${(await popup.locator("#archive-hint").textContent())?.trim() ?? ""}"`,
+        );
+
+        await triage.reload();
+        await triage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+        await triage.locator('.tool[title^="Annotations"]').click();
+        await triage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+        check(
+          "the imported notes are back on the page they came from",
+          (await triage.locator(".entry").count()) === 2,
+          `${await triage.locator(".entry").count()} entries after import`,
+        );
+      }
+
+      await popup.close();
+    }
   } finally {
     await context.close();
     server.close();

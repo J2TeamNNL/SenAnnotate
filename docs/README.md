@@ -82,6 +82,34 @@ against the right of the viewport, so hovering anything near the edge cut off th
 Found while shooting the Web Store screenshots rather than from a bug report — its
 `changelog.md` notes what that says about photographing your own product.
 
+## [`screenshot-markup/`](./screenshot-markup/) — 0.6.0
+
+The screenshot was captured, cropped and downloaded — and the report printed a bare
+filename no reader could resolve. Adds a markup editor (box, arrow, destructive blur)
+between capture and save, and a delivery choice: a path an agent can open, or an
+embedded `data:` URI. Its `changelog.md` records why the editor had to take focus, and
+why blur reads from the canvas rather than the original bitmap.
+
+## [`hover-capture/`](./hover-capture/) — 0.6.0
+
+<kbd>C</kbd> annotates whatever the pointer is over, because a *click* is the one thing
+that closes a dropdown, a hover menu or a tooltip. Its `context.md` explains why freeze
+does not help and why losing the hover state to the composer's focus is survivable.
+
+## [`annotation-triage/`](./annotation-triage/) — 0.6.0
+
+Type (`bug`/`ui`/`copy`/`question`) and status (`open`/`done`) on an annotation, a
+filter in the panel, and a JSON export/import round-trip. Its `changelog.md` records
+four test failures that all had one cause — a fixture another block had already
+annotated — which is a standing trap for anyone adding to the suite.
+
+## [`session-and-frames/`](./session-and-frames/) — 0.6.0
+
+One report covering every annotated page, and annotation *inside* iframes. Its
+`changelog.md` covers the restructure `all_frames: true` forced on `content/index.ts`,
+the three child-frame problems the plan did not anticipate, and a permission-gated
+clipboard read that hung the suite for ten minutes instead of failing.
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from

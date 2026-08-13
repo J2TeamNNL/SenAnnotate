@@ -16,8 +16,56 @@ export type ComponentDetectionMode = "off" | "filtered" | "smart" | "all";
 
 export type ThemePreference = "auto" | "light" | "dark";
 
+/**
+ * How a screenshot reaches the reader of the report.
+ *
+ * - `path`   the PNG is saved and the report names where it landed. An agent with a
+ *            file-reading tool opens it; the report stays a few hundred bytes.
+ * - `embed`  a downscaled JPEG copy goes into the Markdown as a `data:` URI, so the
+ *            report is self-contained for Slack, Jira or an email — at 60-120 KB a
+ *            shot. The file is still saved either way.
+ */
+export type ScreenshotDelivery = "path" | "embed";
+
 /** What a click means while inspect mode is on. */
 export type InspectMode = "point" | "text" | "area";
+
+// -----------------------------------------------------------------------------
+// Triage
+// -----------------------------------------------------------------------------
+//
+// Nine notes in a report read as nine equal demands. In practice two block a
+// release, five are polish and one is a question that has to be answered before
+// anything is written — and both readers, the developer triaging and the agent
+// planning an edit order, currently have to infer that from prose.
+
+export type AnnotationKind = "bug" | "ui" | "copy" | "question";
+export type AnnotationStatus = "open" | "done";
+
+/**
+ * `ui` is first because it is the default, and the default is what an unlabelled
+ * note means: "this looks wrong". `bug` is the one that changes a reader's priority,
+ * so it is the one worth a click.
+ */
+export const ANNOTATION_KINDS: { value: AnnotationKind; label: string; hint: string }[] = [
+  { value: "ui", label: "UI", hint: "Layout, spacing, styling" },
+  { value: "bug", label: "Bug", hint: "It does the wrong thing" },
+  { value: "copy", label: "Copy", hint: "Wording, tone, translation" },
+  { value: "question", label: "Question", hint: "Needs an answer before it can be changed" },
+];
+
+/**
+ * Both fields are optional on the stored shape, so notes written by an older build
+ * stay readable — the same call `framework` got when it was renamed from `vue` in
+ * 0.3.0. These two helpers are the only place the defaulting happens.
+ */
+export function kindOf(annotation: Pick<Annotation, "kind">): AnnotationKind {
+  return annotation.kind ?? "ui";
+}
+
+export function isDone(annotation: Pick<Annotation, "status">): boolean {
+  return annotation.status === "done";
+}
 
 export interface Rect {
   x: number;
@@ -163,6 +211,20 @@ export interface Diagnostics {
 }
 
 // -----------------------------------------------------------------------------
+// Frames
+// -----------------------------------------------------------------------------
+
+/** Which iframe an annotated element came from, as seen from the top document. */
+export interface FrameRef {
+  /** Short, human-readable: the frame's `name`, `title`, or its path. */
+  label: string;
+  /** The frame's own URL — the document the selector actually resolves against. */
+  url: string;
+  /** A selector for the `<iframe>` element in the *top* document. */
+  selector: string;
+}
+
+// -----------------------------------------------------------------------------
 // Annotation
 // -----------------------------------------------------------------------------
 
@@ -170,6 +232,11 @@ export interface Annotation {
   id: string;
   comment: string;
   timestamp: number;
+
+  /** Absent means `ui` — see `kindOf`. */
+  kind?: AnnotationKind;
+  /** Absent means `open` — see `isDone`. */
+  status?: AnnotationStatus;
 
   /** Human-readable element name, e.g. `button "Save changes"`. */
   element: string;
@@ -205,8 +272,26 @@ export interface Annotation {
    */
   framework?: ElementFrameworkInfo;
   source?: SourceRef;
+  /**
+   * Set when the element lives inside an iframe. Without it a report says
+   * `button "Pay"` on a page whose own DOM contains no such button — the reader has
+   * no way to know which document to look in.
+   */
+  frame?: FrameRef;
   /** Filename of the PNG the user downloaded for this annotation, if any. */
   screenshot?: string;
+  /**
+   * Where that PNG most likely landed — `~/Downloads/<file>`. Constructed rather than
+   * observed: no API tells a content script Chrome's download directory, and the one
+   * that would costs a permission this extension does without.
+   */
+  screenshotPath?: string;
+  /**
+   * A downscaled JPEG copy as a `data:` URI, only when the delivery setting is
+   * `embed`. Stripped from the *persisted* copy if the page's annotations would
+   * otherwise exceed what `chrome.storage.local` will hold — see `saveAnnotations`.
+   */
+  screenshotData?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -237,6 +322,8 @@ export interface Settings {
    * cookie bar — does not mean re-collapsing after every reload.
    */
   toolbarCollapsed: boolean;
+  /** Whether a screenshot travels as a file path or inside the Markdown. */
+  screenshotDelivery: ScreenshotDelivery;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -249,6 +336,7 @@ export const DEFAULT_SETTINGS: Settings = {
   maxComponents: 6,
   captureDiagnostics: true,
   toolbarCollapsed: false,
+  screenshotDelivery: "path",
 };
 
 export const OUTPUT_DETAIL_OPTIONS: { value: OutputDetailLevel; label: string; hint: string }[] = [

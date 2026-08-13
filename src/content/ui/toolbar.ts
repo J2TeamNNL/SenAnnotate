@@ -36,7 +36,7 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
  * mode exists — which is exactly how mode `area` went unused for three releases.
  */
 const MODE_HINTS: Record<InspectMode, string> = {
-  point: "Click an element · 2 text · 3 area",
+  point: "Click an element · C captures hover · 2 text · 3 area",
   text: "Select text · 1 point · 3 area",
   area: "Drag across elements · 1 point · 2 text",
 };

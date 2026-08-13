@@ -17,13 +17,15 @@
 // annotations, so the thing the person actually pointed at stays the headline.
 // =============================================================================
 
-import type {
-  ActionEntry,
-  Annotation,
-  Diagnostics,
-  OutputDetailLevel,
-  PageFrameworkInfo,
-  SourceRef,
+import {
+  isDone,
+  kindOf,
+  type ActionEntry,
+  type Annotation,
+  type Diagnostics,
+  type OutputDetailLevel,
+  type PageFrameworkInfo,
+  type SourceRef,
 } from "./types";
 
 export interface OutputContext {
@@ -121,11 +123,44 @@ function renderHeader(context: OutputContext, detail: OutputDetailLevel): string
 // Annotations
 // -----------------------------------------------------------------------------
 
+/**
+ * `[bug] ` — and nothing at all for `ui`.
+ *
+ * `ui` is the default every unlabelled note lands on, so printing it would decorate
+ * every line of every report with a word that carries no information. A tag appears
+ * only where someone chose one.
+ */
+function tag(annotation: Annotation): string {
+  const kind = kindOf(annotation);
+  return kind === "ui" ? "" : `[${kind}] `;
+}
+
 function renderCompact(annotation: Annotation, number: number): string {
   const source = formatSource(annotation.source);
   const where = source ? ` (${source})` : "";
   const quoted = annotation.selectedText ? ` — re: "${truncate(annotation.selectedText, 30)}"` : "";
-  return `${number}. **${annotation.element}**${where}: ${annotation.comment}${quoted}`;
+  return `${number}. ${tag(annotation)}**${annotation.element}**${where}: ${annotation.comment}${quoted}`;
+}
+
+/**
+ * Notes already marked done, kept rather than filtered out.
+ *
+ * The instinct is to drop them. That is wrong for the primary reader: an agent told
+ * "change these five things" works better knowing a sixth thing in the same area was
+ * already dealt with — it is the difference between an edit and a re-edit. They just
+ * do not belong in the numbered list of work to do.
+ */
+function renderDone(annotations: Annotation[]): string[] {
+  if (!annotations.length) return [];
+
+  const lines = ["## Already fixed", ""];
+  for (const annotation of annotations) {
+    const source = formatSource(annotation.source);
+    const where = source ? ` (${source})` : "";
+    lines.push(`- ${tag(annotation)}**${annotation.element}**${where} — ${annotation.comment}`);
+  }
+  lines.push("");
+  return lines;
 }
 
 function renderAnnotation(
@@ -133,7 +168,7 @@ function renderAnnotation(
   number: number,
   detail: OutputDetailLevel,
 ): string[] {
-  const lines = [`### ${number}. ${annotation.element}`];
+  const lines = [`### ${number}. ${tag(annotation)}${annotation.element}`];
   const source = formatSource(annotation.source);
   const wantsDetail = detail === "detailed" || detail === "forensic";
   const wantsForensic = detail === "forensic";
@@ -153,6 +188,13 @@ function renderAnnotation(
   if (wantsDetail && props) lines.push(`**Props:** ${props}`);
   if (wantsForensic && annotation.framework?.grepHandles.length) {
     lines.push(`**Grep handles:** ${annotation.framework.grepHandles.join(", ")}`);
+  }
+
+  // Above Location, because it changes which document Location is even about.
+  if (annotation.frame) {
+    const where = annotation.frame.url ? ` — \`${annotation.frame.url}\`` : "";
+    lines.push(`**Frame:** ${annotation.frame.label}${where}`);
+    if (wantsForensic) lines.push(`**Frame element:** \`${annotation.frame.selector}\``);
   }
 
   // Forensic replaces the short Location line with a selector and the full path.
@@ -186,9 +228,29 @@ function renderAnnotation(
     lines.push(`**Computed styles:** ${annotation.computedStyles}`);
   }
 
-  if (annotation.screenshot) lines.push(`**Screenshot:** ${annotation.screenshot}`);
+  lines.push(...renderScreenshot(annotation));
   lines.push(`**Feedback:** ${annotation.comment}`, "");
   return lines;
+}
+
+/**
+ * A screenshot is only worth a line if the reader can actually open it.
+ *
+ * `screenshotData` (embed mode) wins when present: it needs nothing outside the
+ * document. Otherwise the path is what an agent's file-reading tool takes — and the
+ * older `screenshot` field, a bare filename, is still honoured for annotations stored
+ * before 0.6.0 so they degrade to what they always were rather than vanishing.
+ */
+function renderScreenshot(annotation: Annotation): string[] {
+  if (annotation.screenshotData) {
+    // Square brackets in the alt text would close it early; the element name is
+    // scraped off the page and can contain anything.
+    const alt = annotation.element.replace(/[[\]]/g, "");
+    return ["**Screenshot:**", "", `![${alt}](${annotation.screenshotData})`, ""];
+  }
+
+  const path = annotation.screenshotPath ?? annotation.screenshot;
+  return path ? [`**Screenshot:** ${path}`] : [];
 }
 
 // -----------------------------------------------------------------------------
@@ -261,6 +323,60 @@ function renderNetwork(network: Diagnostics["network"]): string[] {
 // Entry point
 // -----------------------------------------------------------------------------
 
+/**
+ * One document covering every page that was annotated.
+ *
+ * Built from storage rather than from a live page, which is what shapes it: there is
+ * no `PageFrameworkInfo` and no diagnostics for a page nobody is standing on, and
+ * those were never persisted — they are per-load state. Rather than quietly render a
+ * report that looks like the single-page one minus a few lines, the header says what
+ * is missing and why, so nobody reads the absence of a "Steps to reproduce" section
+ * as "there were no steps".
+ *
+ * The detail level is *not* clamped. Every annotation carries exactly the fields that
+ * were captured when it was written, so asking for forensic here shows what is there
+ * and nothing more — the same as it would on the page itself.
+ */
+export function generateSessionOutput(
+  pages: { page: string; annotations: Annotation[] }[],
+  detailLevel: OutputDetailLevel = "standard",
+): string {
+  const populated = pages.filter((entry) => entry.annotations.length > 0);
+  if (!populated.length) return "";
+
+  const total = populated.reduce((sum, entry) => sum + entry.annotations.length, 0);
+
+  const lines = [
+    `# Review session — ${populated.length} page${populated.length === 1 ? "" : "s"}, ${total} note${total === 1 ? "" : "s"}`,
+    "",
+    "_Collected from stored annotations. Console errors, failed requests and steps to_",
+    "_reproduce belong to a page load and are not kept, so they are absent here — copy_",
+    "_a single page's report from its own toolbar to get them._",
+    "",
+  ];
+
+  for (const entry of populated) {
+    const open = entry.annotations.filter((annotation) => !isDone(annotation));
+    const done = entry.annotations.filter((annotation) => isDone(annotation));
+
+    lines.push("---", "", `## ${entry.page}`, "");
+
+    if (detailLevel === "compact") {
+      open.forEach((annotation, index) => lines.push(renderCompact(annotation, index + 1)));
+      if (done.length) lines.push("", `_${done.length} already fixed._`);
+      lines.push("");
+      continue;
+    }
+
+    open.forEach((annotation, index) => {
+      lines.push(...renderAnnotation(annotation, index + 1, detailLevel));
+    });
+    lines.push(...renderDone(done));
+  }
+
+  return lines.join("\n").trim();
+}
+
 export function generateOutput(
   annotations: Annotation[],
   context: OutputContext,
@@ -270,7 +386,11 @@ export function generateOutput(
 
   const lines = renderHeader(context, detailLevel);
 
-  annotations.forEach((annotation, index) => {
+  // Numbers follow the open notes, so "note 3" means the third thing still to do.
+  const open = annotations.filter((annotation) => !isDone(annotation));
+  const done = annotations.filter((annotation) => isDone(annotation));
+
+  open.forEach((annotation, index) => {
     if (detailLevel === "compact") lines.push(renderCompact(annotation, index + 1));
     else lines.push(...renderAnnotation(annotation, index + 1, detailLevel));
   });
@@ -286,11 +406,14 @@ export function generateOutput(
     const withheld: string[] = [];
     if (logCount) withheld.push(`${logCount} console error${logCount === 1 ? "" : "s"}`);
     if (requestCount) withheld.push(`${requestCount} failed request${requestCount === 1 ? "" : "s"}`);
+    if (done.length) withheld.unshift(`${done.length} already fixed`);
     if (withheld.length) {
       lines.push("", `_Also captured: ${withheld.join(", ")} — switch off Compact to include them._`);
     }
     return lines.join("\n").trim();
   }
+
+  lines.push(...renderDone(done));
 
   if (actions.length || logCount || requestCount) {
     lines.push("---", "", ...renderActions(actions));

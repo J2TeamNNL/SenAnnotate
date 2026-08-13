@@ -2,6 +2,7 @@
 // Composer — the popup you type the annotation into
 // =============================================================================
 
+import { ANNOTATION_KINDS, type AnnotationKind } from "../../shared/types";
 import { h, icon, listen } from "./dom";
 
 export interface ComposerData {
@@ -14,10 +15,11 @@ export interface ComposerData {
   selectedText?: string;
   elementCount?: number;
   initialComment?: string;
+  initialKind?: AnnotationKind;
 }
 
 export interface ComposerCallbacks {
-  onSubmit(comment: string): void;
+  onSubmit(comment: string, kind: AnnotationKind): void;
   onCancel(): void;
   onScreenshot(): void;
   onDelete?(): void;
@@ -31,6 +33,8 @@ export class Composer {
   readonly element: HTMLElement;
   private readonly textarea: HTMLTextAreaElement;
   private readonly teardown: Array<() => void> = [];
+  private readonly kindButtons = new Map<AnnotationKind, HTMLButtonElement>();
+  private kind: AnnotationKind;
 
   constructor(
     layer: HTMLElement,
@@ -38,6 +42,8 @@ export class Composer {
     data: ComposerData,
     callbacks: ComposerCallbacks,
   ) {
+    this.kind = data.initialKind ?? "ui";
+
     this.textarea = h("textarea", {
       class: "composer__input",
       attrs: {
@@ -47,6 +53,22 @@ export class Composer {
       },
     });
     this.textarea.value = data.initialComment ?? "";
+
+    for (const { value, label, hint } of ANNOTATION_KINDS) {
+      this.kindButtons.set(
+        value,
+        h("button", {
+          class: "kind-chip",
+          title: hint,
+          text: label,
+          dataset: { kind: value },
+          attrs: { "aria-pressed": String(value === this.kind) },
+          on: { click: () => this.selectKind(value) },
+        }),
+      );
+    }
+
+    const kinds = h("div", { class: "composer__kinds" }, ...this.kindButtons.values());
 
     const meta = h("div", { class: "composer__meta" });
     meta.append(this.metaRow("Element", data.title));
@@ -110,7 +132,7 @@ export class Composer {
           icon("close", 14),
         ),
       ),
-      h("div", { class: "card__body" }, meta, this.textarea),
+      h("div", { class: "card__body" }, meta, kinds, this.textarea),
       footer,
     );
 
@@ -140,13 +162,27 @@ export class Composer {
     this.textarea.focus();
   }
 
+  /** Put the caret back after something else — the markup editor — borrowed focus. */
+  focus(): void {
+    this.textarea.focus();
+  }
+
+  private selectKind(kind: AnnotationKind): void {
+    this.kind = kind;
+    for (const [candidate, button] of this.kindButtons) {
+      button.setAttribute("aria-pressed", String(candidate === kind));
+    }
+    // Picking a type is not finishing the note; put the caret back where it was.
+    this.textarea.focus();
+  }
+
   private submit(callbacks: ComposerCallbacks): void {
     const comment = this.textarea.value.trim();
     if (!comment) {
       this.textarea.focus();
       return;
     }
-    callbacks.onSubmit(comment);
+    callbacks.onSubmit(comment, this.kind);
   }
 
   private metaRow(key: string, value: string, accent = false): HTMLElement {

@@ -90,16 +90,26 @@ the line and column.
 |---|---|
 | Toggle inspect mode | click **Inspect**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> |
 | Annotate an element | click it |
+| Annotate what you are hovering | <kbd>C</kbd> — no click, so the menu stays open |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements | mode <kbd>3</kbd>, then drag a box around them |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button |
 | Copy the report | **Copy report** in the panel |
+| Save the report as a file | **.md** in the panel |
+| Copy every page at once | **Copy session report** in the extension popup |
 | Cancel / exit | <kbd>Esc</kbd> |
 
 The line under the toolbar always names what the current mode does and which keys
 switch to the others, so nothing above needs memorising.
+
+<kbd>C</kbd> is the one worth knowing about. Clicking is how you annotate, and clicking
+is also what closes the thing you wanted to annotate — a dropdown, a hover menu, a
+tooltip, anything styled `:hover`. <kbd>C</kbd> captures whatever the pointer is over
+without pressing anything, so the menu is still open while you type the note. Freeze
+does not help here: it parks timers and animation frames, and those surfaces are driven
+by pointer events rather than by time.
 
 The toolbar is docked bottom-right, which is exactly where a page tends to put its
 chat widget, cookie bar or footer actions. <kbd>H</kbd> collapses it to a single dot
@@ -118,16 +128,60 @@ can adjust before letting go.
 Annotations are stored per `origin + pathname`, so they survive a reload and come
 back when you return to the same screen.
 
+## Triage
+
+Each note carries a **type** — Bug, UI, Copy, Question — picked in the composer, and a
+**status** you tick off in the panel once it is fixed. The type reaches the report
+heading (`### 1. [bug] button "Save"`); a done note moves out of the numbered list into
+an `## Already fixed` section rather than disappearing, because "this was already
+handled" is context worth having.
+
+The panel filters by `All · Open · Done`, and the pins take a colour per type.
+
+Notes are only in `chrome.storage.local` until you move them, so the popup offers
+**Export** and **Import**: every page's notes as one JSON file, for a backup before
+*Clear all*, for handing a review to someone else, or for moving between machines.
+Import merges — it never replaces what is already there.
+
+## Screenshots
+
+The camera button in the composer photographs the element and opens a small editor
+first: **box**, **arrow**, and **blur**. Blur resamples the region rather than filtering
+it, so the pixels are genuinely gone from the saved file — which matters, because a
+tester photographing a real screen is photographing real customer data.
+
+How the shot reaches the report is a setting:
+
+| | |
+|---|---|
+| **Link to the saved file** (default) | the report names `~/Downloads/senannotate-….png`, which a coding agent opens with its own file tool. Costs a few dozen bytes. |
+| **Embed in the report** | a downscaled JPEG goes into the Markdown as a `data:` URI, so the report survives a paste into Slack or Jira. Around 60–120 KB a shot. |
+
+The PNG is saved either way.
+
+## Iframes
+
+Elements inside an iframe are annotated like any other — a Storybook preview, an
+embedded dashboard, a hosted checkout. The extension runs inside frames too, and hands
+each capture up to the top frame, which owns the toolbar and the storage. The report
+names which frame the element came from.
+
+Frames smaller than 50×50 are skipped entirely, so the tracking pixels and empty ad
+slots on a news page cost nothing. Two limits worth knowing: a pin placed inside a
+frame does not follow that frame's own scrolling (the report is unaffected), and a
+frame nested inside another frame falls back to annotating the outer `<iframe>`.
+
 ## What the report looks like
 
 ```markdown
 ## Page feedback: /dashboard
 **Stack:** Vue 3 3.5.35 · pinia  ·  **Viewport:** 1512×860
 
-### 1. button "Save changes"
+### 1. [bug] button "Save changes"
 **Source:** src/components/BaseButton.vue:12:5
 **Components:** <App> <TheSidebar> <BaseButton>
 **Location:** .sidebar > .base-button
+**Screenshot:** ~/Downloads/senannotate-1763029180000.png
 **Feedback:** Make this the primary action and move it above the divider.
 ```
 
@@ -431,12 +485,12 @@ git tag -d v0.3.0 && git push origin :refs/tags/v0.3.0
 
 ```
 src/
-├── shared/       types, wire protocol, Markdown generation
+├── shared/       types, wire protocol, Markdown generation, export/import
 ├── inspector/    MAIN world — freeze, diagnostics
 │   └── detectors/  one file per framework + a dispatcher
-├── content/      ISOLATED world — capture, storage, UI
+├── content/      ISOLATED world — capture, storage, UI, frame bridge
 ├── background/   service worker
-└── popup/        settings
+└── popup/        settings, session report, export/import
 ```
 
 Zero runtime dependencies. Build-time: `esbuild` and `typescript`.

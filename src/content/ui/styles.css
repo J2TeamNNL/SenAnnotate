@@ -730,6 +730,217 @@ kbd {
 }
 
 /* ==========================================================================
+   Triage — type and status
+   --------------------------------------------------------------------------
+   Type is a hue, status is opacity. Two independent channels, so a done bug still
+   reads as a bug. `ui` deliberately keeps the existing accent: it is the default
+   every unlabelled note lands on, and the panel should look unchanged for anyone
+   who never touches the chips.
+   ========================================================================== */
+
+.kind-chip,
+.entry,
+.marker {
+  --sa-kind: var(--sa-accent);
+}
+
+[data-kind="bug"] {
+  --sa-kind: #ef4444;
+}
+
+[data-kind="copy"] {
+  --sa-kind: #3b82f6;
+}
+
+[data-kind="question"] {
+  --sa-kind: #8b5cf6;
+}
+
+.composer__kinds {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+
+.kind-chip {
+  flex: 1;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--sa-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sa-fg-muted);
+  cursor: pointer;
+  transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
+}
+
+.kind-chip:hover {
+  border-color: var(--sa-kind);
+  color: var(--sa-fg);
+}
+
+.kind-chip[aria-pressed="true"] {
+  background: var(--sa-kind);
+  border-color: var(--sa-kind);
+  color: #fff;
+}
+
+.panel__filter {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.panel__filter-button {
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--sa-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sa-fg-muted);
+  cursor: pointer;
+}
+
+.panel__filter-button[aria-pressed="true"] {
+  background: var(--sa-fg);
+  border-color: var(--sa-fg);
+  color: var(--sa-bg-solid);
+}
+
+/* The number badge carries the hue in the list, where a whole coloured row would
+   fight the comment text for attention. */
+.entry__number {
+  color: var(--sa-kind);
+}
+
+.entry__status {
+  flex: none;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1px solid var(--sa-border);
+  color: transparent;
+  cursor: pointer;
+  transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
+}
+
+.entry__status:hover {
+  border-color: var(--sa-fg-muted);
+  color: var(--sa-fg-muted);
+}
+
+.entry__status[aria-pressed="true"] {
+  background: var(--sa-accent);
+  border-color: var(--sa-accent);
+  color: #fff;
+}
+
+.entry[data-done="true"] .entry__element,
+.entry[data-done="true"] .entry__comment {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.marker[data-kind] {
+  background: var(--sa-kind);
+  /* The accent's ink is tuned for orange; the other three are dark enough that
+     white is the only readable choice. */
+  color: #fff;
+}
+
+.marker[data-kind="ui"] {
+  color: var(--sa-accent-ink);
+}
+
+.marker[data-done="true"] {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   Screenshot markup editor
+   --------------------------------------------------------------------------
+   Centred rather than anchored to the element: by the time it opens the shot is
+   already taken, so there is nothing on the page left to point at, and the crop
+   can be any shape at all.
+   ========================================================================== */
+
+.shot-editor {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: calc(100vw - 32px);
+}
+
+.shot-editor__tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.shot-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--sa-border);
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--sa-fg-muted);
+  cursor: pointer;
+  transition: background 0.13s ease, color 0.13s ease, border-color 0.13s ease;
+}
+
+.shot-tool:hover:not(:disabled) {
+  background: var(--sa-bg-sunken);
+  color: var(--sa-fg);
+}
+
+.shot-tool[aria-pressed="true"] {
+  background: var(--sa-accent);
+  border-color: var(--sa-accent);
+  color: #fff;
+}
+
+.shot-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Last tool button is Undo; push it away from the drawing tools. */
+.shot-tool:last-child {
+  margin-left: auto;
+}
+
+.shot-editor__stage {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+  border-radius: var(--sa-radius-sm);
+  background: var(--sa-bg-sunken);
+  border: 1px solid var(--sa-border);
+}
+
+.shot-editor__canvas {
+  display: block;
+  max-width: 100%;
+  border-radius: 4px;
+  /* Crosshair, because every tool is a drag — and `touch-action: none` so a
+     trackpad or touchscreen drag draws instead of scrolling the page under us. */
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* ==========================================================================
    Toast
    ========================================================================== */
 
