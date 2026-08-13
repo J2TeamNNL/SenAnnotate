@@ -92,6 +92,18 @@ export class Panel {
         { class: "card__header" },
         icon("list", 14),
         h("span", { class: "card__title", text: "Annotations" }),
+        // Secondary actions live in the header, not the footer. The footer is 380px
+        // minus padding and already holds a detail `<select>` whose widest option is
+        // 215px of it; a third control there squeezed "Copy report" onto two lines.
+        h(
+          "button",
+          {
+            class: "icon-button",
+            title: "Download the report as a .md file",
+            on: { click: () => callbacks.onDownload() },
+          },
+          icon("download", 14),
+        ),
         h(
           "button",
           {
@@ -119,15 +131,6 @@ export class Panel {
         { class: "card__footer" },
         this.select,
         h("span", { class: "spacer" }),
-        h(
-          "button",
-          {
-            class: "button button--ghost",
-            title: "Download the report as a .md file — for a report too big for the clipboard",
-            on: { click: () => callbacks.onDownload() },
-          },
-          h("span", { text: ".md" }),
-        ),
         this.copyButton,
       ),
     );

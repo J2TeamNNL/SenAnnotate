@@ -84,6 +84,22 @@ A frame that starts small and grows (a lazily-sized embed) stays uninstrumented 
 page load. Accepted: re-evaluating would mean a `ResizeObserver` in every 1×1 tracking
 frame, which is precisely the cost being avoided.
 
+### `area` mode stops at the frame boundary
+
+A child frame handles `point` and `text`. It does not handle `area`, and that is a
+consequence of where the marquee's feedback lives rather than of the geometry: the
+running element count is written to `toolbar.setHint()` on every animation frame, and
+a child frame has no toolbar. `snapshotCandidates`/`hitsInRect` themselves are entirely
+frame-local and would work unchanged.
+
+Dragging across a frame in `area` mode therefore selects nothing inside it. The click
+is still swallowed, which is what happens everywhere else on the page in that mode, so
+what the user sees is "the marquee ignored the frame" and not a broken gesture.
+
+Wiring it up means a third message kind carrying hint text up to the top frame's
+toolbar, and a decision about what a marquee that spans both the page *and* a frame
+should even mean. Deferred rather than dismissed.
+
 ### `sandbox` frames
 
 A frame with `sandbox` and no `allow-scripts` runs no JavaScript at all, ours included.

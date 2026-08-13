@@ -23,14 +23,49 @@ vendoring any of this.
 
 MIT licensed. See [`LICENSE`](./LICENSE).
 
+**[Install from the Chrome Web Store →](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla)**
+
+---
+
+## What it looks like
+
+Hovering names the component and the file that rendered it, before you commit to
+anything:
+
+![Inspect mode: the hovered element labelled with its component and source line](./store/screenshots/inspect.jpg)
+
+Clicking opens the composer, already carrying the element, its source, the component
+chain and the owner's props — you only supply the sentence, and the type:
+
+![The composer, showing element, source, component chain, props and the type chips](./store/screenshots/composer.jpg)
+
+The panel is the list, the filter, and the button that produces the report:
+
+![The annotations panel with the All/Open/Done filter and captured diagnostics](./store/screenshots/panel.jpg)
+
+Drag-select takes everything a box fully contains, at the shallowest level contained:
+
+![Marquee selection across three cards, counted live under the toolbar](./store/screenshots/marquee.jpg)
+
+And this is what comes out — the thing you paste into your agent:
+
+![The generated Markdown report](./store/screenshots/report.jpg)
+
 ---
 
 ## Install
 
-Chrome only, and unpacked either way — this is not on the Web Store. Take the
-first route unless you intend to change the code.
+**Chrome 111 or newer.** The Web Store listing is the route for everyone who is not
+changing the code.
+
+### From the Chrome Web Store
+
+[**SenAnnotate — visual annotator**](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla)
+→ **Add to Chrome**. It updates itself from there; nothing below is needed.
 
 ### From a release — no Node, no build
+
+For a version newer than the Store has reviewed, or for an air-gapped machine.
 
 1. Download `senannotate-<version>.zip` from the
    [latest release](https://github.com/thangnm93/SenAnnotate/releases/latest).
@@ -53,10 +88,9 @@ npm run build
 
 Then steps 3–5 above, choosing the `dist/` folder instead of an unzipped one.
 
-### Either way
+### If you installed unpacked
 
-**Chrome 111 or newer** — the extension declares `world: "MAIN"` content scripts,
-which earlier versions do not support.
+Neither of these applies to the Web Store install.
 
 **Chrome will nag.** A "Disable developer mode extensions" popup appears on every
 launch. Click **Cancel**, not Disable. Chrome shows it for any unpacked extension;
@@ -66,8 +100,10 @@ nothing is wrong.
 in `chrome://extensions`, then reload the tabs you had open — the old content
 script is still running in them until you do.
 
-Handing this to someone who does not write code? [`TESTER-GUIDE.md`](./TESTER-GUIDE.md)
-covers the same install plus the reporting workflow, in English and Vietnamese.
+Handing this to someone who does not write code? Point them at the
+[Web Store listing](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla).
+[`TESTER-GUIDE.md`](./TESTER-GUIDE.md) covers the reporting workflow itself, in
+English and Vietnamese.
 
 ### Getting line numbers out of a Nuxt project
 
@@ -167,9 +203,13 @@ each capture up to the top frame, which owns the toolbar and the storage. The re
 names which frame the element came from.
 
 Frames smaller than 50×50 are skipped entirely, so the tracking pixels and empty ad
-slots on a news page cost nothing. Two limits worth knowing: a pin placed inside a
-frame does not follow that frame's own scrolling (the report is unaffected), and a
-frame nested inside another frame falls back to annotating the outer `<iframe>`.
+slots on a news page cost nothing. Three limits worth knowing:
+
+- a pin placed inside a frame does not follow that frame's *own* scrolling — the
+  report is unaffected;
+- a frame nested inside another frame falls back to annotating the outer `<iframe>`;
+- drag-select (mode <kbd>3</kbd>) stops at the frame boundary. Click and text
+  selection work inside frames; the marquee does not.
 
 ## What the report looks like
 

@@ -22,6 +22,12 @@
 //     the product.
 //   * Only depth-1 frames are instrumented. An iframe inside an iframe falls back to
 //     annotating the outer `<iframe>` element, which is at least honest.
+//   * A child frame answers `point` and `text` mode only. `area` (marquee) is a
+//     top-frame gesture: the live element count goes to `toolbar.setHint`, and there
+//     is no toolbar in here to put it on. Dragging over a frame in `area` mode
+//     therefore selects nothing — the click is still swallowed, exactly as it is over
+//     the rest of the page in that mode, so the behaviour is consistent rather than
+//     broken. Wiring it up means routing hint text up the same channel drafts use.
 // =============================================================================
 
 import { FRAME_CHANNEL } from "../shared/protocol";

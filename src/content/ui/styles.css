@@ -713,6 +713,12 @@ kbd {
 }
 
 .select {
+  /* Shrinkable, and allowed below its intrinsic width: the widest option
+     ("Detailed — + classes, box, props") is 215px of a 356px footer, so anything
+     added beside it pushes the Copy button past the card's `overflow: hidden` edge.
+     Measured, not guessed — see docs/annotation-triage/changelog.md. */
+  flex: 0 1 auto;
+  min-width: 0;
   height: 26px;
   padding: 0 6px;
   border: 1px solid var(--sa-border);

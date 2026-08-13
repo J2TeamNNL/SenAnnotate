@@ -2,14 +2,9 @@
 // Extension popup — status and settings
 // =============================================================================
 
-import { exportAll, importAll } from "../shared/archive";
+import { clearAllPages, exportAll, importAll } from "../shared/archive";
 import { generateSessionOutput } from "../shared/output";
-import {
-  ANNOTATION_PREFIX,
-  SETTINGS_KEY,
-  type RuntimeMessage,
-  type RuntimeResponse,
-} from "../shared/protocol";
+import { SETTINGS_KEY, type RuntimeMessage, type RuntimeResponse } from "../shared/protocol";
 import {
   DEFAULT_SETTINGS,
   OUTPUT_DETAIL_OPTIONS,
@@ -316,15 +311,9 @@ importInput.addEventListener("change", async () => {
 });
 
 clearButton.addEventListener("click", async () => {
-  try {
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter((key) => key.startsWith(ANNOTATION_PREFIX));
-    if (keys.length) await chrome.storage.local.remove(keys);
-    clearButton.textContent = `Cleared ${keys.length} page${keys.length === 1 ? "" : "s"}`;
-    await refreshPages();
-  } catch {
-    clearButton.textContent = "Could not clear";
-  }
+  const cleared = await clearAllPages();
+  clearButton.textContent = `Cleared ${cleared} page${cleared === 1 ? "" : "s"}`;
+  await refreshPages();
   await refreshStatus();
 });
 

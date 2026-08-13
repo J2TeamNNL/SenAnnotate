@@ -52,6 +52,23 @@ export async function exportAll(): Promise<ExportFile> {
 }
 
 /**
+ * Drop every page's annotations, and say how many pages that was.
+ *
+ * Deliberately not a `storage.local.clear()`: settings live in `sync`, but anything
+ * else that ever lands in `local` is not ours to delete.
+ */
+export async function clearAllPages(): Promise<number> {
+  try {
+    const all = await chrome.storage.local.get(null);
+    const keys = Object.keys(all).filter((key) => key.startsWith(ANNOTATION_PREFIX));
+    if (keys.length) await chrome.storage.local.remove(keys);
+    return keys.length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * The shape check every imported entry has to pass.
  *
  * Nothing here is an XSS guard — the UI has no HTML sink, by design (`ui/dom.ts`

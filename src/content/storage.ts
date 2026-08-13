@@ -92,32 +92,8 @@ export async function saveAnnotations(annotations: Annotation[]): Promise<SaveRe
   }
 }
 
-/** Every page that currently holds annotations, for the popup's overview. */
-export async function listAnnotatedPages(): Promise<{ page: string; count: number }[]> {
-  try {
-    const all = await chrome.storage.local.get(null);
-    return Object.entries(all)
-      .filter(([key, value]) => key.startsWith(ANNOTATION_PREFIX) && Array.isArray(value))
-      .map(([key, value]) => ({
-        page: key.slice(ANNOTATION_PREFIX.length),
-        count: (value as Annotation[]).length,
-      }))
-      .filter((entry) => entry.count > 0)
-      .sort((a, b) => b.count - a.count);
-  } catch {
-    return [];
-  }
-}
-
-export async function clearAllPages(): Promise<void> {
-  try {
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter((key) => key.startsWith(ANNOTATION_PREFIX));
-    if (keys.length) await chrome.storage.local.remove(keys);
-  } catch {
-    // ignore
-  }
-}
+// Cross-page reads and the "clear everything" sweep live in `shared/archive.ts`:
+// the popup is their only caller, and it must not import from `content/`.
 
 // -----------------------------------------------------------------------------
 // Settings

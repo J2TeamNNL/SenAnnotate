@@ -63,3 +63,29 @@ with `setInputFiles`. A foreign JSON file is asserted to be refused, and a real 
 is asserted to come back after `Clear all`.
 
 144/144 — green after the fixture fix.
+
+## 6. Two bugs the store screenshots caught
+
+Found while regenerating `store/out/` for the README, which is the second time
+photographing this product has found something no test did — `docs/hover-label-clamp/`
+was the first.
+
+**The `.md` button did not fit.** Measured rather than guessed: the panel is 380px, so
+its footer has 356px of usable width, and the detail `<select>` alone is 215px of that
+("Detailed — + classes, box, props" sets its intrinsic width). Adding a third control
+pushed **Copy report** 4px past the card's `overflow: hidden` edge; forcing the select
+to shrink then wrapped the button's label onto two lines instead.
+
+Fixed by moving the download out of the footer and into the card header as an
+icon-button, beside Clear-all and Close — which is where a secondary action belonged
+anyway. The footer is back to exactly what it was. `.select` keeps `min-width: 0` so
+the next thing added there fails visibly instead of silently clipping.
+
+**`npm run assets` hung forever, and had nothing to do with this release.** It stopped
+silently after screenshot 3 and sat there. `scripts/store-assets.mjs` reads the copied
+report back with `navigator.clipboard.readText()` but — unlike `test/e2e.mjs` and
+`test/verify-real-sites.mjs`, which both do it — **never called
+`context.grantPermissions(["clipboard-read", …])`**. Without it the read raises a
+permission prompt that nothing in a headed run answers, so the script blocks rather
+than failing. One line, and the same trap already recorded in
+`docs/session-and-frames/changelog.md` for the popup.
