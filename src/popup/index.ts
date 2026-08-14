@@ -2,6 +2,7 @@
 // Extension popup — status and settings
 // =============================================================================
 
+import { ACCENT_PRESETS, DEFAULT_ACCENT, accentTheme } from "../shared/accent";
 import { clearAllPages, exportAll, importAll } from "../shared/archive";
 import { generateSessionOutput } from "../shared/output";
 import { SETTINGS_KEY, type RuntimeMessage, type RuntimeResponse } from "../shared/protocol";
@@ -57,6 +58,11 @@ const exportButton = $<HTMLButtonElement>("export");
 const importButton = $<HTMLButtonElement>("import");
 const importInput = $<HTMLInputElement>("import-file");
 const archiveHint = $("archive-hint");
+const accentPresets = $("accent-presets");
+const accentCustom = $<HTMLInputElement>("accent-custom");
+const accentReset = $<HTMLButtonElement>("accent-reset");
+/** Preset colour → its button, so the current one can be marked without a re-render. */
+const swatches = new Map<string, HTMLButtonElement>();
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
 
@@ -97,7 +103,53 @@ async function loadSettings(): Promise<void> {
   freezeCheckbox.checked = settings.freezeOnInspect;
   shotSelect.value = settings.screenshotDelivery;
   themeSelect.value = settings.theme;
+  applyAccent();
 }
+
+// -----------------------------------------------------------------------------
+// Accent
+// -----------------------------------------------------------------------------
+
+/**
+ * Recolour the popup itself and mark which swatch is current.
+ *
+ * The popup is its own document with its own `--accent`, so it does not inherit anything
+ * from the overlay — but a settings screen that picks a colour and then keeps its own
+ * primary button orange reads as a bug rather than as scope.
+ */
+function applyAccent(): void {
+  const { accent, ink } = accentTheme(settings.accentColor);
+  document.documentElement.style.setProperty("--accent", accent);
+  document.documentElement.style.setProperty("--accent-ink", ink);
+
+  accentCustom.value = accent;
+  for (const [value, button] of swatches) {
+    button.setAttribute("aria-pressed", String(value === accent));
+  }
+}
+
+for (const { value, label } of ACCENT_PRESETS) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "swatch";
+  button.title = label;
+  button.style.background = value;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", "false");
+  button.addEventListener("click", () => void patch({ accentColor: value }).then(applyAccent));
+  swatches.set(value, button);
+  accentPresets.append(button);
+}
+
+// `input`, not `change`: the native picker streams the colour while it is being dragged,
+// and waiting for the dialog to close makes choosing a colour feel like it did nothing.
+accentCustom.addEventListener("input", () => {
+  void patch({ accentColor: accentCustom.value }).then(applyAccent);
+});
+
+accentReset.addEventListener("click", () => {
+  void patch({ accentColor: DEFAULT_ACCENT }).then(applyAccent);
+});
 
 async function patch(update: Partial<Settings>): Promise<void> {
   settings = { ...settings, ...update };

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Native modal fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; padding: 40px; height: 1600px; }
+      dialog { width: 420px; padding: 24px; }
+      /* The second dialog is a containing block for fixed positioning — the state any
+         transform, filter or `contain: paint` puts a dialog in, and the one that resolves our
+         `inset: 0` against the dialog instead of the viewport. Its own fixture would not add
+         anything: what needs asserting is that a highlight still lands on the element. */
+      #animated { transform: translateY(0); }
+    </style>
+  </head>
+  <body>
+    <h1>Native modal fixture</h1>
+    <p>Both dialogs open with <code>showModal()</code>, which enters the browser's top layer.</p>
+    <button id="open-plain">Open the plain dialog</button>
+    <button id="open-animated">Open the transformed dialog</button>
+
+    <dialog id="native">
+      <h2>Confirm deletion</h2>
+      <p class="plain-body">This cannot be undone.</p>
+      <button class="plain-confirm">Delete</button>
+    </dialog>
+
+    <dialog id="animated">
+      <h2>Also confirm</h2>
+      <p class="animated-body">This one is a containing block.</p>
+    </dialog>
+
+    <script>
+      // Which dialog closed, and why, so a failing check can say more than "it closed".
+      // Read by test/e2e.mjs.
+      window.__closeLog = [];
+
+      for (const [button, dialog] of [
+        ["open-plain", "native"],
+        ["open-animated", "animated"],
+      ]) {
+        const element = document.getElementById(dialog);
+        document.getElementById(button).addEventListener("click", () => element.showModal());
+        element.addEventListener("close", () => window.__closeLog.push(dialog + " close event"));
+      }
+    </script>
+  </body>
+</html>

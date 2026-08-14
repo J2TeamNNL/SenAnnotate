@@ -128,7 +128,8 @@ the line and column.
 | Annotate an element | click it |
 | Annotate what you are hovering | <kbd>C</kbd> — no click, so the menu stays open |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
-| Annotate several elements | mode <kbd>3</kbd>, then drag a box around them |
+| Annotate several elements near each other | mode <kbd>3</kbd>, then drag a box around them |
+| Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button |
@@ -161,8 +162,24 @@ inside them. Elements the box merely clips are left out. The selection is
 highlighted live while you drag and counted in the line under the toolbar, so you
 can adjust before letting go.
 
+When the things you mean are nowhere near each other — a badge in the header, a label in
+the form, a button in the footer, all the wrong grey — <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click
+them one at a time instead. Each stays highlighted and the count sits under the toolbar;
+clicking one again takes it back out. Finish by clicking the last element normally, which
+adds it and opens the composer, or by pressing <kbd>Enter</kbd> to take the set as it
+stands. <kbd>Esc</kbd> drops the set without leaving inspect mode. On macOS use
+<kbd>⌘</kbd>: <kbd>Ctrl</kbd>+click there is a right-click.
+
 Annotations are stored per `origin + pathname`, so they survive a reload and come
-back when you return to the same screen.
+back when you return to the same screen. Settings and notes both survive an upgrade —
+Chrome keeps them, and the storage keys have not moved since 0.2.0.
+
+**Accent colour.** The extension is orange by default; the popup's *Behaviour* section has six
+presets, a picker for an exact brand colour, and a Reset. The colour applies to the highlight,
+the toolbar, the pins, the count badge on the extension icon, the popup itself, and the boxes and
+arrows you draw on a screenshot — live, in every open tab. Screenshots you already saved keep the
+colour they were drawn in. The text-on-accent shade is derived from the colour's brightness, so a
+dark colour gets light text rather than unreadable dark-on-dark.
 
 ## Triage
 
@@ -545,7 +562,7 @@ git tag -d v0.3.0 && git push origin :refs/tags/v0.3.0
 
 ```
 src/
-├── shared/       types, wire protocol, Markdown generation, export/import
+├── shared/       types, wire protocol, Markdown generation, export/import, accent
 ├── inspector/    MAIN world — freeze, diagnostics
 │   └── detectors/  one file per framework + a dispatcher
 ├── content/      ISOLATED world — capture, storage, UI, frame bridge

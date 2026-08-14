@@ -15,7 +15,8 @@ production-build measurements). This file covers what you need to *change* the c
 npm run dev          # esbuild watch → dist/ (reload the unpacked extension after each rebuild)
 npm run typecheck    # tsc --noEmit — the only static gate
 npm run build        # icons + three bundles + static passthrough
-npm test             # build, then drive a real headed Chromium against test/fixtures/
+npm test             # build, then test/e2e.mjs and test/upgrade.mjs, headed Chromium
+npm run test:upgrade # just the upgrade check, to iterate on it alone
 npm run pack         # → senannotate-<version>.zip (dist/ + TESTER-GUIDE.md)
 ```
 
@@ -32,10 +33,16 @@ SENANNOTATE_PLAYWRIGHT_DIR=/Users/thangnm/Documents/Works/storefront_playwright_
 `test/fixtures/vendor/vue.global.js` is gitignored but cached once copied.
 `SENANNOTATE_PNPM_STORE` is only for `test/build-prod-fixtures.mjs`.
 
-**There is no single-test filter.** `test/e2e.mjs` is one sequential `main()` driving ~98
+**There is no single-test filter.** `test/e2e.mjs` is one sequential `main()` driving ~180
 `check()` assertions across a shared browser context; to iterate on one area, comment out the
 page blocks above it. The suite launches **headed** Chromium — extensions need a persistent,
 headed context.
+
+`test/upgrade.mjs` is the one check that cannot live in that suite: it needs **two** launches
+over one profile directory, with the version in `dist/manifest.json` bumped between them, to
+observe a real upgrade. `chrome.runtime.reload()` is not a substitute — Chrome drops an
+extension loaded with `--load-extension` when it calls that, and every later navigation to it
+fails `ERR_BLOCKED_BY_CLIENT` (`docs/upgrade-persistence/`).
 
 Two extra checks are kept out of the suite because each needs something it cannot guarantee:
 `npm run verify:sites` (network) and `npm run verify:tracer` (a Nuxt dev server on :3005, and
@@ -56,9 +63,11 @@ That single fact forces the three-context split:
 | `popup.js` (IIFE) | popup page | `src/popup/` | settings |
 
 `src/shared/` is the only code all four import: `types.ts`, `protocol.ts` (wire protocol +
-storage keys), `output.ts` (the Markdown report), `archive.ts` (export/import). Nothing in
-`popup/` or `background/` may import from `content/` — that inversion is what put
-`archive.ts` in `shared/` rather than next to `content/storage.ts`.
+storage keys), `output.ts` (the Markdown report), `archive.ts` (export/import), `accent.ts`
+(the accent colour and the two shades derived from it). Nothing in `popup/` or `background/`
+may import from `content/` — that inversion is what put `archive.ts` in `shared/` rather than
+next to `content/storage.ts`, and it is why `accent.ts` returns colours rather than CSS
+variable names: the overlay calls them `--sa-accent*` and the popup calls them `--accent*`.
 
 **Both content scripts run with `all_frames: true`.** `src/content/index.ts` therefore
 ends in a branch, and it is the most important line in the file:

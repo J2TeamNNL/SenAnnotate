@@ -18,6 +18,7 @@
 // what makes undoing a blur genuinely restore the pixels.
 // =============================================================================
 
+import { DEFAULT_ACCENT, accentTheme } from "../../shared/accent";
 import { h, icon, listen } from "./dom";
 
 type Tool = "box" | "arrow" | "blur";
@@ -45,7 +46,6 @@ const TOOLS: { tool: Tool; iconName: string; label: string; title: string }[] = 
   { tool: "blur", iconName: "snowflake", label: "Blur", title: "Pixelate a region — destroys the pixels" },
 ];
 
-const ACCENT = "#f97316";
 /** Halo under every stroke, so markup stays visible on a dark *and* a light shot. */
 const HALO = "rgba(255,255,255,0.9)";
 const STROKE = 3;
@@ -70,8 +70,21 @@ export class ShotEditor {
   private tool: Tool = "box";
   private drawing: Shape | null = null;
 
-  constructor(layer: HTMLElement, base: HTMLCanvasElement, callbacks: ShotEditorCallbacks) {
+  /**
+   * The colour boxes and arrows are stroked in. Passed in rather than read from a CSS
+   * variable: these end up as pixels in a PNG through a canvas `strokeStyle`, which cannot
+   * see the shadow root's custom properties.
+   */
+  private readonly accent: string;
+
+  constructor(
+    layer: HTMLElement,
+    base: HTMLCanvasElement,
+    callbacks: ShotEditorCallbacks,
+    accent: string = DEFAULT_ACCENT,
+  ) {
     this.base = base;
+    this.accent = accentTheme(accent).accent;
 
     this.canvas = h("canvas", { class: "shot-editor__canvas" });
     this.canvas.width = base.width;
@@ -324,7 +337,7 @@ export class ShotEditor {
     context.strokeStyle = HALO;
     context.lineWidth = STROKE + 3;
     context.strokeRect(x, y, w, h);
-    context.strokeStyle = ACCENT;
+    context.strokeStyle = this.accent;
     context.lineWidth = STROKE;
     context.strokeRect(x, y, w, h);
   }
@@ -362,7 +375,7 @@ export class ShotEditor {
     };
 
     stroke(HALO, STROKE + 3);
-    stroke(ACCENT, STROKE);
+    stroke(this.accent, STROKE);
   }
 
   /**

@@ -110,6 +110,40 @@ One report covering every annotated page, and annotation *inside* iframes. Its
 the three child-frame problems the plan did not anticipate, and a permission-gated
 clipboard read that hung the suite for ten minutes instead of failing.
 
+## [`accent-color/`](./accent-color/) — 0.6.1
+
+One setting for the extension's colour, reaching the four places that hold it and cannot see each
+other: a shadow stylesheet, the popup's document, a service worker's badge and a canvas
+`strokeStyle`. Its `context.md` explains why the text-on-accent shade cannot be a darken, why the
+luminance threshold is 0.3 and not a rounder number, and why the default deliberately sets
+nothing at all. Its `changelog.md` records an assertion that reported a working feature as broken
+because `color-mix()` computes to `color(srgb …)`, not `rgb(…)`.
+
+## [`multi-pick/`](./multi-pick/) — 0.6.1
+
+⌘/Ctrl+click to collect elements that no rectangle can enclose without taking the page with
+them, then one note for the set. Reuses the marquee's multi-element annotation end to end, so
+nothing outside `content/index.ts` changed. Its `changelog.md` records the bug that reading
+found and testing would not have: `updateHover`'s second, bridge-enriched draw would have wiped
+the set ~100ms after every pick.
+
+## [`modal-top-layer/`](./modal-top-layer/) — 0.6.1
+
+The third modal task, and the first where the dialog was the aggressor: a `showModal()` dialog
+enters Chrome's **top layer**, above every z-index, and makes everything outside it inert — so
+with one open, no note could be added at all. Its `context.md` has the table of rejected fixes
+(a popover host paints above the dialog and is still inert); its `changelog.md` has the trap
+worth reading, which is that moving our host is useless on its own because every piece the
+overlay draws is itself `position: fixed`.
+
+## [`upgrade-persistence/`](./upgrade-persistence/) — 0.6.1
+
+Notes and settings surviving a new version — which they already did, from 0.2.0 on, so this is
+a test rather than a fix. `test/upgrade.mjs` performs a real upgrade over two launches sharing
+one profile. Its `changelog.md` records why `chrome.runtime.reload()` cannot stand in for that
+(Chrome drops a `--load-extension` extension instead of reloading it), and `context.md` states
+the three-part compatibility contract a future release must not break.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,

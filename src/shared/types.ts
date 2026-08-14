@@ -2,6 +2,8 @@
 // Shared types — the vocabulary all three worlds agree on
 // =============================================================================
 
+import { DEFAULT_ACCENT } from "./accent";
+
 export type OutputDetailLevel = "compact" | "standard" | "detailed" | "forensic";
 
 /**
@@ -324,6 +326,12 @@ export interface Settings {
   toolbarCollapsed: boolean;
   /** Whether a screenshot travels as a file path or inside the Markdown. */
   screenshotDelivery: ScreenshotDelivery;
+  /**
+   * The extension's colour, `#rrggbb`. Reaches the overlay, the popup, the toolbar
+   * badge and the markup editor's strokes — see `shared/accent.ts`, which derives the
+   * hover and text-on-accent shades from it.
+   */
+  accentColor: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -337,6 +345,7 @@ export const DEFAULT_SETTINGS: Settings = {
   captureDiagnostics: true,
   toolbarCollapsed: false,
   screenshotDelivery: "path",
+  accentColor: DEFAULT_ACCENT,
 };
 
 export const OUTPUT_DETAIL_OPTIONS: { value: OutputDetailLevel; label: string; hint: string }[] = [

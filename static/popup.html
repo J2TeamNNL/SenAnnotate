@@ -159,6 +159,53 @@
         cursor: pointer;
       }
 
+      /* The accent row: presets for one click, a picker for an exact brand colour, and a
+         way back to the shipped orange. */
+      .field .swatches {
+        display: flex;
+        gap: 4px;
+      }
+
+      .swatch {
+        width: 16px;
+        height: 16px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        cursor: pointer;
+      }
+
+      /* A ring rather than a border swap, so the swatch's own colour never changes size
+         or shade when it becomes the selected one. */
+      .swatch[aria-pressed="true"] {
+        box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--accent);
+      }
+
+      .field input[type="color"] {
+        width: 22px;
+        height: 20px;
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: none;
+        cursor: pointer;
+      }
+
+      .link-button {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11px;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      .link-button:hover {
+        color: var(--fg);
+      }
+
       .hint {
         margin: 3px 0 10px;
         color: var(--muted);
@@ -317,6 +364,12 @@
     <div class="field">
       <label for="theme">Theme</label>
       <select id="theme"></select>
+    </div>
+    <div class="field">
+      <label for="accent-custom">Accent colour</label>
+      <div class="swatches" id="accent-presets"></div>
+      <input type="color" id="accent-custom" title="Pick any colour" />
+      <button type="button" class="link-button" id="accent-reset">Reset</button>
     </div>
 
     <h2>Pages</h2>

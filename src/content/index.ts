@@ -116,6 +116,16 @@ let marqueeCandidates: Candidate[] = [];
 let marqueeHits: MarqueeHits = { elements: [], rects: [], capped: false };
 let marqueeFrame = 0;
 
+/**
+ * Elements picked one at a time with ⌘/Ctrl+click, waiting to become one annotation.
+ *
+ * The marquee's set and this one both end at `beginAnnotation(Element[])`, which is why
+ * neither the report, the panel, the markers nor storage know this feature exists — see
+ * `docs/multi-pick/context.md`. Order is kept: the first pick is the element the report
+ * names, and the rest are the `+N more`.
+ */
+let picked: Element[] = [];
+
 /** Elements the composer is currently about — kept live for screenshotting. */
 let composerTargets: Element[] = [];
 
@@ -157,6 +167,7 @@ function createTopUi(): void {
     onModeChange: (next) => {
       mode = next;
       resetMarquee();
+      clearPicked();
       overlay.hideAll();
       render();
       broadcastFrameState(active, mode);
@@ -213,6 +224,19 @@ function render(): void {
   void notifyBadge();
 }
 
+/**
+ * Push the two looks — theme and accent — at the overlay.
+ *
+ * One function because they arrive together, from the same settings object, at all three
+ * points where settings land: boot, a `storage.onChanged` from the popup, and the
+ * `settings-changed` message. Three call sites each doing two calls is three chances to
+ * add a third appearance setting to two of them.
+ */
+function applyAppearance(): void {
+  ui.setTheme(settings.theme);
+  ui.setAccent(settings.accentColor);
+}
+
 // -----------------------------------------------------------------------------
 // Mode switching
 // -----------------------------------------------------------------------------
@@ -227,6 +251,7 @@ function setActive(next: boolean): void {
 
   if (!active) {
     resetMarquee();
+    clearPicked();
     overlay.hideAll();
     hoveredElement = null;
     hoverLabel = null;
@@ -308,7 +333,7 @@ async function updateHover(element: Element): Promise<void> {
   // Draw immediately with what we already know, then enrich once the inspector
   // answers. Waiting for the bridge first would make the highlight feel laggy.
   hoverLabel = { primary: name };
-  overlay.showHighlights([element.getBoundingClientRect()], hoverLabel);
+  drawHover(element);
 
   if (settings.componentMode === "off") return;
 
@@ -326,7 +351,21 @@ async function updateHover(element: Element): Promise<void> {
     primary: framework?.ownerComponent ? `<${framework.ownerComponent}>` : name,
     secondary: formatSource(resolveSource(element, framework)),
   };
-  overlay.showHighlights([element.getBoundingClientRect()], hoverLabel);
+  drawHover(element);
+}
+
+/**
+ * One box for the hovered element — or the whole pick set, when one is being built.
+ *
+ * Both draws in `updateHover` go through here so that enriching the label a bridge
+ * round-trip later cannot wipe the set the user has been assembling.
+ */
+function drawHover(element: Element): void {
+  if (picked.length) {
+    drawPicked();
+    return;
+  }
+  overlay.showHighlights([element.getBoundingClientRect()], hoverLabel ?? undefined);
 }
 
 /**
@@ -588,13 +627,18 @@ async function captureScreenshot(target: Draft | Annotation): Promise<void> {
 
 function openShotEditor(canvas: HTMLCanvasElement, target: Draft | Annotation): void {
   closeShotEditor();
-  shotEditor = new ShotEditor(ui.cardLayer, canvas, {
-    onCancel: () => closeShotEditor(),
-    onSave: (edited) => {
-      closeShotEditor();
-      void deliverScreenshot(edited, target);
+  shotEditor = new ShotEditor(
+    ui.cardLayer,
+    canvas,
+    {
+      onCancel: () => closeShotEditor(),
+      onSave: (edited) => {
+        closeShotEditor();
+        void deliverScreenshot(edited, target);
+      },
     },
-  });
+    settings.accentColor,
+  );
 }
 
 function closeShotEditor(): void {
@@ -697,6 +741,99 @@ function marqueeHint(hits: MarqueeHits): string {
   return `${count} element${count === 1 ? "" : "s"} selected · release to annotate`;
 }
 
+// --- picking one at a time ---------------------------------------------------
+
+
+function pickHint(): string {
+  if (picked.length >= MAX_MARQUEE_ELEMENTS) {
+    return `${MAX_MARQUEE_ELEMENTS} elements (limit) · Enter to annotate`;
+  }
+  // "⌘/Ctrl" rather than one of them: the modifier that works depends on the platform
+  // (on macOS a Ctrl+click is a right-click), and the overlay has no reliable way to
+  // ask which platform it is on.
+  return `${picked.length} element${picked.length === 1 ? "" : "s"} picked · ⌘/Ctrl+click to add · Enter to annotate`;
+}
+
+/**
+ * The set minus anything the page has re-rendered away.
+ *
+ * A detached node captures as a zero-size box and a selector that resolves to nothing —
+ * an annotation that looks fine in the list and points at nowhere in the report. This is
+ * the same guard `captureHovered()` needs, for the same reason, and a set that is held
+ * across a re-render is far more exposed to it than a single hover.
+ */
+function livePicks(): Element[] {
+  if (picked.some((element) => !element.isConnected)) {
+    picked = picked.filter((element) => element.isConnected);
+  }
+  return picked;
+}
+
+/**
+ * Draw the set, with the hovered element first so it keeps the label.
+ *
+ * `preview: true` is the marquee's "every box is the live selection" style, which is what
+ * a pick set is: unlike a saved multi-element annotation there is no primary box and no
+ * muted remainder. The hovered element is skipped when it is already in the set, so
+ * nothing is drawn twice.
+ */
+function drawPicked(): void {
+  const set = livePicks();
+  if (!set.length) return;
+
+  const hovered =
+    hoveredElement && hoveredElement.isConnected && !set.includes(hoveredElement)
+      ? hoveredElement
+      : null;
+  const elements = hovered ? [hovered, ...set] : set;
+
+  overlay.showHighlights(
+    elements.map((element) => element.getBoundingClientRect()),
+    hovered ? (hoverLabel ?? undefined) : undefined,
+    { preview: true },
+  );
+  toolbar.setHint(pickHint());
+}
+
+/** Forget the set. Callers that want the hover highlight back ask for it themselves. */
+function clearPicked(): void {
+  picked = [];
+  overlay.hideHighlights();
+  toolbar.setHint(null);
+}
+
+/** ⌘/Ctrl+click: in if it was out, out if it was in. */
+function togglePick(element: Element): void {
+  const set = livePicks();
+
+  if (set.includes(element)) picked = set.filter((item) => item !== element);
+  else if (set.length < MAX_MARQUEE_ELEMENTS) picked = [...set, element];
+
+  if (!picked.length) {
+    clearPicked();
+    if (hoveredElement?.isConnected) void updateHover(hoveredElement);
+    return;
+  }
+  drawPicked();
+}
+
+/**
+ * Turn the set into one annotation. `extra` is the element a plain click landed on, which
+ * joins the set rather than replacing it — a click that silently discarded three picks
+ * would be the worst possible reading of "done".
+ */
+function commitPicked(extra?: Element): void {
+  const set = livePicks();
+  const elements = extra && !set.includes(extra) ? [...set, extra] : [...set];
+
+  picked = [];
+  toolbar.setHint(null);
+  if (!elements.length) return;
+
+  void beginAnnotation(elements.slice(0, MAX_MARQUEE_ELEMENTS));
+}
+
+
 function resetMarquee(): void {
   if (marqueeFrame) {
     cancelAnimationFrame(marqueeFrame);
@@ -739,8 +876,13 @@ function queueSync(): void {
   syncQueued = true;
   requestAnimationFrame(() => {
     syncQueued = false;
+    // A dialog that resizes, or animates into place after it opened, changes whether it is a
+    // containing block for our fixed host — and a resize changes the viewport we fit to.
+    ui.syncPlacement();
     markers.syncPositions();
-    if (!composer && hoveredElement && active && mode === "point") {
+    if (composer || !active || mode !== "point") return;
+    if (picked.length) drawPicked();
+    else if (hoveredElement) {
       overlay.showHighlights([hoveredElement.getBoundingClientRect()], hoverLabel ?? undefined);
     }
   });
@@ -789,12 +931,12 @@ async function ensureDetection(): Promise<void> {
 
 async function boot(): Promise<void> {
   settings = await loadSettings();
-  ui.setTheme(settings.theme);
+  applyAppearance();
   annotations = await loadAnnotations();
 
   onSettingsChanged((next) => {
     settings = next;
-    ui.setTheme(settings.theme);
+    applyAppearance();
     render();
   });
 
@@ -853,7 +995,7 @@ function installTopFrame(): void {
 
   async function refreshSettings(): Promise<void> {
     settings = await loadSettings();
-    ui.setTheme(settings.theme);
+    applyAppearance();
     render();
   }
 
@@ -866,9 +1008,11 @@ function installTopFrame(): void {
 
       const target = document.elementFromPoint(event.clientX, event.clientY);
       if (!target || !eligible(target)) {
-        overlay.hideHighlights();
         hoveredElement = null;
         hoverLabel = null;
+        // Moving off an element must not erase a set that is still being built.
+        if (picked.length) drawPicked();
+        else overlay.hideHighlights();
         return;
       }
       if (target === hoveredElement) return;
@@ -893,6 +1037,18 @@ function installTopFrame(): void {
       if (mode !== "point") return;
       const target = document.elementFromPoint(event.clientX, event.clientY);
       if (!target || !eligible(target)) return;
+
+      // ⌘/Ctrl+click collects instead of annotating, so a note can cover three things
+      // that no rectangle contains without taking half the page with them. A plain click
+      // then means both "add this one" and "done".
+      if (event.metaKey || event.ctrlKey) {
+        togglePick(target);
+        return;
+      }
+      if (picked.length) {
+        commitPicked(target);
+        return;
+      }
       void beginAnnotation([target]);
     },
     { capture: true },
@@ -1002,6 +1158,13 @@ function installTopFrame(): void {
         closeComposer();
         return;
       }
+      // A half-built pick set is the thing Escape is most likely to be aimed at, so it
+      // goes before leaving inspect mode entirely.
+      if (picked.length) {
+        clearPicked();
+        if (hoveredElement?.isConnected) void updateHover(hoveredElement);
+        return;
+      }
       if (active) {
         setActive(false);
         return;
@@ -1030,18 +1193,21 @@ function installTopFrame(): void {
       case "1":
         mode = "point";
         resetMarquee();
+        clearPicked();
         overlay.hideAll();
         render();
         break;
       case "2":
         mode = "text";
         resetMarquee();
+        clearPicked();
         overlay.hideAll();
         render();
         break;
       case "3":
         mode = "area";
         resetMarquee();
+        clearPicked();
         overlay.hideAll();
         render();
         break;
@@ -1055,7 +1221,10 @@ function installTopFrame(): void {
       case "c":
       case "C":
       case "Enter":
-        captureHovered();
+        // With a set waiting, these keys finish it; the hovered element is already in it
+        // if it was meant to be.
+        if (picked.length) commitPicked();
+        else captureHovered();
         break;
       case "f":
         void toggleFreeze();

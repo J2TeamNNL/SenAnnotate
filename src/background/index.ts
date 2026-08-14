@@ -7,9 +7,27 @@
 // saving, all the state — lives in the content script.
 // =============================================================================
 
-import type { RuntimeMessage, RuntimeResponse } from "../shared/protocol";
+import { DEFAULT_ACCENT, accentTheme } from "../shared/accent";
+import { SETTINGS_KEY, type RuntimeMessage, type RuntimeResponse } from "../shared/protocol";
+import type { Settings } from "../shared/types";
 
-const ACCENT = "#f97316";
+/**
+ * The badge colour, read at paint time rather than cached.
+ *
+ * The badge is repainted on every count change, so there is nothing to invalidate and no
+ * listener to keep in sync — and a service worker is torn down between events anyway, so
+ * a cache would mostly be cold. `SETTINGS_KEY` comes from `shared/protocol` because the
+ * worker may not import from `content/`; that is the whole reason the key lives there.
+ */
+async function badgeColor(): Promise<string> {
+  try {
+    const stored = await chrome.storage.sync.get(SETTINGS_KEY);
+    const settings = stored[SETTINGS_KEY] as Partial<Settings> | undefined;
+    return accentTheme(settings?.accentColor ?? DEFAULT_ACCENT).accent;
+  } catch {
+    return DEFAULT_ACCENT;
+  }
+}
 
 chrome.runtime.onMessage.addListener(
   (message: RuntimeMessage, sender, sendResponse: (response: RuntimeResponse) => void) => {
@@ -27,7 +45,7 @@ chrome.runtime.onMessage.addListener(
         const tabId = sender.tab?.id;
         if (tabId !== undefined) {
           void chrome.action.setBadgeText({ tabId, text: message.count ? String(message.count) : "" });
-          void chrome.action.setBadgeBackgroundColor({ tabId, color: ACCENT });
+          void badgeColor().then((color) => chrome.action.setBadgeBackgroundColor({ tabId, color }));
         }
         sendResponse({ ok: true });
         return false;

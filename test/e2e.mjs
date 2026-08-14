@@ -580,6 +580,117 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // Picking elements one at a time — ⌘/Ctrl+click
+    // -------------------------------------------------------------------------
+    //
+    // The marquee above takes what one rectangle fully contains. The set a review
+    // actually wants is often three things far apart, so this accumulates them: a
+    // modifier-click adds (or removes) one, a plain click adds the element it landed on
+    // and commits, `Enter` commits the set as it stands, `Escape` drops it.
+    //
+    // `ControlOrMeta` rather than `Meta`: the extension accepts either modifier, and
+    // Playwright resolves this one per platform — on macOS a real Ctrl+click is a
+    // right-click and never delivers the `click` this depends on.
+    const pick = await context.newPage();
+    await pick.goto(`${base}/pick.html`);
+    await pick.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await pick.locator(".tool--brand").click();
+
+    const pickHint = async () =>
+      ((await pick.locator(".toolbar-hint").textContent()) ?? "").trim();
+    const addPick = (selector) =>
+      pick.locator(selector).click({ modifiers: ["ControlOrMeta"], timeout: 5_000 });
+
+    await addPick(".badge");
+    await addPick(".label");
+    await pick.waitForTimeout(200);
+
+    check(
+      "two modifier-clicks pick two elements",
+      (await pickHint()).startsWith("2 elements picked"),
+      `hint read "${await pickHint()}"`,
+    );
+    check(
+      "picking does not open the composer",
+      (await pick.locator(".composer").count()) === 0,
+      "a composer opened while the set was still being built",
+    );
+    // The pointer is over `.label`, which is picked, so it must not be drawn twice —
+    // two boxes, not three.
+    check(
+      "every picked element is drawn, once each",
+      (await pick.locator(".highlight--preview").count()) === 2,
+      `${await pick.locator(".highlight--preview").count()} preview boxes`,
+    );
+
+    // Same element again removes it — and the hint has to say "1 element", singular.
+    await addPick(".label");
+    await pick.waitForTimeout(200);
+    check(
+      "picking the same element again takes it back out",
+      (await pickHint()).startsWith("1 element picked"),
+      `hint read "${await pickHint()}"`,
+    );
+
+    // A plain click is both "add this one" and "done".
+    await addPick(".label");
+    await pick.locator(".submit").click({ timeout: 5_000 });
+    await pick.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    const pickMeta = ((await pick.locator(".composer__meta").textContent()) ?? "").trim();
+    check(
+      "a plain click commits the set together with the element it landed on",
+      pickMeta.includes("3 elements"),
+      `meta read "${pickMeta}"`,
+    );
+
+    await pick.keyboard.type("These three all use the wrong grey.");
+    await pick.locator(".composer .button--primary").click();
+    await pick.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    await pick.locator('.tool[title^="Annotations"]').click();
+    await pick.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "three picked elements make one note, not three",
+      (await pick.locator(".entry").count()) === 1,
+      `${await pick.locator(".entry").count()} entries`,
+    );
+
+    await pick.locator(".panel .button--primary").click();
+    const pickReport = await pick.evaluate(() => navigator.clipboard.readText());
+    check(
+      "the report says the note covers more than the element it names",
+      /\+2 more/.test(pickReport) && /These three all use the wrong grey/.test(pickReport),
+      pickReport.slice(0, 240),
+    );
+    await pick.locator('.tool[title^="Annotations"]').click();
+
+    // Escape drops the set without leaving inspect mode — the hint going back to the
+    // mode line is how you can tell the difference.
+    await addPick(".badge");
+    await addPick(".label");
+    await pick.keyboard.press("Escape");
+    await pick.waitForTimeout(200);
+    check(
+      "Escape drops the set and stays in inspect mode",
+      (await pickHint()) === "Click an element · C captures hover · 2 text · 3 area" &&
+        (await pick.locator(".highlight--preview").count()) === 0 &&
+        (await pick.locator(".tool--brand").getAttribute("aria-pressed")) === "true",
+      `hint read "${await pickHint()}", ${await pick.locator(".highlight--preview").count()} boxes`,
+    );
+
+    // And Enter commits the set as it stands, with no plain click at all.
+    await addPick(".badge");
+    await addPick(".label");
+    await pick.keyboard.press("Enter");
+    await pick.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "Enter commits the picked set on its own",
+      (((await pick.locator(".composer__meta").textContent()) ?? "").includes("2 elements")),
+      `meta read "${((await pick.locator(".composer__meta").textContent()) ?? "").trim()}"`,
+    );
+    await pick.keyboard.press("Escape");
+
+    // -------------------------------------------------------------------------
     // Modals — our own UI must not read as a click outside the page's dialog
     // -------------------------------------------------------------------------
     //
@@ -677,6 +788,122 @@ async function main() {
       "the report locates the annotated element inside the dialog",
       /dialog/.test(modalReport),
       modalReport.slice(0, 200),
+    );
+
+    // -------------------------------------------------------------------------
+    // The top layer — a `showModal()` dialog outranks any z-index we can set
+    // -------------------------------------------------------------------------
+    //
+    // Everything above uses a `div` modal, which our maximum z-index wins. `showModal()`
+    // does not compete on z-index at all: it moves the dialog into the browser's top
+    // layer, painted above the whole stacking order, and makes every element outside it
+    // inert — unhittable, unfocusable, deaf to keystrokes. Reported as exactly that: with
+    // a modal open, no note could be added. The fix places our host inside the topmost
+    // `:modal` element; these checks are what it has to buy.
+    //
+    // No `Escape` anywhere in this block — a native dialog closes on it.
+    const native = await context.newPage();
+    await native.goto(`${base}/modal-native.html`);
+    await native.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const nativeCloseLog = () => native.evaluate(() => window.__closeLog.join(", "));
+    const dialogIsModal = (id) => native.locator(`#${id}`).evaluate((el) => el.matches(":modal"));
+
+    await native.locator("#open-plain").click();
+    check("the native dialog opens modally", await dialogIsModal("native"));
+
+    // The first thing the report said was impossible: reaching our own toolbar. Before the
+    // fix the dialog intercepted the click and Playwright timed out on it.
+    const brandPressed = () =>
+      native.locator(".tool--brand").getAttribute("aria-pressed");
+    await native.locator(".tool--brand").click({ timeout: 5_000 });
+    check(
+      "the toolbar is clickable with a top-layer modal open",
+      (await brandPressed()) === "true",
+      `aria-pressed read "${await brandPressed()}"`,
+    );
+
+    // The highlight has to land *on* the element, not offset by the dialog's box: inside a
+    // dialog our host can be sized to the dialog rather than the viewport, which moves
+    // every coordinate we draw. Asserted on both dialogs, because only the transformed one
+    // is a containing block for fixed positioning.
+    const highlightLinesUp = async (selector) => {
+      const target = await native.locator(selector).boundingBox();
+      await native.mouse.move(target.x + target.width / 2, target.y + target.height / 2, {
+        steps: 4,
+      });
+      const highlight = native.locator(".highlight").first();
+      await highlight.waitFor({ state: "visible", timeout: 5_000 });
+      await native.waitForTimeout(200);
+      const drawn = await highlight.boundingBox();
+      return {
+        ok: Math.abs(drawn.x - target.x) < 2 && Math.abs(drawn.y - target.y) < 2,
+        detail: `target ${Math.round(target.x)},${Math.round(target.y)} vs highlight ${Math.round(drawn.x)},${Math.round(drawn.y)}`,
+      };
+    };
+
+    const plainAligned = await highlightLinesUp(".plain-body");
+    check("the highlight lines up inside a top-layer dialog", plainAligned.ok, plainAligned.detail);
+
+    await native.locator(".plain-body").click({ timeout: 5_000 });
+    await native.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    check("an element inside a top-layer dialog opens the composer", await dialogIsModal("native"));
+
+    // Real keystrokes, never `fill()`. `fill()` writes the value straight into the element
+    // and would pass even with the composer inert behind the dialog — which is the whole
+    // bug. `modal-focus-leak/changelog.md` records that measurement nearly hiding the
+    // sibling bug in 0.5.1.
+    await native.keyboard.type("The dialog's copy should name the item.");
+    check(
+      "the composer takes real keystrokes with a modal open",
+      (await native.locator(".composer__input").inputValue()) ===
+        "The dialog's copy should name the item.",
+      `textarea read "${await native.locator(".composer__input").inputValue()}"`,
+    );
+
+    await native.locator(".composer .button--primary").click();
+    await native.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    check(
+      "the dialog survives being annotated",
+      await dialogIsModal("native"),
+      `closed by: ${await nativeCloseLog()}`,
+    );
+
+    // The second dialog is transformed, so `inset: 0` on our host resolves against the
+    // dialog instead of the viewport unless the fit compensates for it.
+    // Opened through the DOM, not the page's button: inspect mode is on by now and
+    // correctly swallows page-directed clicks, and `showModal()` needs no activation.
+    await native.locator("#native").evaluate((el) => el.close());
+    await native.locator("#animated").evaluate((el) => el.showModal());
+    check("the transformed dialog opens modally", await dialogIsModal("animated"));
+
+    const animatedAligned = await highlightLinesUp(".animated-body");
+    check(
+      "the highlight lines up inside a transformed top-layer dialog",
+      animatedAligned.ok,
+      animatedAligned.detail,
+    );
+
+    await native.locator(".animated-body").click({ timeout: 5_000 });
+    await native.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await native.keyboard.type("Noted through a containing block.");
+    await native.locator(".composer .button--primary").click();
+    await native.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    check(
+      "both notes were saved from inside the top layer",
+      (await native.locator(".count").textContent()) === "2",
+      `count badge read "${await native.locator(".count").textContent()}"`,
+    );
+
+    await native.locator('.tool[title^="Annotations"]').click();
+    await native.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await native.locator(".panel .button--primary").click();
+    const nativeReport = await native.evaluate(() => navigator.clipboard.readText());
+    check(
+      "the report names the elements annotated inside the top layer",
+      /plain-body/.test(nativeReport) && /animated-body/.test(nativeReport),
+      nativeReport.slice(0, 300),
     );
 
     // -------------------------------------------------------------------------
@@ -1547,6 +1774,173 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // The accent colour setting
+    // -------------------------------------------------------------------------
+    //
+    // One colour has to reach four places that cannot see each other's styles: the
+    // overlay's shadow stylesheet, the popup's own document, the badge painted by the
+    // service worker, and a canvas `strokeStyle` in the markup editor. Each is checked
+    // where it lands, because a substitution in one of them proves nothing about the rest.
+    //
+    // The block ends by resetting to the default, so everything after it runs in the
+    // shipped colour.
+    const [accentWorker] = context.serviceWorkers();
+    const accentExtensionId = accentWorker ? new URL(accentWorker.url()).host : null;
+
+    if (accentExtensionId) {
+      const accented = await context.newPage();
+      await accented.goto(`${base}/accent.html`);
+      await accented.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+      await accented.locator(".tool--brand").click();
+
+      // A note first: the badge only carries a colour once it carries a count.
+      await accented.locator(".card-copy").click();
+      await accented.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await accented.keyboard.type("Checking the accent reaches everything.");
+      await accented.locator(".composer .button--primary").click();
+      await accented.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      /** Resolve a custom property to a real colour: they read back as their own token. */
+      const resolved = (property) =>
+        accented.evaluate((name) => {
+          const host = document.querySelector("[data-senannotate-ui]");
+          const probe = document.createElement("span");
+          probe.style.color = `var(${name})`;
+          host.shadowRoot.append(probe);
+          const value = getComputedStyle(probe).color;
+          probe.remove();
+          return value;
+        }, property);
+
+      const hoverHighlight = async () => {
+        const box = await accented.locator(".card-copy").boundingBox();
+        await accented.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+        await accented.locator(".highlight").first().waitFor({ state: "visible", timeout: 5_000 });
+        await accented.waitForTimeout(200);
+        return accented.locator(".highlight").first().evaluate((el) => getComputedStyle(el).borderColor);
+      };
+
+      const settingsPage = await context.newPage();
+      await settingsPage.goto(`chrome-extension://${accentExtensionId}/popup.html`);
+      await settingsPage.locator("#accent-presets .swatch").first().waitFor({
+        state: "visible",
+        timeout: 10_000,
+      });
+      check(
+        "the popup offers the presets and a free picker",
+        (await settingsPage.locator("#accent-presets .swatch").count()) === 6 &&
+          (await settingsPage.locator("#accent-custom").count()) === 1,
+        `${await settingsPage.locator("#accent-presets .swatch").count()} swatches`,
+      );
+
+      // A preset, by its title rather than its position, so reordering the list does not
+      // silently change what this asserts.
+      await settingsPage.locator('#accent-presets .swatch[title="Blue"]').click();
+      await settingsPage.waitForTimeout(400);
+      check(
+        "a preset recolours the overlay in an open tab",
+        (await resolved("--sa-accent")) === "rgb(59, 130, 246)",
+        `--sa-accent resolved to ${await resolved("--sa-accent")}`,
+      );
+      check(
+        "the highlight is drawn in the chosen colour",
+        (await hoverHighlight()) === "rgb(59, 130, 246)",
+        `border read ${await hoverHighlight()}`,
+      );
+      check(
+        "the popup recolours itself too",
+        (await settingsPage.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim())) ===
+          "#3b82f6",
+        await settingsPage.evaluate(() =>
+          getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
+        ),
+      );
+
+      // A dark colour is the case a "darken it" derivation gets wrong: the ink is text
+      // drawn *on* the accent, so on navy it has to come out light, not black-on-black.
+      await settingsPage.locator("#accent-custom").fill("#0b3d91");
+      await settingsPage.waitForTimeout(400);
+      const ink = await resolved("--sa-accent-ink");
+      // A `color-mix()` result comes back as `color(srgb 0.82 0.86 0.92)`, not as
+      // `rgb(…)` — the channels are already 0-1 there, and only the plain form needs
+      // dividing. Getting this wrong reads as the feature failing rather than the parse.
+      const inkLuminance = (() => {
+        const channels = [...ink.matchAll(/[\d.]+/g)].map(Number).slice(0, 3);
+        if (channels.length < 3) return -1;
+        const scale = ink.startsWith("rgb") ? 255 : 1;
+        const [red, green, blue] = channels.map((channel) => channel / scale);
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      })();
+      check(
+        "a dark accent gets light ink rather than black on black",
+        (await resolved("--sa-accent")) === "rgb(11, 61, 145)" && inkLuminance > 0.5,
+        `accent ${await resolved("--sa-accent")}, ink ${ink} (luminance ${inkLuminance.toFixed(2)})`,
+      );
+
+      // The markup editor strokes a canvas, which cannot read a CSS variable — the colour
+      // has to have been handed to it. Draw a box over the white target and look for it.
+      await accented.locator(".shot-target").click();
+      await accented.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await accented.locator('.composer .button[title^="Capture"]').click();
+      await accented.locator(".shot-editor").waitFor({ state: "visible", timeout: 10_000 });
+      const shotCanvas = await accented.locator(".shot-editor__canvas").boundingBox();
+      if (shotCanvas) {
+        await accented.mouse.move(shotCanvas.x + 14, shotCanvas.y + 14);
+        await accented.mouse.down();
+        await accented.mouse.move(
+          shotCanvas.x + shotCanvas.width - 14,
+          shotCanvas.y + shotCanvas.height - 14,
+          { steps: 8 },
+        );
+        await accented.mouse.up();
+      }
+      const strokeFound = await accented.evaluate(() => {
+        const host = document.querySelector("[data-senannotate-ui]");
+        const canvas = host.shadowRoot.querySelector(".shot-editor__canvas");
+        const context = canvas.getContext("2d");
+        const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+        for (let index = 0; index < data.length; index += 4) {
+          // The exact colour, not a range: the stroke is drawn flat over a white halo.
+          if (data[index] === 11 && data[index + 1] === 61 && data[index + 2] === 145) return true;
+        }
+        return false;
+      });
+      check("the markup editor strokes in the chosen colour", strokeFound);
+      await accented.locator(".shot-editor .button--ghost").first().click();
+      await accented.keyboard.press("Escape");
+
+      // The badge is the service worker's to paint, and only it can read the colour back.
+      const badge = await accentWorker
+        .evaluate(async (origin) => {
+          const [tab] = await chrome.tabs.query({ url: `${origin}/accent.html` });
+          if (!tab?.id) return null;
+          return chrome.action.getBadgeBackgroundColor({ tabId: tab.id });
+        }, base)
+        .catch(() => null);
+      check(
+        "the toolbar badge is painted in the chosen colour",
+        Array.isArray(badge) && badge[0] === 11 && badge[1] === 61 && badge[2] === 145,
+        `getBadgeBackgroundColor returned ${JSON.stringify(badge)}`,
+      );
+
+      await settingsPage.locator("#accent-reset").click();
+      await settingsPage.waitForTimeout(400);
+      check(
+        "Reset puts the shipped colour back, with no inline override left behind",
+        (await resolved("--sa-accent")) === "rgb(249, 115, 22)" &&
+          !(await accented.evaluate(() =>
+            document
+              .querySelector("[data-senannotate-ui]")
+              .style.getPropertyValue("--sa-accent"),
+          )),
+        `--sa-accent resolved to ${await resolved("--sa-accent")}`,
+      );
+
+      await settingsPage.close();
+      await accented.close();
+    }
+
+    // -------------------------------------------------------------------------
     // Export / import — driven through the real popup
     // -------------------------------------------------------------------------
     const [worker] = context.serviceWorkers();
@@ -1667,6 +2061,13 @@ async function main() {
 
       await popup.close();
     }
+
+    // Surviving an actual version upgrade is asserted by `test/upgrade.mjs`, which runs
+    // straight after this file. It needs two browser launches sharing one profile, which
+    // this suite's single throwaway context cannot provide — and `chrome.runtime.reload()`
+    // is not a substitute: measured, Chrome drops an extension loaded with
+    // `--load-extension` instead of reloading it, and every following navigation to it
+    // fails with ERR_BLOCKED_BY_CLIENT.
   } finally {
     await context.close();
     server.close();

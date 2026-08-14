@@ -68,6 +68,8 @@ apply. Skip to [section 2](#2-how-to-use-it).
 | <kbd>1</kbd> | Select by element (default) |
 | <kbd>2</kbd> | Select a text span |
 | <kbd>3</kbd> | Drag-select multiple elements |
+| <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click | Pick elements one at a time, however far apart (⌘ on macOS) |
+| <kbd>Enter</kbd> | Annotate the picked set, or whatever the pointer is over |
 | <kbd>F</kbd> | Freeze animations (to catch the exact moment of a bug) |
 | <kbd>A</kbd> | Open the notes list |
 | <kbd>H</kbd> | Collapse the toolbar to a dot / bring it back |
@@ -85,7 +87,11 @@ apply. Skip to [section 2](#2-how-to-use-it).
   the element straight to your Downloads folder.
 - **Detail level** is a dropdown next to the Copy button. **Standard** is enough
   by default. Pick **Detailed** if the dev asks for a stack trace too.
-- Notes are saved per page and survive a reload (F5).
+- **Orange not your colour?** The extension's popup has an **Accent colour** row —
+  six presets, a picker for an exact colour, and a Reset. It changes the highlight,
+  the toolbar, the pins and the marks you draw on a screenshot, straight away.
+- Notes are saved per page and survive a reload (F5), and they are kept when the
+  extension is updated.
 
 ---
 
@@ -209,6 +215,8 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 | <kbd>1</kbd> | Chọn theo element (mặc định) |
 | <kbd>2</kbd> | Chọn theo đoạn text |
 | <kbd>3</kbd> | Kéo chọn nhiều element |
+| <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click | Chọn dồn từng element, xa nhau bao nhiêu cũng được (macOS dùng ⌘) |
+| <kbd>Enter</kbd> | Ghi chú cho set đã chọn, hoặc cho element đang hover |
 | <kbd>F</kbd> | Đóng băng animation (để bắt đúng khoảnh khắc lỗi) |
 | <kbd>A</kbd> | Mở danh sách ghi chú |
 | <kbd>H</kbd> | Thu toolbar thành một dot / mở lại |
@@ -225,7 +233,10 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
   thư mục Downloads.
 - **Độ chi tiết** đổi được ở dropdown cạnh nút Copy. Mặc định **Standard** là đủ.
   Chọn **Detailed** nếu dev yêu cầu thêm stack trace.
-- Ghi chú được lưu theo từng trang, F5 không mất.
+- **Không thích màu cam?** Popup của extension có hàng **Accent colour** — 6 màu sẵn,
+  một picker chọn màu bất kỳ, và nút Reset. Đổi là ăn ngay: highlight, toolbar, pin số
+  và cả nét vẽ trên ảnh screenshot.
+- Ghi chú được lưu theo từng trang, F5 không mất, và update extension cũng không mất.
 
 ---
 

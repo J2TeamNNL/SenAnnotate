@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Accent fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; padding: 40px; }
+      .card { width: 260px; padding: 16px; border: 1px solid #d4d4d8; border-radius: 10px; }
+      /* White, so a coloured stroke drawn over the screenshot is unambiguous when the
+         canvas pixels are scanned for it. */
+      .shot-target { margin-top: 16px; width: 240px; height: 90px; background: #fff; border: 1px solid #e4e4e7; }
+    </style>
+  </head>
+  <body>
+    <h1>Accent fixture</h1>
+    <!-- Its own page: this block annotates and screenshots, and annotations are keyed on
+         origin + pathname across the suite's one shared browser context. -->
+    <div class="card">
+      <p class="card-copy">The accent should follow the setting.</p>
+      <div class="shot-target"></div>
+    </div>
+  </body>
+</html>
