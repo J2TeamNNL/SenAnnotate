@@ -213,12 +213,21 @@ button that also cleared was designed and then cut, and the argument is recorded
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
 
+## [`draggable-toolbar/`](./draggable-toolbar/) — unreleased
+
+Collapsing stops helping when the bottom-right corner is the thing being reviewed, so
+the pill can now be dragged anywhere. Its `context.md` is the one to read before
+touching pointer handling again: it sets out why adding a drag did **not** reopen
+`modal-click-leak/` or `modal-focus-leak/`, and which of those guarantees hold by
+design and which hold by accident.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,
 and a release that fails before installing anything when its tag has no section. Its
 `context.md` reverses the "generated release notes are enough" call made in
 `ci-cd/brief.md` and says what changed to justify that.
+
 
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 

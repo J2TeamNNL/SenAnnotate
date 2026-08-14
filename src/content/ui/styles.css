@@ -77,6 +77,58 @@ button {
   pointer-events: none;
 }
 
+/*
+ * Dragged out of the corner. `bottom`/`right` have to be released explicitly or they
+ * keep fighting the inline `left`/`top` and the pill stretches between the two.
+ */
+.toolbar-dock[data-floating="true"] {
+  bottom: auto;
+  right: auto;
+  align-items: flex-start;
+}
+
+/* Near the top there is no room above the pill for the hint, so it goes underneath. */
+.toolbar-dock[data-hint-below="true"] {
+  flex-direction: column-reverse;
+}
+
+/*
+ * `.tool` is listed alongside the pill because those are `<button>`s, matched directly by
+ * `button { cursor: pointer }` above — and a direct match beats an inherited value, so
+ * without this the grab cursor only ever appears on the pill's 5px of padding and the 2px
+ * gaps between buttons. The whole pill being the handle is the feature.
+ */
+.toolbar-dock .toolbar,
+.toolbar-dock .toolbar .tool {
+  cursor: grab;
+}
+
+/*
+ * Without this the browser claims the gesture for panning and answers with
+ * `pointercancel`, so the drag does not work by touch or pen *at all*. Everything else
+ * here is already touch-ready — Pointer Events, implicit capture on touch, a
+ * `pointercancel` handler — and this one declaration is the whole difference.
+ */
+.toolbar-dock .toolbar {
+  touch-action: none;
+}
+
+/*
+ * Held on the whole dock, not the pill: the pointer is captured for the duration and
+ * leaves the toolbar constantly during a fast drag, and a cursor that reverts
+ * mid-gesture reads as the drag having been dropped.
+ */
+.toolbar-dock[data-dragging="true"],
+.toolbar-dock[data-dragging="true"] .toolbar,
+.toolbar-dock[data-dragging="true"] .tool {
+  cursor: grabbing;
+}
+
+/* Nothing should animate under the pointer while it is being dragged. */
+.toolbar-dock[data-dragging="true"] .toolbar {
+  transition: none;
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -1078,6 +1130,16 @@ kbd {
  */
 .toolbar-dock[data-inspecting="true"] ~ .settings {
   bottom: 104px;
+}
+
+/*
+ * A dragged dock is not in the corner any more, so there is no hint line for the cards
+ * to clear and the extra 32px is a gap under them for nothing. Both cards, one rule:
+ * here the anchor genuinely is shared — it is the dock's absence from the corner.
+ */
+.toolbar-dock[data-floating="true"] ~ .panel,
+.toolbar-dock[data-floating="true"] ~ .settings {
+  bottom: 20px;
 }
 
 .settings[data-leaving="true"] {
