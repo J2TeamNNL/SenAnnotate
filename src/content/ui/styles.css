@@ -90,7 +90,13 @@ button {
   box-shadow: var(--sa-shadow);
   pointer-events: auto;
   user-select: none;
-  transition: transform 0.18s ease, opacity 0.18s ease;
+  /* The last three are the collapse: the pill morphs into the handle. */
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease,
+    padding 0.16s ease,
+    gap 0.16s ease,
+    border-radius 0.16s ease;
 }
 
 /*
@@ -167,20 +173,53 @@ button {
  * The pill itself stays visible and becomes the handle. Hiding `.toolbar` outright
  * would take away the only way back — and ten e2e scenarios wait on it being visible.
  */
-.toolbar-dock[data-collapsed="true"] .toolbar > :not(.tool--collapse),
 .toolbar-dock[data-collapsed="true"] .toolbar-hint {
   display: none !important;
 }
 
+/*
+ * Folded rather than `display: none`d, so the pill can shrink into the handle instead
+ * of snapping. `max-width` and not `width`: `auto` is not an interpolable value, so a
+ * width transition on an auto-sized button animates nothing. The ceiling only has to
+ * clear the widest child; the cost of it being generous is a short lead-in.
+ *
+ * `visibility` closes the gap `max-width: 0` leaves — a zero-width button is off screen
+ * but still in the tab order. It is transitioned with a delay so it lands *after* the
+ * fold rather than blanking the contents on the first frame, and `0s` in the base rule
+ * so expanding brings them straight back.
+ */
+.toolbar > :not(.tool--collapse) {
+  max-width: 240px;
+  transition:
+    max-width 0.16s ease,
+    padding 0.16s ease,
+    opacity 0.12s ease,
+    visibility 0s;
+}
+
+.toolbar-dock[data-collapsed="true"] .toolbar > :not(.tool--collapse) {
+  max-width: 0 !important;
+  min-width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-left-width: 0 !important;
+  border-right-width: 0 !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+  transition:
+    max-width 0.16s ease,
+    padding 0.16s ease,
+    opacity 0.12s ease,
+    visibility 0s linear 0.16s !important;
+}
+
+/* `gap` too, or every folded child would still leave its 2px behind. */
 .toolbar-dock[data-collapsed="true"] .toolbar {
   padding: 3px;
   border-radius: 999px;
-}
-
-/* Inspect mode survives a collapse, so it still needs to be legible on the handle. */
-.toolbar-dock[data-collapsed="true"][data-inspecting="true"] .toolbar {
-  border-color: var(--sa-accent);
-  box-shadow: var(--sa-shadow), 0 0 0 2px color-mix(in srgb, var(--sa-accent) 45%, transparent);
+  gap: 0;
 }
 
 /*
@@ -613,6 +652,22 @@ kbd {
   bottom: 72px;
   width: 380px;
   max-width: calc(100vw - 24px);
+  /*
+   * An animation rather than a transition, for the same reason the toast uses one:
+   * it runs on insertion with no second frame to arrange. `@starting-style` would be
+   * the modern way to transition in, and it is Chrome 117 — this project floors at 111.
+   */
+  animation: vt-rise 0.16s ease;
+}
+
+/*
+ * The tail of a close. `Panel.destroy` sets this, then removes the node when the
+ * animation ends; `forwards` holds the last frame so there is no flash back to full
+ * opacity in between.
+ */
+.panel[data-leaving="true"] {
+  animation: vt-fall 0.14s ease forwards;
+  pointer-events: none;
 }
 
 .capture-summary {
@@ -979,6 +1034,245 @@ kbd {
   color: #e5484d;
 }
 
+/* -----------------------------------------------------------------------------
+ * Settings card
+ * -------------------------------------------------------------------------- */
+
+/*
+ * Same corner as the panel, which is why the two are mutually exclusive.
+ *
+ * Unlike the panel it is *not* pinned to `bottom` — the panel is a list that grows and
+ * wants the height, this is a fixed set of rows and a full-height card two-thirds empty
+ * reads as something failing to load. `max-height` keeps it clear of the toolbar and
+ * hands the overflow to the body.
+ */
+.settings {
+  top: 20px;
+  right: 20px;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 92px);
+  animation: vt-rise 0.16s ease;
+}
+
+.settings[data-leaving="true"] {
+  animation: vt-fall 0.14s ease forwards;
+  pointer-events: none;
+}
+
+.settings__body {
+  overflow-y: auto;
+}
+
+.settings__group {
+  margin: 14px 0 6px;
+  color: var(--sa-fg-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.settings__group:first-child {
+  margin-top: 0;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+}
+
+/* The swatch strip needs the full width, so its label sits above rather than beside. */
+.setting-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.setting-row__label {
+  display: inline-flex;
+  align-items: center;
+  color: var(--sa-fg);
+  font-size: 12px;
+}
+
+.setting-row__control {
+  flex: none;
+  max-width: 200px;
+}
+
+.accent-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * The accent row, ported from the popup along with its reasoning: presets for one
+ * click, a picker for an exact brand colour, and a way back to the shipped orange.
+ * The variable names differ between the two worlds — `--sa-*` here, `--*` there —
+ * which is the same split that made `shared/accent.ts` return colours rather than
+ * variable names.
+ */
+.swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--sa-border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+/* A ring rather than a border swap, so the swatch's own colour never changes size or
+   shade when it becomes the selected one. */
+.swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--sa-bg-solid), 0 0 0 3.5px var(--sa-accent);
+}
+
+.accent-custom {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--sa-border);
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sa-fg-muted);
+  font: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--sa-fg);
+}
+
+/* -----------------------------------------------------------------------------
+ * Tooltips
+ * -------------------------------------------------------------------------- */
+
+.tooltip {
+  position: fixed;
+  z-index: 3;
+  max-width: 240px;
+  padding: 5px 8px;
+  border-radius: var(--sa-radius-sm);
+  background: var(--sa-bg-solid);
+  border: 1px solid var(--sa-border);
+  box-shadow: var(--sa-shadow);
+  color: var(--sa-fg);
+  font-size: 11px;
+  line-height: 1.45;
+  /* Wraps, unlike the toolbar hint: these are sentences, not a status line. */
+  white-space: normal;
+  pointer-events: none;
+  animation: vt-rise 0.12s ease;
+}
+
+/*
+ * A button, never a span — the sentence it holds is the only explanation of what the
+ * setting does, so a keyboard has to be able to reach it.
+ */
+.hint-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 5px;
+  padding: 0;
+  border: 1px solid var(--sa-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sa-fg-muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  transition: color 0.13s ease, border-color 0.13s ease;
+}
+
+.hint-dot:hover,
+.hint-dot:focus-visible {
+  color: var(--sa-accent-strong);
+  border-color: var(--sa-accent);
+}
+
+/* -----------------------------------------------------------------------------
+ * Toggle switch
+ * -------------------------------------------------------------------------- */
+
+/*
+ * The native checkbox stays, and stays operable — it is the accessible control and the
+ * one the keyboard and the e2e suite drive. It is only moved out of sight beneath the
+ * track it draws, rather than replaced.
+ */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 34px;
+  height: 20px;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.switch__track {
+  flex: 1;
+  border-radius: 999px;
+  background: var(--sa-border);
+  transition: background 0.16s ease;
+  pointer-events: none;
+}
+
+.switch__track::after {
+  content: "";
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 3px;
+  border-radius: 999px;
+  background: var(--sa-bg-solid);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  transition: transform 0.16s ease;
+}
+
+.switch input:checked + .switch__track {
+  background: var(--sa-accent);
+}
+
+.switch input:checked + .switch__track::after {
+  transform: translateX(14px);
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--sa-accent);
+  outline-offset: 2px;
+}
+
 @keyframes vt-rise {
   from {
     opacity: 0;
@@ -987,6 +1281,14 @@ kbd {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Only `to`: an exit has to start from wherever the element actually is. */
+@keyframes vt-fall {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 

@@ -128,11 +128,12 @@ the line and column.
 | Annotate an element | click it |
 | Annotate what you are hovering | <kbd>C</kbd> — no click, so the menu stays open |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
-| Annotate several elements near each other | mode <kbd>3</kbd>, then drag a box around them |
+| Annotate several elements near each other | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+drag a box around them — or mode <kbd>3</kbd> and drag |
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
-| Collapse the toolbar | <kbd>H</kbd>, or the `»` button |
+| Open settings | the gear on the toolbar |
+| Collapse the toolbar | <kbd>H</kbd>, or the `»` button — this also leaves inspect mode and closes the open card |
 | Copy the report | **Copy report** in the panel |
 | Save the report as a file | **.md** in the panel |
 | Copy every page at once | **Copy session report** in the extension popup |
@@ -174,8 +175,8 @@ Annotations are stored per `origin + pathname`, so they survive a reload and com
 back when you return to the same screen. Settings and notes both survive an upgrade —
 Chrome keeps them, and the storage keys have not moved since 0.2.0.
 
-**Accent colour.** The extension is orange by default; the popup's *Behaviour* section has six
-presets, a picker for an exact brand colour, and a Reset. The colour applies to the highlight,
+**Accent colour.** The extension is orange by default; the settings card's *Appearance* section
+has six presets, a picker for an exact brand colour, and a Reset. The colour applies to the highlight,
 the toolbar, the pins, the count badge on the extension icon, the popup itself, and the boxes and
 arrows you draw on a screenshot — live, in every open tab. Screenshots you already saved keep the
 colour they were drawn in. The text-on-accent shade is derived from the colour's brightness, so a
@@ -242,7 +243,7 @@ slots on a news page cost nothing. Three limits worth knowing:
 **Feedback:** Make this the primary action and move it above the divider.
 ```
 
-Four detail levels, chosen in the panel or the extension popup:
+Four detail levels, chosen in the panel or the settings card:
 
 | Level | Adds |
 |---|---|
@@ -567,7 +568,7 @@ src/
 │   └── detectors/  one file per framework + a dispatcher
 ├── content/      ISOLATED world — capture, storage, UI, frame bridge
 ├── background/   service worker
-└── popup/        settings, session report, export/import
+└── popup/        status, session report, export/import
 ```
 
 Zero runtime dependencies. Build-time: `esbuild` and `typescript`.

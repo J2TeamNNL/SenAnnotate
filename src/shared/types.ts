@@ -355,6 +355,28 @@ export const OUTPUT_DETAIL_OPTIONS: { value: OutputDetailLevel; label: string; h
   { value: "forensic", label: "Forensic", hint: "Everything" },
 ];
 
+// The three below moved here from `popup/index.ts` when the settings card took the
+// controls over. They sit beside `OUTPUT_DETAIL_OPTIONS` because that one was already
+// shared, and a list of a setting's legal values belongs with the setting's type.
+
+export const COMPONENT_OPTIONS: { value: ComponentDetectionMode; label: string }[] = [
+  { value: "filtered", label: "Skip framework plumbing" },
+  { value: "smart", label: "Only names matching the DOM" },
+  { value: "all", label: "Every component" },
+  { value: "off", label: "Off (fastest)" },
+];
+
+export const SCREENSHOT_OPTIONS: { value: ScreenshotDelivery; label: string }[] = [
+  { value: "path", label: "Link to the saved file" },
+  { value: "embed", label: "Embed in the report" },
+];
+
+export const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
+  { value: "auto", label: "Match system" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
 /** Detail level implies how hard to work at naming components. */
 export const DETAIL_TO_COMPONENT_MODE: Record<OutputDetailLevel, ComponentDetectionMode> = {
   compact: "off",

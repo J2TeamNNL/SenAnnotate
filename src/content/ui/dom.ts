@@ -79,6 +79,28 @@ export function clear(element: Element): void {
   while (element.firstChild) element.firstChild.remove();
 }
 
+/**
+ * Take a card off screen with its exit animation, then remove it.
+ *
+ * The caller drops its reference synchronously, so from everywhere else the card is
+ * already gone — this node is nothing but the tail of the animation. `data-leaving`
+ * both drives the CSS and lets a card reopened mid-exit find and clear its predecessor,
+ * and pointer events stop immediately: a card you can still click after asking for it
+ * to close is worse than one that snaps away.
+ *
+ * The timeout is not belt-and-braces. `animationend` never fires if the animation is
+ * cancelled — a display change on an ancestor is enough — and a stranded card would sit
+ * over the page forever.
+ */
+export function dismissCard(element: HTMLElement): void {
+  if (element.dataset.leaving === "true") return;
+  element.dataset.leaving = "true";
+
+  const remove = () => element.remove();
+  element.addEventListener("animationend", remove, { once: true });
+  window.setTimeout(remove, 400);
+}
+
 /** Adds a listener and hands back the function that removes it. */
 export function listen<K extends keyof DocumentEventMap>(
   target: Document | Window | Element,

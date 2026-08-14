@@ -10,6 +10,7 @@ export interface ToolbarState {
   mode: InspectMode;
   frozen: boolean;
   panelOpen: boolean;
+  settingsOpen: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -21,6 +22,7 @@ export interface ToolbarCallbacks {
   onModeChange(mode: InspectMode): void;
   onToggleFreeze(): void;
   onTogglePanel(): void;
+  onToggleSettings(): void;
   onToggleCollapse(): void;
 }
 
@@ -36,7 +38,7 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
  * mode exists — which is exactly how mode `area` went unused for three releases.
  */
 const MODE_HINTS: Record<InspectMode, string> = {
-  point: "Click an element · C captures hover · 2 text · 3 area",
+  point: "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
   text: "Select text · 1 point · 3 area",
   area: "Drag across elements · 1 point · 2 text",
 };
@@ -50,6 +52,7 @@ export class Toolbar {
   private readonly modeGroup: HTMLElement;
   private readonly freezeButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
+  private readonly settingsButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
   private readonly countBadge: HTMLElement;
   /**
@@ -120,6 +123,17 @@ export class Toolbar {
       this.countBadge,
     );
 
+    this.settingsButton = h(
+      "button",
+      {
+        class: "tool tool--settings",
+        title: "Settings",
+        attrs: { "aria-pressed": "false" },
+        on: { click: () => callbacks.onToggleSettings() },
+      },
+      icon("gear"),
+    );
+
     this.stackBadge = h("span", { class: "stack-badge", style: { display: "none" } });
 
     // Both icons live in the button and the stylesheet picks one. `update()` runs on
@@ -156,6 +170,7 @@ export class Toolbar {
       h("span", { class: "divider" }),
       this.freezeButton,
       this.panelButton,
+      this.settingsButton,
       this.collapseButton,
     );
 
@@ -183,6 +198,7 @@ export class Toolbar {
 
     this.freezeButton.setAttribute("aria-pressed", String(state.frozen));
     this.panelButton.setAttribute("aria-pressed", String(state.panelOpen));
+    this.settingsButton.setAttribute("aria-pressed", String(state.settingsOpen));
 
     this.countBadge.textContent = String(state.count);
     this.countBadge.style.display = state.count > 0 ? "inline-flex" : "none";
@@ -191,11 +207,12 @@ export class Toolbar {
   }
 
   /**
-   * Collapsing is a display change and nothing more: inspect mode, freeze and the
-   * annotations all carry on. Which is why `data-inspecting` goes on the dock — with
-   * the label gone, the handle is the only thing left that can say inspect mode is
-   * armed, and an unmarked handle would leave the next page click opening a composer
-   * for no visible reason.
+   * Collapsing takes inspect mode and the panel with it — see `toggleCollapsed`. The
+   * annotations and the freeze carry on.
+   *
+   * `data-inspecting` therefore no longer needs to make an armed handle legible; that
+   * state cannot occur. It stays because it is the one readable signal of `active` on
+   * the dock, which is what the e2e suite reads inspect mode off.
    */
   private applyCollapse({ collapsed, active, count }: ToolbarState): void {
     this.element.dataset.collapsed = String(collapsed);

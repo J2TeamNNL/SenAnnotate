@@ -447,7 +447,7 @@ async function main() {
     check(
       "the hint names the default mode and the keys for the others",
       ((await hint.textContent())?.trim() ?? "") ===
-        "Click an element · C captures hover · 2 text · 3 area",
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -580,6 +580,80 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // ⌘/Ctrl+drag — the same box without leaving point mode
+    // -------------------------------------------------------------------------
+    //
+    // The modifier already means "collect" for a single element, so click and drag
+    // have to be told apart by movement. The threshold is MIN_MARQUEE_SIZE, reused
+    // rather than reinvented: it is already the size below which a box selects
+    // nothing, so one number cannot disagree with the other.
+    await marquee.locator('.tool[title^="Click an element"]').click();
+    check(
+      "the point hint advertises the modifier drag",
+      ((await hint.textContent())?.trim() ?? "") ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
+
+    const modifierDrag = async (from, to) => {
+      await marquee.keyboard.down("ControlOrMeta");
+      await marquee.mouse.move(from.x, from.y);
+      await marquee.mouse.down();
+      await marquee.mouse.move(to.x, to.y, { steps: 8 });
+      await marquee.mouse.up();
+      await marquee.keyboard.up("ControlOrMeta");
+    };
+
+    await modifierDrag(dragFrom, dragTo);
+    const modMeta = marquee.locator(".composer__meta");
+    await modMeta.waitFor({ state: "visible", timeout: 5_000 });
+    const modText = (await modMeta.textContent())?.trim() ?? "";
+    check(
+      "⌘/Ctrl+drag boxes elements without switching to area mode",
+      modText.includes("2 elements"),
+      `meta read "${modText}"`,
+    );
+    check(
+      "the modifier drag leaves the mode alone",
+      (await marquee.locator('.tool[title^="Click an element"]').getAttribute("aria-pressed")) ===
+        "true",
+    );
+    await marquee.keyboard.press("Escape");
+
+    // Anything already collected joins the box rather than being dropped — the same
+    // rule a plain click follows, so the modifier keeps one meaning throughout.
+    await marquee
+      .locator("#card-c .card-body")
+      .click({ modifiers: ["ControlOrMeta"], timeout: 5_000 });
+    await marquee.waitForTimeout(200);
+    await modifierDrag(dragFrom, dragTo);
+    await modMeta.waitFor({ state: "visible", timeout: 5_000 });
+    const mergedText = (await modMeta.textContent())?.trim() ?? "";
+    check(
+      "a modifier drag commits what was already picked along with the box",
+      mergedText.includes("3 elements"),
+      `meta read "${mergedText}"`,
+    );
+    await marquee.keyboard.press("Escape");
+
+    // Below the threshold the gesture is still a pick. Without this the modifier
+    // would stop collecting single elements the moment the hand shook.
+    await marquee.mouse.move(cardA.x + 40, cardA.y + 40);
+    await marquee.keyboard.down("ControlOrMeta");
+    await marquee.mouse.down();
+    await marquee.mouse.move(cardA.x + 42, cardA.y + 42);
+    await marquee.mouse.up();
+    await marquee.keyboard.up("ControlOrMeta");
+    await marquee.waitForTimeout(200);
+    check(
+      "a modifier drag under the threshold still picks rather than boxing",
+      ((await hint.textContent())?.trim() ?? "").startsWith("1 element picked") &&
+        (await marquee.locator(".composer").count()) === 0,
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
+    await marquee.keyboard.press("Escape");
+
+    // -------------------------------------------------------------------------
     // Picking elements one at a time — ⌘/Ctrl+click
     // -------------------------------------------------------------------------
     //
@@ -672,7 +746,8 @@ async function main() {
     await pick.waitForTimeout(200);
     check(
       "Escape drops the set and stays in inspect mode",
-      (await pickHint()) === "Click an element · C captures hover · 2 text · 3 area" &&
+      (await pickHint()) ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area" &&
         (await pick.locator(".highlight--preview").count()) === 0 &&
         (await pick.locator(".tool--brand").getAttribute("aria-pressed")) === "true",
       `hint read "${await pickHint()}", ${await pick.locator(".highlight--preview").count()} boxes`,
@@ -770,6 +845,10 @@ async function main() {
       `closed by: ${await closeLog()}`,
     );
     await modal.keyboard.press("h");
+
+    // Collapsing took inspect mode with it and expanding does not hand it back, so it
+    // has to be asked for again before the modal can be annotated.
+    await modal.locator(".tool--brand").click();
 
     // The point of all of the above: the modal can actually be annotated.
     await modal.locator(".dialog-body").click();
@@ -1537,6 +1616,129 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // The settings card
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture: the block annotates and then counts pins, and annotations are
+    // keyed on origin + pathname in storage shared across the whole run.
+    //
+    // It also flips settings that live in chrome.storage.sync, which every other page in
+    // this context reads. Everything touched here is put back before the block ends —
+    // leaving `showMarkers` off would silently break every later `.marker` assertion,
+    // the same way a stray `toolbarCollapsed` would break every `.tool--brand` click.
+    const settingsPageUnderTest = await context.newPage();
+    await settingsPageUnderTest.goto(`${base}/settings.html`);
+    await settingsPageUnderTest.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const card = settingsPageUnderTest.locator(".settings");
+    const gear = settingsPageUnderTest.locator(".tool--settings");
+    const annotationsButton = settingsPageUnderTest.locator('.tool[title^="Annotations"]');
+
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    check("the gear opens the settings card", await card.isVisible());
+
+    // One slot, one card. Opening the panel has to take the settings card with it.
+    await annotationsButton.click();
+    await settingsPageUnderTest.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "opening the panel closes the settings card",
+      (await card.count()) === 0,
+      `${await card.count()} cards`,
+    );
+
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "opening settings closes the panel",
+      (await settingsPageUnderTest.locator(".panel").count()) === 0,
+      `${await settingsPageUnderTest.locator(".panel").count()} panels`,
+    );
+
+    // The help is the only explanation a setting gets, so it has to be reachable by
+    // keyboard as well as by pointer — hence a button rather than a span.
+    const tooltip = settingsPageUnderTest.locator(".tooltip");
+    await settingsPageUnderTest.locator('.settings .hint-dot').first().hover();
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("hovering the help dot shows a tooltip", await tooltip.isVisible());
+
+    await settingsPageUnderTest.locator('.settings .hint-dot').first().evaluate((el) => el.blur());
+    await settingsPageUnderTest.mouse.move(10, 400);
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("leaving the help dot hides it again", !(await tooltip.isVisible()));
+
+    await settingsPageUnderTest.locator('.settings .hint-dot').first().focus();
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("focusing the help dot shows the tooltip too", await tooltip.isVisible());
+    await settingsPageUnderTest.keyboard.press("Escape");
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("Escape dismisses the tooltip", !(await tooltip.isVisible()));
+
+    // A toggle has to change the page, not just the checkbox.
+    await gear.click();
+    await settingsPageUnderTest.waitForTimeout(300);
+    await settingsPageUnderTest.locator(".tool--brand").click();
+    await settingsPageUnderTest.locator("#target").click();
+    await settingsPageUnderTest.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.keyboard.type("A pin to switch off.");
+    await settingsPageUnderTest.locator(".composer .button--primary").click();
+    await settingsPageUnderTest.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    // `:visible`, not a bare count: `markers.ts` sets `display: none` on the pins rather
+    // than removing them, and Playwright's `count()` counts hidden nodes perfectly well.
+    check(
+      "the note is pinned while showMarkers is on",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 1,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.locator('.settings [data-setting="showMarkers"]').click();
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "turning off numbered pins removes them from the page",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 0,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+
+    await settingsPageUnderTest.reload();
+    await settingsPageUnderTest.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await settingsPageUnderTest.waitForTimeout(600); // settings load is async
+    check(
+      "the setting survives a reload",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 0,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+
+    // Collapsing takes the card with it, exactly as it takes the panel.
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.locator(".tool--collapse").click();
+    await settingsPageUnderTest.waitForTimeout(400);
+    check(
+      "collapsing closes the settings card",
+      (await card.count()) === 0,
+      `${await card.count()} cards`,
+    );
+    await settingsPageUnderTest.locator(".tool--collapse").click();
+    await settingsPageUnderTest.waitForTimeout(300);
+
+    // Put it back. Everything after this point assumes the shipped defaults.
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.locator('.settings [data-setting="showMarkers"]').click();
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "the block restored showMarkers before leaving",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 1,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+    await gear.click();
+    await settingsPageUnderTest.close();
+
+    // -------------------------------------------------------------------------
     // Collapse — the toolbar must get out of the way
     // -------------------------------------------------------------------------
     //
@@ -1559,7 +1761,23 @@ async function main() {
     await collapseBrand.click(); // inspect on, so the hint line is showing too
     await collapseHint.waitFor({ state: "visible", timeout: 5_000 });
 
+    // Open too, so the collapse has something to close.
+    await collapsed.locator('.tool[title^="Annotations"]').click();
+    await collapsed.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+
+    // The panel fades out before it is removed, so for a moment after a close there is
+    // a node on screen that nothing holds a reference to. Reopening inside that window
+    // must not leave two — one fading, one live.
+    await collapsed.locator('.tool[title^="Annotations"]').click();
+    await collapsed.locator('.tool[title^="Annotations"]').click();
+    check(
+      "closing and reopening inside the exit animation leaves one panel",
+      (await collapsed.locator(".panel").count()) === 1,
+      `${await collapsed.locator(".panel").count()} panels`,
+    );
+
     await handle.click();
+    await collapsed.waitForTimeout(200);
 
     check("collapsing hides the toolbar controls", !(await collapseBrand.isVisible()));
     check("collapsing hides the hint line", !(await collapseHint.isVisible()));
@@ -1568,12 +1786,25 @@ async function main() {
       (await pill.isVisible()) && (await handle.isVisible()),
     );
 
-    // A pill that shrank to a logo has nothing left saying inspect mode is armed,
-    // which would leave the next page click opening a composer out of nowhere.
+    // Collapsing is "get out of the way", not merely "get smaller". Inspect mode armed
+    // behind a logo is what made the next page click open a composer out of nowhere,
+    // and an open panel is the other thing a collapse would leave floating.
     check(
-      "the collapsed handle still marks inspect mode as on",
-      (await dock.getAttribute("data-inspecting")) === "true",
+      "collapsing turns inspect mode off",
+      (await dock.getAttribute("data-inspecting")) === "false",
       `data-inspecting read "${await dock.getAttribute("data-inspecting")}"`,
+    );
+    check(
+      "collapsing closes an open panel",
+      (await collapsed.locator(".panel").count()) === 0,
+      `${await collapsed.locator(".panel").count()} panels`,
+    );
+
+    await collapsed.locator("#card-a").click();
+    await collapsed.waitForTimeout(200);
+    check(
+      "a page click after collapsing belongs to the page again",
+      (await collapsed.locator(".composer").count()) === 0,
     );
 
     const handleBox = await handle.boundingBox();
@@ -1589,14 +1820,25 @@ async function main() {
       !(await handleCount.isVisible()),
     );
 
-    // Collapsing is a display change, not a mode change.
+    // Expanding restores nothing on its own — inspect mode has to be asked for again,
+    // which is the half of the asymmetry worth pinning.
+    await collapsed.keyboard.press("h");
+    await collapsed.waitForTimeout(200);
+    check(
+      "expanding does not turn inspect mode back on",
+      (await dock.getAttribute("data-inspecting")) === "false",
+      `data-inspecting read "${await dock.getAttribute("data-inspecting")}"`,
+    );
+
+    await collapseBrand.click();
     await collapsed.locator("#card-a").click();
     await collapsed.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
-    check("a collapsed toolbar still annotates", await collapsed.locator(".composer").isVisible());
-    await collapsed.locator(".composer__input").fill("Noted while the toolbar was collapsed.");
+    await collapsed.locator(".composer__input").fill("Noted before the toolbar collapsed.");
     await collapsed.locator(".composer .button--primary").click();
     await collapsed.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
+    await handle.click();
+    await collapsed.waitForTimeout(200);
     check(
       "the collapsed handle carries the annotation count",
       ((await handleCount.textContent())?.trim() ?? "") === "1",
@@ -1849,46 +2091,68 @@ async function main() {
         return accented.locator(".highlight").first().evaluate((el) => getComputedStyle(el).borderColor);
       };
 
-      const settingsPage = await context.newPage();
-      await settingsPage.goto(`chrome-extension://${accentExtensionId}/popup.html`);
-      await settingsPage.locator("#accent-presets .swatch").first().waitFor({
-        state: "visible",
-        timeout: 10_000,
-      });
+      // The accent is picked in the toolbar's settings card now, not in the popup.
+      // The popup is still opened below, to prove it wears a colour it no longer chooses.
+      const openSettings = async () => {
+        await accented.locator(".tool--settings").click();
+        await accented.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+      };
+      const closeSettings = async () => {
+        await accented.locator(".tool--settings").click();
+        await accented.locator(".settings").waitFor({ state: "detached", timeout: 5_000 });
+      };
+
+      await openSettings();
       check(
-        "the popup offers the presets and a free picker",
-        (await settingsPage.locator("#accent-presets .swatch").count()) === 6 &&
-          (await settingsPage.locator("#accent-custom").count()) === 1,
-        `${await settingsPage.locator("#accent-presets .swatch").count()} swatches`,
+        "the settings card offers the presets and a free picker",
+        (await accented.locator(".settings .swatch").count()) === 6 &&
+          (await accented.locator(".settings .accent-custom").count()) === 1,
+        `${await accented.locator(".settings .swatch").count()} swatches`,
       );
 
       // A preset, by its title rather than its position, so reordering the list does not
       // silently change what this asserts.
-      await settingsPage.locator('#accent-presets .swatch[title="Blue"]').click();
-      await settingsPage.waitForTimeout(400);
+      await accented.locator('.settings .swatch[title="Blue"]').click();
+      await accented.waitForTimeout(400);
       check(
-        "a preset recolours the overlay in an open tab",
+        "a preset recolours the overlay",
         (await resolved("--sa-accent")) === "rgb(59, 130, 246)",
         `--sa-accent resolved to ${await resolved("--sa-accent")}`,
       );
+
+      // The card sits over the right of the page; the hover check needs it gone.
+      await closeSettings();
       check(
         "the highlight is drawn in the chosen colour",
         (await hoverHighlight()) === "rgb(59, 130, 246)",
         `border read ${await hoverHighlight()}`,
       );
+
+      // Opened after the change, because the popup reads settings once at load. It no
+      // longer writes any — this is the read half, and it still has to hold.
+      const settingsPage = await context.newPage();
+      await settingsPage.goto(`chrome-extension://${accentExtensionId}/popup.html`);
+      await settingsPage.locator("#pages").waitFor({ state: "attached", timeout: 10_000 });
       check(
-        "the popup recolours itself too",
+        "the popup wears the accent it no longer picks",
         (await settingsPage.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim())) ===
           "#3b82f6",
         await settingsPage.evaluate(() =>
           getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
         ),
       );
+      check(
+        "the popup no longer carries settings controls of its own",
+        (await settingsPage.locator("#detail, #props, #accent-presets").count()) === 0,
+        `${await settingsPage.locator("#detail, #props, #accent-presets").count()} stale controls`,
+      );
 
       // A dark colour is the case a "darken it" derivation gets wrong: the ink is text
       // drawn *on* the accent, so on navy it has to come out light, not black-on-black.
-      await settingsPage.locator("#accent-custom").fill("#0b3d91");
-      await settingsPage.waitForTimeout(400);
+      await openSettings();
+      await accented.locator(".settings .accent-custom").fill("#0b3d91");
+      await accented.waitForTimeout(400);
+      await closeSettings();
       const ink = await resolved("--sa-accent-ink");
       // A `color-mix()` result comes back as `color(srgb 0.82 0.86 0.92)`, not as
       // `rgb(…)` — the channels are already 0-1 there, and only the plain form needs
@@ -1952,8 +2216,10 @@ async function main() {
         `getBadgeBackgroundColor returned ${JSON.stringify(badge)}`,
       );
 
-      await settingsPage.locator("#accent-reset").click();
-      await settingsPage.waitForTimeout(400);
+      await openSettings();
+      await accented.locator(".settings .link-button").click();
+      await accented.waitForTimeout(400);
+      await closeSettings();
       check(
         "Reset puts the shipped colour back, with no inline override left behind",
         (await resolved("--sa-accent")) === "rgb(249, 115, 22)" &&

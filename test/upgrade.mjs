@@ -150,7 +150,7 @@ async function main() {
 
       const popup = await context.newPage();
       await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-      await popup.locator("#theme").waitFor({ state: "visible", timeout: 10_000 });
+      await popup.locator("#pages").waitFor({ state: "attached", timeout: 10_000 });
 
       await popup.evaluate(
         async ([pageUrl, note]) => {
@@ -164,10 +164,13 @@ async function main() {
       );
 
       // Through the real controls, so what is asserted after the upgrade is what a user
-      // set rather than a value written past the popup.
-      await popup.selectOption("#theme", "dark");
-      await popup.selectOption("#detail", "compact");
-      await popup.waitForTimeout(400);
+      // set rather than a value written past the UI. Those controls are in the toolbar's
+      // settings card now, not the popup, so this drives the page rather than the popup.
+      await page.locator(".tool--settings").click();
+      await page.locator(".settings").waitFor({ state: "visible", timeout: 10_000 });
+      await page.selectOption('.settings [data-setting="theme"]', "dark");
+      await page.selectOption('.settings [data-setting="detailLevel"]', "compact");
+      await page.waitForTimeout(400);
 
       await context.close();
     }
@@ -192,7 +195,7 @@ async function main() {
 
       const popup = await context.newPage();
       await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-      await popup.locator("#theme").waitFor({ state: "visible", timeout: 10_000 });
+      await popup.locator("#pages").waitFor({ state: "attached", timeout: 10_000 });
 
       const running = await popup.evaluate(() => chrome.runtime.getManifest().version);
       check(
@@ -201,17 +204,21 @@ async function main() {
         `manifest reports ${running}, expected ${bumped}`,
       );
 
-      const theme = await popup.locator("#theme").inputValue();
-      const detail = await popup.locator("#detail").inputValue();
+      const page = await context.newPage();
+      await page.goto(`${base}/upgrade.html`);
+      await page.locator(".toolbar").waitFor({ state: "visible", timeout: 15_000 });
+
+      await page.locator(".tool--settings").click();
+      await page.locator(".settings").waitFor({ state: "visible", timeout: 10_000 });
+      const theme = await page.locator('.settings [data-setting="theme"]').inputValue();
+      const detail = await page.locator('.settings [data-setting="detailLevel"]').inputValue();
       check(
         "settings set on the old version survive the upgrade",
         theme === "dark" && detail === "compact",
         `theme=${theme} detail=${detail}`,
       );
+      await page.locator(".tool--settings").click();
 
-      const page = await context.newPage();
-      await page.goto(`${base}/upgrade.html`);
-      await page.locator(".toolbar").waitFor({ state: "visible", timeout: 15_000 });
       await page.locator('.tool[title^="Annotations"]').click();
       await page.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
 

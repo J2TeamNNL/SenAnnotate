@@ -87,8 +87,9 @@ apply. Skip to [section 2](#2-how-to-use-it).
   the element straight to your Downloads folder.
 - **Detail level** is a dropdown next to the Copy button. **Standard** is enough
   by default. Pick **Detailed** if the dev asks for a stack trace too.
-- **Orange not your colour?** The extension's popup has an **Accent colour** row —
-  six presets, a picker for an exact colour, and a Reset. It changes the highlight,
+- **Orange not your colour?** Click the **gear** on the toolbar to open **Settings** —
+  the *Appearance* section has an **Accent colour** row with six presets, a picker for an
+  exact colour, and a Reset. It changes the highlight,
   the toolbar, the pins and the marks you draw on a screenshot, straight away.
 - Notes are saved per page and survive a reload (F5), and they are kept when the
   extension is updated.
@@ -233,8 +234,8 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
   thư mục Downloads.
 - **Độ chi tiết** đổi được ở dropdown cạnh nút Copy. Mặc định **Standard** là đủ.
   Chọn **Detailed** nếu dev yêu cầu thêm stack trace.
-- **Không thích màu cam?** Popup của extension có hàng **Accent colour** — 6 màu sẵn,
-  một picker chọn màu bất kỳ, và nút Reset. Đổi là ăn ngay: highlight, toolbar, pin số
+- **Không thích màu cam?** Bấm **bánh răng** trên toolbar để mở **Settings** — mục
+  *Appearance* có hàng **Accent colour**: 6 màu sẵn, một picker chọn màu bất kỳ, và nút Reset. Đổi là ăn ngay: highlight, toolbar, pin số
   và cả nét vẽ trên ảnh screenshot.
 - Ghi chú được lưu theo từng trang, F5 không mất, và update extension cũng không mất.
 

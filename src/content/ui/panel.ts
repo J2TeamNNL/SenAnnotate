@@ -10,7 +10,7 @@ import {
   type Annotation,
   type OutputDetailLevel,
 } from "../../shared/types";
-import { clear, h, icon } from "./dom";
+import { clear, dismissCard, h, icon } from "./dom";
 
 /** What the list is showing. Panel-local: it is a view, not a stored preference. */
 type Filter = "all" | "open" | "done";
@@ -135,6 +135,10 @@ export class Panel {
       ),
     );
 
+    // A panel closed and reopened inside the exit animation would otherwise leave two
+    // in the layer — the old one still fading, the new one already live.
+    for (const stale of layer.querySelectorAll('.panel[data-leaving="true"]')) stale.remove();
+
     layer.append(this.element);
   }
 
@@ -255,6 +259,6 @@ export class Panel {
   }
 
   destroy(): void {
-    this.element.remove();
+    dismissCard(this.element);
   }
 }

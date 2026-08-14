@@ -67,6 +67,7 @@ import { Markers } from "./ui/markers";
 import {
   hitsInRect,
   MAX_MARQUEE_ELEMENTS,
+  MIN_MARQUEE_SIZE,
   snapshotCandidates,
   toViewport,
   type Candidate,
@@ -74,7 +75,9 @@ import {
 } from "./ui/marquee";
 import { Overlay } from "./ui/overlay";
 import { Panel } from "./ui/panel";
+import { SettingsCard } from "./ui/settings";
 import { createUiRoot, type UiRoot } from "./ui/root";
+import { installTooltips } from "./ui/tooltip";
 import { ShotEditor } from "./ui/shot-editor";
 import { Toolbar } from "./ui/toolbar";
 
@@ -109,6 +112,23 @@ let composer: Composer | null = null;
 let shotEditor: ShotEditor | null = null;
 /** Drag anchor, in document coordinates so a mid-drag scroll cannot move it. */
 let marqueeStart: { x: number; y: number } | null = null;
+/**
+ * A ⌘/Ctrl press in `point` mode that has not yet moved far enough to be a drag.
+ *
+ * The modifier already means "collect this element", so click and drag share a
+ * `pointerdown` and can only be told apart afterwards, by movement. Nothing is drawn
+ * and no candidates are measured until it clears `MIN_MARQUEE_SIZE` — below that the
+ * gesture stays a pick, which is what a shaky hand on a modifier-click deserves.
+ */
+let marqueePending: { x: number; y: number } | null = null;
+/**
+ * Set when a drag has just committed, cleared by the click that follows it.
+ *
+ * `beginAnnotation` is async, so the `composer` guard at the top of the click handler
+ * cannot be relied on to have run by the time the click arrives — without this, the
+ * modifier-click branch fires straight after a box and quietly picks one more element.
+ */
+let suppressNextClick = false;
 /** Latest pointer position, document coordinates. Read by the rAF callback. */
 let marqueePoint: { x: number; y: number } | null = null;
 /** Measured once per drag — see `snapshotCandidates`. */
@@ -138,6 +158,7 @@ let overlay!: Overlay;
 let markers!: Markers;
 let toolbar!: Toolbar;
 let panel: Panel | null = null;
+let settingsCard: SettingsCard | null = null;
 
 /**
  * Build the chrome. Top frame only — a second toolbar inside every iframe is both
@@ -145,6 +166,7 @@ let panel: Panel | null = null;
  */
 function createTopUi(): void {
   ui = createUiRoot();
+  installTooltips(ui.cardLayer);
   overlay = new Overlay(ui.overlayLayer);
 
   markers = new Markers(ui.markerLayer, {
@@ -174,9 +196,28 @@ function createTopUi(): void {
     },
     onToggleFreeze: () => toggleFreeze(),
     onTogglePanel: () => togglePanel(),
+    onToggleSettings: () => toggleSettings(),
     onToggleCollapse: () => toggleCollapsed(),
   });
 }
+
+const settingsCallbacks = {
+  onClose: () => toggleSettings(false),
+  onChange: (patch: Partial<Settings>) => {
+    // Changing the detail level moves `componentMode` to its preset, exactly as the
+    // panel's own detail select does. A suggestion, not a lock: the components row can
+    // be set to anything afterwards and stays there until the level changes again.
+    const derived =
+      patch.detailLevel !== undefined
+        ? { componentMode: DETAIL_TO_COMPONENT_MODE[patch.detailLevel] }
+        : {};
+
+    settings = { ...settings, ...derived, ...patch };
+    void saveSettings(settings);
+    applyAppearance();
+    render();
+  },
+};
 
 const panelCallbacks = {
   onClose: () => togglePanel(false),
@@ -215,12 +256,14 @@ function render(): void {
     mode,
     frozen,
     panelOpen,
+    settingsOpen: !!settingsCard,
     collapsed: settings.toolbarCollapsed,
     count: annotations.length,
     page,
   });
   markers.render(annotations, settings.showMarkers && !!annotations.length);
   panel?.render(annotations, settings.detailLevel);
+  settingsCard?.render(settings);
   void notifyBadge();
 }
 
@@ -276,9 +319,32 @@ async function toggleFreeze(force?: boolean): Promise<void> {
   render();
 }
 
+/**
+ * The settings card and the annotations panel share one slot, so opening either closes
+ * the other. Two cards stacked in the same 380px column is not a layout, and finding
+ * room for both would mean giving one of them a permanently worse home.
+ */
+function toggleSettings(force?: boolean): void {
+  const next = force ?? !settingsCard;
+  if (next === !!settingsCard) return;
+
+  if (next) {
+    togglePanel(false);
+    settingsCard = new SettingsCard(ui.cardLayer, settingsCallbacks);
+    settingsCard.render(settings);
+  } else {
+    settingsCard?.destroy();
+    settingsCard = null;
+  }
+
+  render();
+}
+
 function togglePanel(force?: boolean): void {
   const next = force ?? !panelOpen;
   panelOpen = next;
+
+  if (panelOpen) toggleSettings(false);
 
   if (panelOpen && !panel) {
     panel = new Panel(ui.cardLayer, panelCallbacks);
@@ -298,12 +364,32 @@ function togglePanel(force?: boolean): void {
  * the page being reviewed does not put the pill back over the corner you were
  * looking at. `onSettingsChanged` carries it to the other open tabs for free.
  */
+/**
+ * Collapse means get out of the way, not merely get smaller.
+ *
+ * Inspect mode and the panel go with it. Leaving inspect armed behind a logo was the
+ * older behaviour and it had a sharp edge: the toolbar you had just dismissed was still
+ * intercepting every click on the page, so the next one opened a composer for no reason
+ * the screen could explain. An open panel is the other thing a collapse would otherwise
+ * leave floating over the page it was supposed to clear.
+ *
+ * Expanding restores neither. Turning inspect mode back on for someone is the same
+ * surprise in the other direction — the state you get back should be the one you asked
+ * for, and `h` only asks for the toolbar.
+ */
 function toggleCollapsed(force?: boolean): void {
   const next = force ?? !settings.toolbarCollapsed;
   if (next === settings.toolbarCollapsed) return;
 
   settings = { ...settings, toolbarCollapsed: next };
   void saveSettings(settings);
+
+  if (next) {
+    setActive(false);
+    togglePanel(false);
+    toggleSettings(false);
+  }
+
   render();
 }
 
@@ -733,10 +819,10 @@ function eligible(element: Element): boolean {
 
 // --- marquee -----------------------------------------------------------------
 
-function marqueeHint(hits: MarqueeHits): string {
+function marqueeHint(hits: MarqueeHits, carried = 0): string {
   if (hits.capped) return `${MAX_MARQUEE_ELEMENTS} elements (limit) · release to annotate`;
 
-  const count = hits.elements.length;
+  const count = hits.elements.length + carried;
   if (count === 0) return "Nothing inside the box yet";
   return `${count} element${count === 1 ? "" : "s"} selected · release to annotate`;
 }
@@ -834,6 +920,49 @@ function commitPicked(extra?: Element): void {
 }
 
 
+/**
+ * Start a live drag from `anchor`, in document coordinates.
+ *
+ * Shared by the two ways in: the `area` mode `pointerdown`, which drags from the first
+ * pixel, and `promoteMarquee`, which gets here once a modifier press has moved enough
+ * to stop being a pick. Candidates are measured here rather than at `pointerdown` so a
+ * ⌘/Ctrl+click never pays for a measurement it does not use.
+ */
+function beginMarquee(anchor: { x: number; y: number }): void {
+  marqueeStart = anchor;
+  marqueePoint = anchor;
+  marqueeCandidates = snapshotCandidates();
+  marqueeHits = { elements: [], rects: [], capped: false };
+  overlay.hideHighlights();
+  toolbar.setHint(marqueeHint(marqueeHits));
+}
+
+/**
+ * Turn a pending modifier press into a real drag, once it has moved far enough.
+ *
+ * Either axis is enough, deliberately: a long, flat drag is unmistakably a drag, and
+ * `hitsInRect` will decide on its own that a six-pixel-tall box contains nothing — the
+ * hint then says so, exactly as it does in `area` mode. Returns whether the caller
+ * should carry on into the drawing path.
+ */
+function promoteMarquee(event: PointerEvent): boolean {
+  if (!marqueePending) return false;
+
+  const x = event.clientX + window.scrollX;
+  const y = event.clientY + window.scrollY;
+  if (
+    Math.abs(x - marqueePending.x) < MIN_MARQUEE_SIZE &&
+    Math.abs(y - marqueePending.y) < MIN_MARQUEE_SIZE
+  ) {
+    return false;
+  }
+
+  const anchor = marqueePending;
+  marqueePending = null;
+  beginMarquee(anchor);
+  return true;
+}
+
 function resetMarquee(): void {
   if (marqueeFrame) {
     cancelAnimationFrame(marqueeFrame);
@@ -860,8 +989,19 @@ function drawMarquee(): void {
 
   overlay.showMarquee(toViewport(box));
   marqueeHits = hitsInRect(marqueeCandidates, box);
-  overlay.showHighlights(marqueeHits.rects.map(toViewport), undefined, { preview: true });
-  toolbar.setHint(marqueeHint(marqueeHits));
+
+  // Anything ⌘/Ctrl+click collected before the drag is committed with it, so it has to
+  // be drawn and counted with it too. Previewing only the box would open a composer
+  // holding more than was ever highlighted — the one thing the preview exists to rule
+  // out. Elements the box also caught are not drawn twice.
+  const carried = livePicks().filter((element) => !marqueeHits.elements.includes(element));
+
+  overlay.showHighlights(
+    [...carried.map((element) => element.getBoundingClientRect()), ...marqueeHits.rects.map(toViewport)],
+    undefined,
+    { preview: true },
+  );
+  toolbar.setHint(marqueeHint(marqueeHits, carried.length));
 }
 
 
@@ -1025,6 +1165,16 @@ function installTopFrame(): void {
     document,
     "click",
     (event) => {
+      // Ahead of the `composer` guard on purpose: a drag commits through the async
+      // `beginAnnotation`, so the composer often does not exist yet when this fires,
+      // and the modifier branch below would pick one more element on the way past.
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       if (!active || composer) return;
       if (isOurUi(event.target as Element)) return;
 
@@ -1095,15 +1245,22 @@ function installTopFrame(): void {
     document,
     "pointerdown",
     (event) => {
-      if (!active || composer || mode !== "area") return;
+      // Any new gesture cancels a suppression the last one armed but never spent.
+      suppressNextClick = false;
+      marqueePending = null;
+
+      if (!active || composer) return;
       if (isOurUi(event.target as Element)) return;
 
-      marqueeStart = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY };
-      marqueePoint = marqueeStart;
-      marqueeCandidates = snapshotCandidates();
-      marqueeHits = { elements: [], rects: [], capped: false };
-      overlay.hideHighlights();
-      toolbar.setHint(marqueeHint(marqueeHits));
+      const anchor = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY };
+
+      // `area` is a drag from the first pixel — the mode says so. In `point` the drag
+      // has to earn it, because the same press with the same modifier is also a pick.
+      if (mode === "area") {
+        beginMarquee(anchor);
+        return;
+      }
+      if (mode === "point" && (event.metaKey || event.ctrlKey)) marqueePending = anchor;
     },
     { capture: true },
   );
@@ -1112,6 +1269,7 @@ function installTopFrame(): void {
     document,
     "pointermove",
     (event) => {
+      if (marqueePending && !promoteMarquee(event)) return;
       if (!marqueeStart) return;
       marqueePoint = { x: event.clientX + window.scrollX, y: event.clientY + window.scrollY };
       // One repaint per frame however fast the pointer reports.
@@ -1128,6 +1286,9 @@ function installTopFrame(): void {
     document,
     "pointerup",
     () => {
+      // A press that never moved far enough is not a drag, and the click that follows
+      // is left alone to do what a modifier-click has always done: pick one element.
+      marqueePending = null;
       if (!marqueeStart) return;
 
       // Flush a pending frame rather than dropping it, so what was annotated is
@@ -1141,11 +1302,23 @@ function installTopFrame(): void {
       const hits = marqueeHits;
       resetMarquee();
 
-      if (!hits.elements.length) {
+      // The click that lands next belongs to this drag, not to the page.
+      suppressNextClick = true;
+
+      // Whatever ⌘/Ctrl+click collected joins the box, exactly as a plain click commits
+      // the set together with the element it landed on. Dropping it would make the same
+      // modifier mean two different things six pixels apart. In `area` mode `picked` is
+      // always empty — switching mode clears it — so this costs that path nothing.
+      const set = livePicks();
+      const elements = [...set, ...hits.elements.filter((element) => !set.includes(element))];
+
+      if (!elements.length) {
         overlay.hideHighlights();
         return;
       }
-      void beginAnnotation(hits.elements);
+
+      picked = [];
+      void beginAnnotation(elements.slice(0, MAX_MARQUEE_ELEMENTS));
     },
     { capture: true },
   );
