@@ -151,15 +151,24 @@ by pointer events rather than by time.
 
 The toolbar is docked bottom-right, which is exactly where a page tends to put its
 chat widget, cookie bar or footer actions. <kbd>H</kbd> collapses it to a single dot
-that still carries the annotation count, and takes an accent ring while inspect mode
-is on — collapsing hides the controls and nothing else, so clicking still annotates.
-The state is a setting rather than a session flag, so a reload does not put the pill
-back over the corner you were looking at. <kbd>H</kbd> works whether or not inspect
-mode is on, unlike the mode keys.
+that still carries the annotation count.
+
+Collapsing means *get out of the way*, not merely *get smaller*: it leaves inspect mode
+and closes whichever card is open. A toolbar you have just dismissed that is still
+swallowing every click — so the next one opens a composer for no reason the screen can
+explain — is the thing that behaviour exists to prevent. Expanding gives none of it
+back; <kbd>H</kbd> asks for the toolbar, so <kbd>H</kbd> returns the toolbar. Freeze is
+untouched, because it is a property of the page rather than of the toolbar.
+
+The collapsed state is a setting rather than a session flag, so a reload does not put
+the pill back over the corner you were looking at. <kbd>H</kbd> works whether or not
+inspect mode is on, unlike the mode keys.
 
 Dragging a box selects **everything it fully contains**, at the shallowest level
 contained — draw around three cards and you get three cards, not the `<div>`s
-inside them. Elements the box merely clips are left out. The selection is
+inside them. Hold <kbd>⌘</kbd>/<kbd>Ctrl</kbd> and drag to do it without leaving the
+default mode; the box only starts once the pointer has actually moved, so a modifier
+click with a shaky hand still collects a single element rather than drawing a box. Elements the box merely clips are left out. The selection is
 highlighted live while you drag and counted in the line under the toolbar, so you
 can adjust before letting go.
 
@@ -181,6 +190,16 @@ the toolbar, the pins, the count badge on the extension icon, the popup itself, 
 arrows you draw on a screenshot — live, in every open tab. Screenshots you already saved keep the
 colour they were drawn in. The text-on-accent shade is derived from the colour's brightness, so a
 dark colour gets light text rather than unreadable dark-on-dark.
+
+**Settings.** The gear on the toolbar opens them, next to the page they describe rather
+than behind the extension icon: detail level, which components get named, props,
+screenshots, diagnostics, pins, freeze-on-inspect, theme and accent. Each row carries a
+`?` explaining what it does, because a setting whose effect you have to guess is one you
+leave alone. They apply everywhere, so you set them once.
+
+The one place this costs something: on `chrome://` pages, the Web Store and the PDF
+viewer the extension has no toolbar, so there is nothing to open — including for theme
+and accent, which are otherwise global. Open any ordinary page instead.
 
 ## Triage
 

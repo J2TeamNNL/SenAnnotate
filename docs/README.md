@@ -144,7 +144,7 @@ one profile. Its `changelog.md` records why `chrome.runtime.reload()` cannot sta
 (Chrome drops a `--load-extension` extension instead of reloading it), and `context.md` states
 the three-part compatibility contract a future release must not break.
 
-## [`challenge-frames/`](./challenge-frames/) — unreleased
+## [`challenge-frames/`](./challenge-frames/) — 0.7.0
 
 Why a Cloudflare challenge could not be verified with the extension merely *installed*:
 diagnostics capture replaces `fetch`, `XHR` and `console.error` in the page's heap, and
@@ -155,7 +155,29 @@ than trades off — and that a `grep` for a minified identifier is not a check a
 bundle. `context.md` lists the two gaps left open, the larger being that the
 `captureDiagnostics` setting does not gate the MAIN-world patch at all.
 
-## [`toolbar-settings/`](./toolbar-settings/) — unreleased
+## [`modifier-drag/`](./modifier-drag/) — 0.7.0
+
+⌘/Ctrl+drag draws the marquee without switching to `area` mode. The modifier was already
+taken by multi-pick, so `context.md` is mostly about telling one gesture from the other by
+movement, and about why `area` mode was kept after all — the capability argument for it
+turned out false and the discoverability argument saved it.
+
+## [`collapse-dismisses/`](./collapse-dismisses/) — 0.7.0
+
+Collapsing the toolbar now leaves inspect mode and closes the open card. Deletes
+annotating while collapsed, knowingly. Its `changelog.md` is worth reading for where the
+suite actually broke: not in the collapse block, whose assertions were rewritten first and
+passed, but in the **modal** block, which has nothing to do with collapsing.
+
+## [`panel-toolbar-motion/`](./panel-toolbar-motion/) — 0.7.0
+
+The panel fades in and out; the toolbar folds into its handle. `context.md` explains why
+every property choice was forced by one fact — Playwright counts `opacity: 0` as visible —
+and `changelog.md` records the wrong turn: the fold was declared broken on the strength of
+a screenshot taken 60ms in, which is far too slow to sample a 160ms animation. To check
+motion, measure it; do not photograph it.
+
+## [`toolbar-settings/`](./toolbar-settings/) — 0.7.0
 
 Settings moved out of the popup and into a card behind a gear on the toolbar, with the
 help text behind tooltips. `brief.md` lists the five decisions and what each one costs —
