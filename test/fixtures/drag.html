@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Drag fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; height: 1600px; }
+      /* The corner the toolbar docks to, occupied — which is the whole reason to drag it. */
+      .summary {
+        position: fixed; right: 16px; bottom: 16px; width: 240px;
+        padding: 16px; background: #fef3c7; border: 1px solid #fbbf24;
+      }
+      .field { padding: 20px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      A fixture of its own, and not shared with any other block. Dock positions are keyed
+      on `origin + pathname` in chrome.storage.local, which is shared across this suite's
+      single browser context — so a page whose toolbar an earlier block dragged opens with
+      the pill somewhere unexpected, and every boundingBox assertion after it is measuring
+      the wrong thing.
+    -->
+    <h1 class="field">Drag fixture</h1>
+    <p class="field" id="intro">The pill starts in the corner this page has already taken.</p>
+    <button class="field" id="submit">Place order</button>
+    <div class="summary" id="summary">Order summary — the thing under the toolbar.</div>
+  </body>
+</html>

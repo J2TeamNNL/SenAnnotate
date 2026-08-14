@@ -9,7 +9,7 @@
 // already agrees on.
 // =============================================================================
 
-import { ANNOTATION_PREFIX, NS } from "./protocol";
+import { ANNOTATION_PREFIX, DOCK_PREFIX, NS } from "./protocol";
 import type { Annotation } from "./types";
 
 // Annotations could previously leave only as rendered Markdown on the clipboard —
@@ -24,6 +24,16 @@ export interface ExportFile {
   version: number;
   exportedAt: string;
   pages: { page: string; annotations: Annotation[] }[];
+  /**
+   * Where the toolbar was dragged to, per page — a fact about a screen's layout, so it
+   * belongs in the same file as the notes taken on that screen.
+   *
+   * Additive and optional, and `version` deliberately stays at 1: `importAll` never reads
+   * the version, so an older build simply ignores a field it does not know, and losing a
+   * dock position on the way through an old importer costs nothing. Bumping it would only
+   * mislead a future reader into thinking 1 and 2 need different handling.
+   */
+  docks?: { page: string; position: { x: number; y: number } }[];
 }
 
 export interface ImportSummary {
@@ -31,6 +41,13 @@ export interface ImportSummary {
   annotations: number;
   /** Entries dropped for failing the shape check. */
   skipped: number;
+}
+
+/** The pair of finite numbers a stored dock position has to be to be worth carrying. */
+function looksLikePosition(value: unknown): value is { x: number; y: number } {
+  if (typeof value !== "object" || value === null) return false;
+  const { x, y } = value as { x?: unknown; y?: unknown };
+  return Number.isFinite(x) && Number.isFinite(y);
 }
 
 export async function exportAll(): Promise<ExportFile> {
@@ -43,26 +60,43 @@ export async function exportAll(): Promise<ExportFile> {
     }))
     .filter((entry) => entry.annotations.length > 0);
 
+  const docks = Object.entries(all)
+    .filter(([key, value]) => key.startsWith(DOCK_PREFIX) && looksLikePosition(value))
+    .map(([key, value]) => ({
+      page: key.slice(DOCK_PREFIX.length),
+      position: value as { x: number; y: number },
+    }));
+
   return {
     format: EXPORT_FORMAT,
     version: 1,
     exportedAt: new Date().toISOString(),
     pages,
+    docks,
   };
 }
 
 /**
- * Drop every page's annotations, and say how many pages that was.
+ * Drop every page's annotations and dragged toolbar positions, and say how many pages
+ * that was.
  *
  * Deliberately not a `storage.local.clear()`: settings live in `sync`, but anything
  * else that ever lands in `local` is not ours to delete.
+ *
+ * The dock positions go too. "Clear all pages" claiming a complete wipe while every
+ * `senannotate:dock:*` entry survives leaves the pill parked wherever it was dragged, and
+ * there is deliberately no reset control anywhere in the UI — so this sweep is the only
+ * way back. The count stays the number of annotated *pages*, which is what the popup
+ * reports; a page whose only customisation was a moved toolbar is not news.
  */
 export async function clearAllPages(): Promise<number> {
   try {
     const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter((key) => key.startsWith(ANNOTATION_PREFIX));
+    const annotated = Object.keys(all).filter((key) => key.startsWith(ANNOTATION_PREFIX));
+    const docks = Object.keys(all).filter((key) => key.startsWith(DOCK_PREFIX));
+    const keys = [...annotated, ...docks];
     if (keys.length) await chrome.storage.local.remove(keys);
-    return keys.length;
+    return annotated.length;
   } catch {
     return 0;
   }
@@ -124,6 +158,19 @@ export async function importAll(data: unknown): Promise<ImportSummary | null> {
     await chrome.storage.local.set({ [key]: [...byId.values()] });
     summary.pages += 1;
     summary.annotations += incoming.length;
+  }
+
+  // Positions replace rather than merge: there is one toolbar per page, so there is
+  // nothing to reconcile, and the file is what the user just asked for. Absent from an
+  // older export, in which case every page keeps the position it already had.
+  if (Array.isArray(file.docks)) {
+    for (const entry of file.docks) {
+      if (!entry || typeof entry.page !== "string" || !looksLikePosition(entry.position)) {
+        summary.skipped += 1;
+        continue;
+      }
+      await chrome.storage.local.set({ [`${DOCK_PREFIX}${entry.page}`]: entry.position });
+    }
   }
 
   return summary;
