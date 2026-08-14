@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Upgrade fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; padding: 40px; }
+      .checkout { padding: 10px 16px; }
+    </style>
+  </head>
+  <body>
+    <h1>Upgrade fixture</h1>
+    <!-- Its own page because the upgrade block asserts an exact annotation count, and
+         `chrome.storage.local` is shared across every page in the suite's one browser
+         context — see the count-assertion note in CLAUDE.md. -->
+    <button class="checkout">Complete checkout</button>
+  </body>
+</html>
