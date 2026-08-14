@@ -1992,6 +1992,134 @@ async function main() {
     check("clicking the handle expands the toolbar", await collapseBrand.isVisible());
 
     // -------------------------------------------------------------------------
+    // Retarget — the composer walks the DOM, and stores what it shows
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, for the reason `retarget.html` states. The two assertions that
+    // matter most are the two the feature's own changelog singled out and shipped without:
+    // **submitting after a retarget stores the new element**, and a retarget cannot land in
+    // a composer it was not started from. Both are invisible until the report is read.
+    const retarget = await context.newPage();
+    await retarget.goto(`${base}/retarget.html`);
+    await retarget.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await retarget.locator(".tool--brand").click();
+
+    const retargetMeta = retarget.locator(".composer__meta");
+    const retargetInput = retarget.locator(".composer__input");
+
+    // The mis-click the feature exists to fix: the <span> inside the button.
+    await retarget.locator("#label").click();
+    await retargetMeta.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "clicking the inner span selects the span, not the button",
+      ((await retargetMeta.textContent()) ?? "").includes("Elementspan"),
+      `meta read "${((await retargetMeta.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "a fresh single-element pick offers the retarget controls",
+      (await retarget.locator(".retarget__button").count()) === 4,
+      `${await retarget.locator(".retarget__button").count()} buttons`,
+    );
+
+    // ↑ with the note still empty walks to the parent.
+    await retarget.keyboard.press("ArrowUp");
+    await retarget.waitForTimeout(400);
+    check(
+      "ArrowUp on an empty note retargets to the parent",
+      ((await retargetMeta.textContent()) ?? "").includes('button "Place order"'),
+      `meta read "${((await retargetMeta.textContent()) ?? "").trim()}"`,
+    );
+
+    // The note survives the move — the whole point of not rebuilding the composer.
+    await retargetInput.fill("This button is the wrong size.");
+    await retarget.keyboard.press("ArrowUp");
+    await retarget.waitForTimeout(400);
+    check(
+      "the arrows stop working once the note has text",
+      ((await retargetMeta.textContent()) ?? "").includes('button "Place order"'),
+      `meta read "${((await retargetMeta.textContent()) ?? "").trim()}"`,
+    );
+
+    // …but the buttons still do, which is why they exist.
+    await retarget.locator('.retarget__button[title^="Select the parent"]').click();
+    await retarget.waitForTimeout(400);
+    check(
+      "the ↑ button retargets even with text in the note",
+      ((await retargetMeta.textContent()) ?? "").includes("div.ordercard"),
+      `meta read "${((await retargetMeta.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "retargeting does not disturb what has been typed",
+      (await retargetInput.inputValue()) === "This button is the wrong size.",
+      `note read "${await retargetInput.inputValue()}"`,
+    );
+
+    // The blocking one: what gets *stored* has to be the element on screen, not the one
+    // that was clicked. Invisible anywhere but the report.
+    await retarget.locator(".composer .button--primary").click();
+    await retarget.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    await retarget.locator('.tool[title^="Annotations"]').click();
+    await retarget.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await retarget.locator(".panel .button--primary").click();
+    const retargetReport = await retarget.evaluate(() => navigator.clipboard.readText());
+    check(
+      "submitting after a retarget stores the element the composer ended on",
+      retargetReport.includes("div.ordercard") && !retargetReport.includes("`span`"),
+      retargetReport.slice(0, 400),
+    );
+    await retarget.locator('.tool[title^="Annotations"]').click();
+
+    // A retarget started in one composer must not resolve into another. Escape closes the
+    // first mid-flight; the click opens a second on an unrelated element.
+    await retarget.locator("#label").click();
+    await retargetMeta.waitFor({ state: "visible", timeout: 5_000 });
+    await retarget.keyboard.press("ArrowUp");
+    await retarget.keyboard.press("Escape");
+    await retarget.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    await retarget.locator("#card-two").click();
+    await retargetMeta.waitFor({ state: "visible", timeout: 5_000 });
+    await retarget.waitForTimeout(700); // longer than the bridge's 500ms timeout
+    check(
+      "a retarget from a closed composer cannot land in the next one",
+      ((await retargetMeta.textContent()) ?? "").includes("div.secondcard"),
+      `meta read "${((await retargetMeta.textContent()) ?? "").trim()}"`,
+    );
+    await retarget.keyboard.press("Escape");
+    await retarget.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    // A retarget that adds meta rows grows the card downward from a `top` clamped when it
+    // was shorter, so the footer — Save, camera, delete — ends up below the viewport.
+    await retarget.locator("#low-label").click();
+    await retargetMeta.waitFor({ state: "visible", timeout: 5_000 });
+    await retarget.keyboard.press("ArrowUp");
+    await retarget.waitForTimeout(400);
+    const retargetBox = await retarget.locator(".composer").boundingBox();
+    const retargetViewportHeight = retarget.viewportSize().height;
+    check(
+      "a retarget near the fold keeps the composer's footer on screen",
+      retargetBox.y + retargetBox.height <= retargetViewportHeight,
+      `composer bottom at ${Math.round(retargetBox.y + retargetBox.height)} of ${retargetViewportHeight}`,
+    );
+    await retarget.keyboard.press("Escape");
+    await retarget.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    // A multi-element draft has no single thing to walk from, so the controls must be
+    // absent — and `retargetable` reads that off the draft rather than off the module
+    // global, which is what makes the same guarantee hold for an iframe draft.
+    await retarget.locator("#card-one").click({ modifiers: ["ControlOrMeta"] });
+    await retarget.locator("#card-two").click();
+    await retargetMeta.waitFor({ state: "visible", timeout: 5_000 });
+    const multiMeta = ((await retargetMeta.textContent()) ?? "").trim();
+    check(
+      "a multi-element draft offers no retarget controls",
+      multiMeta.includes("2 elements") &&
+        (await retarget.locator(".retarget__button").count()) === 0,
+      `meta read "${multiMeta}", ${await retarget.locator(".retarget__button").count()} buttons`,
+    );
+    await retarget.keyboard.press("Escape");
+    await retarget.close();
+
+    // -------------------------------------------------------------------------
     // Triage — type, status, and what each does to the report
     // -------------------------------------------------------------------------
     // Its own fixture: annotations are keyed on origin + pathname and storage is

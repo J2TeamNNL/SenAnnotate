@@ -62,7 +62,12 @@ import {
   saveAnnotations,
   saveSettings,
 } from "./storage";
-import { Composer } from "./ui/composer";
+import {
+  Composer,
+  type ComposerCallbacks,
+  type ComposerMeta,
+  type RetargetDirection,
+} from "./ui/composer";
 import { listen } from "./ui/dom";
 import { Markers } from "./ui/markers";
 import {
@@ -149,6 +154,25 @@ let picked: Element[] = [];
 
 /** Elements the composer is currently about — kept live for screenshotting. */
 let composerTargets: Element[] = [];
+/**
+ * The draft the open composer is describing, replaced wholesale by a retarget.
+ *
+ * Beside `composerTargets` rather than threaded through the composer's callbacks as a
+ * `(next) => (live = next)` setter: the two have exactly the same lifetime, are cleared
+ * by the same `closeComposer`, and `deliverScreenshot` needs to write into whichever
+ * draft is current — which a closure captured at open time cannot express.
+ */
+let composerDraft: Draft | null = null;
+/**
+ * The element the *last requested* retarget was stepping from, which is not the same as
+ * `composerTargets[0]` while a step is in flight.
+ *
+ * Holding an arrow key repeats at ~30Hz and every step is a bridge round trip, so
+ * stepping from the last *confirmed* element makes presses 2..n all compute the same
+ * neighbour and `retargetToken` then discards all but the last — the key reads as broken
+ * on any page where the RPC hits its 500ms timeout.
+ */
+let retargetFrom: Element | null = null;
 
 // -----------------------------------------------------------------------------
 // UI
@@ -553,13 +577,15 @@ function openEditor(annotation: Annotation): void {
   openComposer(annotation, anchor, annotation);
 }
 
-function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null): void {
-  composer?.destroy();
-  overlay.showHighlights(
-    existing ? viewportBoxes(existing) : composerTargets.map((el) => el.getBoundingClientRect()),
-    { primary: draft.element, secondary: formatSource(draft.source) },
-  );
-
+/**
+ * Draft → the rows the composer shows. Shared by the initial build and each retarget.
+ *
+ * `ComposerMeta` and not `ComposerData`: a retarget replaces exactly these fields, and
+ * carrying `initialComment`/`initialKind` here would build them on every arrow press for a
+ * `setData` that has no way to use them — implying the composer might reset the note and
+ * the chosen type, which is the one thing it promises never to do.
+ */
+function composerMeta(draft: Draft): ComposerMeta {
   const props = draft.framework?.props
     ? Object.entries(draft.framework.props)
         .slice(0, 4)
@@ -567,48 +593,201 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
         .join(", ")
     : "";
 
-  composer = new Composer(
-    ui.cardLayer,
-    anchor,
-    {
-      title: draft.element,
-      source: formatSource(draft.source),
-      components: draft.framework?.path ?? null,
-      props: props || null,
-      selectedText: draft.selectedText,
-      elementCount: draft.elementBoundingBoxes?.length,
-      initialComment: existing?.comment,
-      initialKind: existing?.kind,
-    },
-    {
-      onSubmit: (comment, kind: AnnotationKind) => {
-        if (existing) {
-          existing.comment = comment;
-          existing.kind = kind;
-        } else {
-          annotations = [
-            ...annotations,
-            { ...draft, id: newId(), comment, kind, timestamp: Date.now() } as Annotation,
-          ];
-        }
-        closeComposer();
-        void persist();
-        render();
-        ui.toast(existing ? "Annotation updated" : "Annotation added");
-      },
-      onCancel: () => closeComposer(),
-      onScreenshot: () => void captureScreenshot(existing ?? draft),
-      onDelete: existing
-        ? () => {
-            annotations = annotations.filter((item) => item.id !== existing.id);
-            closeComposer();
-            void persist();
-            render();
-            ui.toast("Annotation deleted");
-          }
-        : undefined,
-    },
+  return {
+    title: draft.element,
+    source: formatSource(draft.source),
+    components: draft.framework?.path ?? null,
+    props: props || null,
+    selectedText: draft.selectedText,
+    elementCount: draft.elementBoundingBoxes?.length,
+  };
+}
+
+function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null): void {
+  composer?.destroy();
+  overlay.showHighlights(
+    existing ? viewportBoxes(existing) : composerTargets.map((el) => el.getBoundingClientRect()),
+    { primary: draft.element, secondary: formatSource(draft.source) },
   );
+
+  // The draft is replaced wholesale by a retarget, and `onSubmit` has to store the one on
+  // screen rather than the one the composer opened with. Module state, not a closure: see
+  // the declaration.
+  composerDraft = draft;
+  retargetFrom = composerTargets[0] ?? null;
+
+  const callbacks: ComposerCallbacks = {
+    onSubmit: (comment, kind: AnnotationKind) => {
+      if (existing) {
+        existing.comment = comment;
+        existing.kind = kind;
+      } else {
+        annotations = [
+          ...annotations,
+          { ...(composerDraft ?? draft), id: newId(), comment, kind, timestamp: Date.now() } as Annotation,
+        ];
+      }
+      closeComposer();
+      void persist();
+      render();
+      ui.toast(existing ? "Annotation updated" : "Annotation added");
+    },
+    onCancel: () => closeComposer(),
+    onScreenshot: () => void captureScreenshot(existing ?? composerDraft ?? draft),
+    onDelete: existing
+      ? () => {
+          annotations = annotations.filter((item) => item.id !== existing.id);
+          closeComposer();
+          void persist();
+          render();
+          ui.toast("Annotation deleted");
+        }
+      : undefined,
+    onRetarget: retargetable(draft, existing)
+      ? (direction) => void retargetComposer(direction)
+      : undefined,
+  };
+
+  composer = new Composer(ui.cardLayer, anchor, { ...composerMeta(draft), initialComment: existing?.comment, initialKind: existing?.kind }, callbacks);
+}
+
+/**
+ * The element one step from `from` in `direction`, skipping anything not worth
+ * annotating.
+ *
+ * Sibling steps *loop* over `nextElementSibling`/`previousElementSibling` until
+ * `eligible` says yes, rather than filtering the whole child list: a `<script>`, a
+ * comment wrapper or one of our own nodes between two cards must not read as a dead end,
+ * but building the filtered array to find that out costs an allocation plus an
+ * `eligible` call — and `eligible` walks ancestors through `isOurUi` — for every sibling
+ * on the page. In a 2,000-row table, at ~30Hz key repeat, that is the difference between
+ * O(k) and 60,000 ancestor walks a second. `marquee.ts` avoids the same call for the same
+ * reason.
+ *
+ * `document.body` is the ceiling: everything above it describes the whole page, which no
+ * annotation means.
+ */
+function stepFrom(from: Element, direction: RetargetDirection): Element | null {
+  if (direction === "parent") {
+    for (let node = from.parentElement; node; node = node.parentElement) {
+      if (node === document.body || node === document.documentElement) return null;
+      if (eligible(node)) return node;
+    }
+    return null;
+  }
+
+  if (direction === "child") {
+    for (let node = from.firstElementChild; node; node = node.nextElementSibling) {
+      if (eligible(node)) return node;
+    }
+    return null;
+  }
+
+  const forward = direction === "next";
+  for (
+    let node = forward ? from.nextElementSibling : from.previousElementSibling;
+    node;
+    node = forward ? node.nextElementSibling : node.previousElementSibling
+  ) {
+    if (eligible(node)) return node;
+  }
+  return null;
+}
+
+/** Guards against a burst of arrow presses landing out of order. */
+let retargetToken = 0;
+
+/**
+ * Move the open composer onto a neighbouring element.
+ *
+ * The draft has to be captured afresh — element name, source, component chain and
+ * props all belong to the element, not to the note — and that is a bridge round trip,
+ * so a token drops the answer to any press that has since been superseded.
+ */
+async function retargetComposer(direction: RetargetDirection): Promise<void> {
+  const owner = composer;
+  if (!owner) return;
+
+  // A screenshot is a crop of one element's box. Retargeting after one would either lose
+  // it — `deliverScreenshot` writes into whichever draft object it was handed, and a
+  // retarget replaces that object — or keep a picture of the wrong element in the report.
+  // Both are "the composer shows one thing and stores another", which is the failure this
+  // whole feature exists to avoid, so it is refused instead. The markup editor is on top
+  // of the composer and about to write into the same draft, so it counts too.
+  if (composerDraft?.screenshot || shotEditor) {
+    ui.toast("Retake the screenshot after choosing the element", "error");
+    return;
+  }
+
+  // The *requested* element, not the last confirmed one — see `retargetFrom`.
+  const from = retargetFrom ?? composerTargets[0];
+  if (!from) return;
+
+  // The same guard `captureHovered` calls "the guard that matters". An element inside a
+  // list the app re-renders — a virtualised row, a menu, a React reconciliation that
+  // replaces the node — is detached by now, and `stepFrom` still succeeds on a detached
+  // subtree for `child`. `captureDraft` would then return a zero-sized box and a selector
+  // that resolves to nothing: an annotation that looks fine in the panel and points
+  // nowhere.
+  if (!from.isConnected) {
+    ui.toast("That element is gone from the page", "error");
+    return;
+  }
+
+  const next = stepFrom(from, direction);
+  if (!next) {
+    ui.toast("Nothing there", "error");
+    return;
+  }
+
+  // Set before the await, so a held arrow key steps a level per press instead of
+  // recomputing the same neighbour n times and discarding all but one.
+  retargetFrom = next;
+
+  const token = ++retargetToken;
+  const draft = await captureDraft([next], { settings });
+
+  // `composer === owner` and not merely `composer`: the token alone cannot tell a
+  // superseded press from a *different composer*. Escape closes this one, a click opens
+  // another, and this stale promise then resolves into it — setting its rows, its
+  // highlight and its screenshot target to an element it was never about. `closeComposer`
+  // bumps the token as well, which covers the same window from the other side.
+  if (!draft || token !== retargetToken || composer !== owner) return;
+
+  composerTargets = [next];
+  composerDraft = draft;
+  composer.setData(composerMeta(draft));
+  overlay.showHighlights([next.getBoundingClientRect()], {
+    primary: draft.element,
+    secondary: formatSource(draft.source),
+  });
+
+  // Not *repositioned* — the composer stays anchored where the first pick was, because a
+  // card that jumps on every arrow press makes the highlight much harder to follow. It is
+  // re-clamped inside `setData`, which is a different thing: see the comment there.
+}
+
+/**
+ * Retargeting applies to a fresh, single-element pick in this document and nothing else.
+ *
+ * A saved note is a stored record and moving it is an edit of different weight. A
+ * text selection is anchored to a Range that the new element would not contain. A
+ * multi-element draft has no single thing to walk from.
+ *
+ * Everything is read off the draft rather than off `composerTargets`, which is a module
+ * global this function is not handed. `isMultiSelect` and `elementBoundingBoxes` already
+ * encode the count, and requiring the element to be in *this* document is what makes the
+ * iframe path safe by design: `onFrameDraft` happens to clear `composerTargets` before
+ * opening, and a fourth caller that forgot that line would otherwise enable the arrows on
+ * a draft whose element lives in a child document — `stepFrom` would then walk siblings of
+ * a stale top-frame node.
+ */
+function retargetable(draft: Draft, existing: Annotation | null): boolean {
+  if (existing || draft.selectedText || draft.isMultiSelect) return false;
+  if ((draft.elementBoundingBoxes?.length ?? 1) > 1) return false;
+
+  const target = composerTargets[0];
+  return composerTargets.length === 1 && !!target && target.ownerDocument === document;
 }
 
 function closeComposer(): void {
@@ -619,6 +798,13 @@ function closeComposer(): void {
   composer?.destroy();
   composer = null;
   composerTargets = [];
+  composerDraft = null;
+  retargetFrom = null;
+  // Bumped so an in-flight `captureDraft` — up to 500ms on a page whose MAIN world never
+  // answers the bridge — cannot resolve into whatever composer is open by then. The
+  // `composer === owner` test covers the same window from the other side; this closes the
+  // case where the *same* object is somehow reached first.
+  retargetToken += 1;
   overlay.hideHighlights();
 }
 
