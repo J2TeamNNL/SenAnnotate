@@ -1727,6 +1727,35 @@ async function main() {
       .catch(() => 0);
     check("a tracking-pixel-sized frame is left alone", pixelHosts === 0, `${pixelHosts} hosts`);
 
+    // Diagnostics capture replaces `fetch`, `XMLHttpRequest.prototype.open/send` and
+    // `console.error` in the page's own heap. A browser-integrity check — Cloudflare's
+    // Turnstile is the one that bit us — reads a non-native `fetch` as tampering and
+    // refuses to verify, and the widget renders in an iframe we were instrumenting.
+    //
+    // The capture is only ever *read* in the top frame: `onDiagnostics` and
+    // `fetchDiagnostics` are both called inside `installTopFrame()`, and the child
+    // branch's own comment says "no annotations, no diagnostics, no badge". So a child
+    // frame must be left with its natives intact — we were paying for data nobody read.
+    const topPatched = await framed.evaluate(
+      () => !window.fetch.toString().includes("[native code]"),
+    );
+    check("the top frame is still instrumented", topPatched, `topPatched=${topPatched}`);
+
+    const innerFrame = framed.frames().find((frame) => frame.url().includes("frame-inner.html"));
+    const innerNative = await innerFrame?.evaluate(() =>
+      [
+        window.fetch.toString(),
+        XMLHttpRequest.prototype.open.toString(),
+        XMLHttpRequest.prototype.send.toString(),
+        console.error.toString(),
+      ].every((source) => source.includes("[native code]")),
+    );
+    check(
+      "a child frame's natives are left unpatched, so a captcha can still verify",
+      innerNative === true,
+      `innerNative=${innerNative}`,
+    );
+
     await framed.locator(".tool--brand").click();
     // The state broadcast is a postMessage; give it a turn to land.
     await framed.waitForTimeout(300);
