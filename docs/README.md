@@ -144,6 +144,17 @@ one profile. Its `changelog.md` records why `chrome.runtime.reload()` cannot sta
 (Chrome drops a `--load-extension` extension instead of reloading it), and `context.md` states
 the three-part compatibility contract a future release must not break.
 
+## [`challenge-frames/`](./challenge-frames/) — unreleased
+
+Why a Cloudflare challenge could not be verified with the extension merely *installed*:
+diagnostics capture replaces `fetch`, `XHR` and `console.error` in the page's heap, and
+`all_frames: true` was applying that inside the Turnstile widget's own iframe, where a
+browser-integrity check reads it as tampering. `changelog.md` records that the capture
+was never read outside the top frame in the first place, so the fix restricts rather
+than trades off — and that a `grep` for a minified identifier is not a check against a
+bundle. `context.md` lists the two gaps left open, the larger being that the
+`captureDiagnostics` setting does not gate the MAIN-world patch at all.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,

@@ -32,7 +32,22 @@ import { detectPage, inspectElement } from "./detectors";
 // Installed immediately, not on demand: this script runs at `document_start`, and
 // the whole point is to be in place before the page's first request or first
 // error. Waiting for the content script to ask would miss everything on load.
-installDiagnostics();
+//
+// Top frame only, and that is a correctness fix rather than an optimisation.
+// Capture replaces `fetch`, `XMLHttpRequest.prototype.open/send` and `console.error`
+// in the page's own heap, so a browser-integrity check that reads `fetch.toString()`
+// sees tampering: a Cloudflare Turnstile widget, which renders in an iframe we were
+// instrumenting, then refuses to verify and the user cannot get past the challenge.
+//
+// Nothing was gained for it. The ISOLATED side only ever reads this in the top frame —
+// `onDiagnostics` and `fetchDiagnostics` are both inside `installTopFrame()`, and the
+// child branch of `content/index.ts` says so itself: "no annotations, no diagnostics,
+// no badge". Every iframe on every page was being patched for a buffer nobody read.
+//
+// `window.top === window` is an identity comparison, so it stays legal across origins.
+// The rest of this file must still run in child frames: that is where `inspect` answers
+// from, and it is the whole reason the frame is instrumented at all.
+if (window.top === window) installDiagnostics();
 
 function emit(payload: BridgeEvent): void {
   window.postMessage({ channel: BRIDGE_EVENT, payload }, "*");
