@@ -117,6 +117,15 @@ and a release that fails before installing anything when its tag has no section.
 `context.md` reverses the "generated release notes are enough" call made in
 `ci-cd/brief.md` and says what changed to justify that.
 
+## [`toolbar-close/`](./toolbar-close/) — 0.7.0
+
+Collapsing leaves a handle and dragging leaves the pins, so neither answers "nothing on
+screen at all" — demonstrating the page, or screenshotting the product. `✕` hides the
+whole shadow host for the page-load. Its `context.md` records the larger request this
+was cut down from and what finishing it would cost, and its `changelog.md` the two
+traps: the inline `display` `captureScreenshot` already owns, and why <kbd>H</kbd> had
+to be stopped explicitly.
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from

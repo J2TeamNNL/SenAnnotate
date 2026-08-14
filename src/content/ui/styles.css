@@ -38,6 +38,15 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * Dismissed for this page-load. Everything the extension draws lives under this host,
+ * so one rule takes the toolbar, the panel, the markers and the highlights together —
+ * which is the whole point of the X, and something four separate hides would drift on.
+ */
+:host([data-hidden]) {
+  display: none !important;
+}
+
 :host([data-theme="dark"]) {
   --sa-bg: rgba(22, 27, 34, 0.88);
   --sa-bg-solid: #161b22;
@@ -143,6 +152,20 @@ button {
 .tool--brand {
   padding-left: 6px;
   color: var(--sa-accent);
+}
+
+/*
+ * Muted until hovered, and red on hover. This is the one control in the pill that
+ * takes the whole overlay away, so it should not compete for attention with the
+ * buttons you use constantly — but it should be unmistakable once reached for.
+ */
+.tool--close {
+  color: color-mix(in srgb, var(--sa-fg-muted) 70%, transparent);
+}
+
+.tool--close:hover {
+  background: color-mix(in srgb, #ef4444 16%, transparent);
+  color: #ef4444;
 }
 
 .tool--brand[aria-pressed="true"] {

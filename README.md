@@ -132,6 +132,7 @@ the line and column.
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button |
+| Hide it completely | the `✕` button — reload, or the popup, brings it back |
 | Copy the report | **Copy report** in the panel |
 | Save the report as a file | **.md** in the panel |
 | Copy every page at once | **Copy session report** in the extension popup |
@@ -154,6 +155,12 @@ is on — collapsing hides the controls and nothing else, so clicking still anno
 The state is a setting rather than a session flag, so a reload does not put the pill
 back over the corner you were looking at. <kbd>H</kbd> works whether or not inspect
 mode is on, unlike the mode keys.
+
+When even the handle is too much — you are demonstrating the page, or shooting your
+own screenshots — **`✕` hides everything**: toolbar, panel, pins and highlights. It
+lasts until the page is reloaded, and the popup's **Start inspecting** brings it back
+sooner. Your annotations are untouched; they are stored, and hiding is a display
+change, not a delete.
 
 Dragging a box selects **everything it fully contains**, at the shallowest level
 contained — draw around three cards and you get three cards, not the `<div>`s

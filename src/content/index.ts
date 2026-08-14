@@ -98,6 +98,15 @@ let page: PageFrameworkInfo | null = null;
 /** Mirror of the MAIN world's buffers, kept current by pushed events. */
 let diagnosticsCache: Diagnostics | null = null;
 
+/**
+ * Dismissed for this page-load.
+ *
+ * Session state on purpose, not a setting: the X means "not on this screen, right
+ * now", and a persisted version would be a way to switch the extension off that
+ * looks like a window control and has no visible way back. A reload restores it,
+ * as does the popup's button.
+ */
+let hidden = false;
 let active = false;
 let mode: InspectMode = "point";
 let frozen = false;
@@ -164,6 +173,7 @@ function createTopUi(): void {
     onToggleFreeze: () => toggleFreeze(),
     onTogglePanel: () => togglePanel(),
     onToggleCollapse: () => toggleCollapsed(),
+    onClose: () => setHidden(true),
   });
 }
 
@@ -216,6 +226,28 @@ function render(): void {
 // -----------------------------------------------------------------------------
 // Mode switching
 // -----------------------------------------------------------------------------
+
+/**
+ * Take the whole overlay off screen: toolbar, panel, markers and highlights at once.
+ *
+ * Annotations are deliberately untouched — they are stored, they come back with the
+ * page, and a control this easy to hit must not be able to destroy them. `clearAll`
+ * in the panel and the clear-on-copy setting remain the only two things that can.
+ */
+function setHidden(next: boolean): void {
+  if (hidden === next) return;
+  hidden = next;
+
+  if (hidden) {
+    setActive(false);
+    togglePanel(false);
+    closeComposer();
+    overlay.hideAll();
+  }
+
+  ui.setHidden(hidden);
+  render();
+}
 
 function setActive(next: boolean): void {
   if (active === next) return;
@@ -835,6 +867,9 @@ function installTopFrame(): void {
 
   chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
     if (message.kind === "toggle-inspect") {
+      // The popup's button and the keyboard command are the way back from the X, so
+      // they have to undo it before they mean anything else.
+      if (hidden) setHidden(false);
       setActive(!active);
       sendResponse({ ok: true, active });
       return true;
@@ -996,6 +1031,10 @@ function installTopFrame(): void {
 
   listen(document, "keydown", (event) => {
     const keyboard = event as KeyboardEvent;
+
+    // Nothing is on screen to act on, and `h` in particular would silently toggle a
+    // collapse the user cannot see.
+    if (hidden) return;
 
     if (keyboard.key === "Escape") {
       if (composer) {

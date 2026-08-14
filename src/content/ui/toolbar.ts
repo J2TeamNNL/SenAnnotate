@@ -22,6 +22,7 @@ export interface ToolbarCallbacks {
   onToggleFreeze(): void;
   onTogglePanel(): void;
   onToggleCollapse(): void;
+  onClose(): void;
 }
 
 const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
@@ -51,6 +52,7 @@ export class Toolbar {
   private readonly freezeButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
+  private readonly closeButton: HTMLButtonElement;
   private readonly countBadge: HTMLElement;
   /**
    * The count again, on the collapsed handle. A separate node rather than a moved
@@ -85,7 +87,7 @@ export class Toolbar {
         attrs: { "aria-pressed": "false" },
         on: { click: () => callbacks.onModeChange(mode) },
       });
-      button.append(icon(iconName));
+      button.append(icon(iconName, 17));
       this.modeButtons.set(mode, button);
     }
 
@@ -104,7 +106,7 @@ export class Toolbar {
         attrs: { "aria-pressed": "false" },
         on: { click: () => callbacks.onToggleFreeze() },
       },
-      icon("snowflake"),
+      icon("snowflake", 17),
     );
 
     this.countBadge = h("span", { class: "count", text: "0", style: { display: "none" } });
@@ -116,7 +118,7 @@ export class Toolbar {
         attrs: { "aria-pressed": "false" },
         on: { click: () => callbacks.onTogglePanel() },
       },
-      icon("list"),
+      icon("list", 17),
       this.countBadge,
     );
 
@@ -125,7 +127,7 @@ export class Toolbar {
     // Both icons live in the button and the stylesheet picks one. `update()` runs on
     // every state change — panel toggles, hover-driven counts — and swapping an SVG
     // node there would be needless churn for a button that only has two faces.
-    const collapseIcon = icon("chevron");
+    const collapseIcon = icon("chevron", 17);
     collapseIcon.classList.add("tool__icon--collapse");
     const expandIcon = icon("s", 17);
     expandIcon.classList.add("tool__icon--expand");
@@ -145,6 +147,18 @@ export class Toolbar {
       this.handleCount,
     );
 
+    // Last in the pill, so it reads as the window control it imitates and is never
+    // the button you reach for by accident.
+    this.closeButton = h(
+      "button",
+      {
+        class: "tool tool--close",
+        title: "Hide until this page is reloaded",
+        on: { click: () => callbacks.onClose() },
+      },
+      icon("close", 17),
+    );
+
     this.hintElement = h("div", { class: "toolbar-hint", style: { display: "none" } });
 
     const bar = h(
@@ -157,6 +171,7 @@ export class Toolbar {
       this.freezeButton,
       this.panelButton,
       this.collapseButton,
+      this.closeButton,
     );
 
     // The dock owns the fixed position; `.toolbar` stays the pill so the e2e
