@@ -110,6 +110,13 @@ One report covering every annotated page, and annotation *inside* iframes. Its
 the three child-frame problems the plan did not anticipate, and a permission-gated
 clipboard read that hung the suite for ten minutes instead of failing.
 
+## [`release-changelog/`](./release-changelog/) — generated release notes
+
+`CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,
+and a release that fails before installing anything when its tag has no section. Its
+`context.md` reverses the "generated release notes are enough" call made in
+`ci-cd/brief.md` and says what changed to justify that.
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from
@@ -137,4 +144,5 @@ that point.
 **Those monorepo copies still exist**, so the two can drift. Treat the copy in this repo
 as canonical — it travels with the code it describes.
 
-`ci-cd/` was written here directly and has no monorepo counterpart.
+`ci-cd/` and `release-changelog/` were written here directly and have no monorepo
+counterpart.

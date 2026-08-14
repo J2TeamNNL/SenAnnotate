@@ -39,6 +39,21 @@ jobs:
             exit 1
           fi
 
+      # Also before `npm ci`, and for the same reason as the check above: a tag whose
+      # version has no section in the committed CHANGELOG.md fails here in seconds
+      # rather than after a full install and build.
+      #
+      # The generator reads the committed file, not git — "this tag has no changelog"
+      # and "the generator would produce one if you ran it" are the same thing only
+      # when the file is up to date, and catching the release where it is not is the
+      # entire point of the gate. It exits non-zero when the section is missing or
+      # empty, which fails the step.
+      - name: Extract the release notes
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          node scripts/changelog.mjs --extract "$TAG" > release-notes.md
+          cat release-notes.md
+
       - run: npm ci
 
       - run: npm run pack
@@ -46,7 +61,7 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" senannotate-*.zip --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" senannotate-*.zip --notes-file release-notes.md
 
       # Ships the same zip to the Web Store. Runs after the GitHub release on purpose: the
       # release is ours and always succeeds, while this depends on Google, and a Store

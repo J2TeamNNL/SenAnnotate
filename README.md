@@ -497,19 +497,39 @@ npm test
 # 2. Bump the version. package.json is the only place that matters: the build
 #    stamps dist/manifest.json from it.
 #    …edit "version" in package.json…
+
+# 3. Regenerate the changelog for the version you just bumped to. The release
+#    refuses to publish without a section for its tag.
+npm run changelog
+
 git commit -am "chore: release 0.3.0"
 
-# 3. Push the commit first, then the tag. The tag must match package.json
+# 4. Push the commit first, then the tag. The tag must match package.json
 #    exactly or the workflow refuses to release.
 git tag v0.3.0
 git push && git push --tags
 ```
 
 `.github/workflows/release.yml` then builds, packs, and creates a GitHub Release with
-`senannotate-<version>.zip` attached and generated release notes — and, once the Chrome Web
-Store credentials are configured, uploads that same zip to the Store and submits it for
-review. Until they are, that step skips itself rather than failing the release. Setup and the
-two traps worth knowing are in [`docs/chrome-store-publish/context.md`](./docs/chrome-store-publish/context.md).
+`senannotate-<version>.zip` attached and the release notes taken from
+[`CHANGELOG.md`](./CHANGELOG.md) — and, once the Chrome Web Store credentials are
+configured, uploads that same zip to the Store and submits it for review. Until they are,
+that step skips itself rather than failing the release. Setup and the two traps worth
+knowing are in [`docs/chrome-store-publish/context.md`](./docs/chrome-store-publish/context.md).
+
+### The changelog
+
+[`CHANGELOG.md`](./CHANGELOG.md) is **generated, not written**. `npm run changelog` rebuilds
+it from the `v*.*.*` tags and the [Conventional Commit](https://www.conventionalcommits.org/)
+subjects between them, grouped into Added / Fixed / Changed / Documentation / Internal, with
+breaking changes first. Editing the file by hand is pointless — the next run overwrites it.
+The way to fix a bad release note is to write a better commit subject.
+
+The release workflow calls `node scripts/changelog.mjs --extract <version>` and pipes the
+result to `gh release create --notes-file`. That step runs *before* `npm ci`, so a tag whose
+version has no section fails in seconds and publishes nothing. The reasoning, including why
+`--generate-notes` was dropped, is in
+[`docs/release-changelog/context.md`](./docs/release-changelog/context.md).
 
 Publishing through the API still means *submitted for review*, and the host permission makes
 that review a manual one — days, not minutes.

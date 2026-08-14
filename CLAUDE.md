@@ -163,13 +163,30 @@ manual gate before tagging (`docs/ci-cd/context.md` has the full argument).
 ```bash
 npm test                                    # 1. run it yourself
 # edit "version" in package.json            # 2. the only place that matters
+npm run changelog                           # 3. regenerate CHANGELOG.md
 git commit -am "chore: release 0.6.0"
-git tag v0.6.0 && git push && git push --tags   # 3. commit first, then the tag
+git tag v0.6.0 && git push && git push --tags   # 4. commit first, then the tag
 ```
 
 `release.yml` refuses to release if the tag and `package.json` disagree, before installing
 anything. To fix: correct `package.json`, then
 `git tag -d v0.6.0 && git push origin :refs/tags/v0.6.0`.
+
+It refuses for a second reason too: `node scripts/changelog.mjs --extract "$TAG"` runs in the
+same pre-install position, and exits non-zero when `CHANGELOG.md` has no section for the tag.
+Forgetting step 3 costs a deleted tag, not a bad release.
+
+**`CHANGELOG.md` is generated — never edit it.** `scripts/changelog.mjs` rebuilds the whole
+file from the tags and the Conventional Commit subjects between them, so a hand edit survives
+until the next release and no longer. The consequence worth internalising: **a commit subject
+is a release note.** `feat: screenshot markup, hover capture, triage, session reports and
+iframes` ships verbatim, as one bullet, for five features. Write the subject you would want to
+read in the release.
+
+The generator strips two kinds of bookkeeping from subjects — a trailing `; 0.5.3`, and a
+`release <version>` prefix on a `chore:` — and drops a commit whose subject is *only* the
+version bump. Anything it cannot parse lands in an `Other` section; if that section ever
+appears, the fix is the commit message, not the generator.
 
 ## Design record
 

@@ -16,6 +16,7 @@
     "verify:sites": "npm run build && node test/verify-real-sites.mjs",
     "verify:tracer": "npm run build && node test/verify-tracer.mjs",
     "pack": "npm run build && node scripts/pack.mjs",
+    "changelog": "node scripts/changelog.mjs",
     "assets": "npm run build && node scripts/store-assets.mjs",
     "clean": "rm -rf dist"
   },
