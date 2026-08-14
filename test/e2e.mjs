@@ -447,7 +447,7 @@ async function main() {
     check(
       "the hint names the default mode and the keys for the others",
       ((await hint.textContent())?.trim() ?? "") ===
-        "Click an element · C captures hover · 2 text · 3 area",
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -580,6 +580,80 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // ⌘/Ctrl+drag — the same box without leaving point mode
+    // -------------------------------------------------------------------------
+    //
+    // The modifier already means "collect" for a single element, so click and drag
+    // have to be told apart by movement. The threshold is MIN_MARQUEE_SIZE, reused
+    // rather than reinvented: it is already the size below which a box selects
+    // nothing, so one number cannot disagree with the other.
+    await marquee.locator('.tool[title^="Click an element"]').click();
+    check(
+      "the point hint advertises the modifier drag",
+      ((await hint.textContent())?.trim() ?? "") ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
+
+    const modifierDrag = async (from, to) => {
+      await marquee.keyboard.down("ControlOrMeta");
+      await marquee.mouse.move(from.x, from.y);
+      await marquee.mouse.down();
+      await marquee.mouse.move(to.x, to.y, { steps: 8 });
+      await marquee.mouse.up();
+      await marquee.keyboard.up("ControlOrMeta");
+    };
+
+    await modifierDrag(dragFrom, dragTo);
+    const modMeta = marquee.locator(".composer__meta");
+    await modMeta.waitFor({ state: "visible", timeout: 5_000 });
+    const modText = (await modMeta.textContent())?.trim() ?? "";
+    check(
+      "⌘/Ctrl+drag boxes elements without switching to area mode",
+      modText.includes("2 elements"),
+      `meta read "${modText}"`,
+    );
+    check(
+      "the modifier drag leaves the mode alone",
+      (await marquee.locator('.tool[title^="Click an element"]').getAttribute("aria-pressed")) ===
+        "true",
+    );
+    await marquee.keyboard.press("Escape");
+
+    // Anything already collected joins the box rather than being dropped — the same
+    // rule a plain click follows, so the modifier keeps one meaning throughout.
+    await marquee
+      .locator("#card-c .card-body")
+      .click({ modifiers: ["ControlOrMeta"], timeout: 5_000 });
+    await marquee.waitForTimeout(200);
+    await modifierDrag(dragFrom, dragTo);
+    await modMeta.waitFor({ state: "visible", timeout: 5_000 });
+    const mergedText = (await modMeta.textContent())?.trim() ?? "";
+    check(
+      "a modifier drag commits what was already picked along with the box",
+      mergedText.includes("3 elements"),
+      `meta read "${mergedText}"`,
+    );
+    await marquee.keyboard.press("Escape");
+
+    // Below the threshold the gesture is still a pick. Without this the modifier
+    // would stop collecting single elements the moment the hand shook.
+    await marquee.mouse.move(cardA.x + 40, cardA.y + 40);
+    await marquee.keyboard.down("ControlOrMeta");
+    await marquee.mouse.down();
+    await marquee.mouse.move(cardA.x + 42, cardA.y + 42);
+    await marquee.mouse.up();
+    await marquee.keyboard.up("ControlOrMeta");
+    await marquee.waitForTimeout(200);
+    check(
+      "a modifier drag under the threshold still picks rather than boxing",
+      ((await hint.textContent())?.trim() ?? "").startsWith("1 element picked") &&
+        (await marquee.locator(".composer").count()) === 0,
+      `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
+    );
+    await marquee.keyboard.press("Escape");
+
+    // -------------------------------------------------------------------------
     // Picking elements one at a time — ⌘/Ctrl+click
     // -------------------------------------------------------------------------
     //
@@ -672,7 +746,8 @@ async function main() {
     await pick.waitForTimeout(200);
     check(
       "Escape drops the set and stays in inspect mode",
-      (await pickHint()) === "Click an element · C captures hover · 2 text · 3 area" &&
+      (await pickHint()) ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area" &&
         (await pick.locator(".highlight--preview").count()) === 0 &&
         (await pick.locator(".tool--brand").getAttribute("aria-pressed")) === "true",
       `hint read "${await pickHint()}", ${await pick.locator(".highlight--preview").count()} boxes`,

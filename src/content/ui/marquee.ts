@@ -9,8 +9,15 @@
 
 import { isAnnotatable } from "../identify";
 
-/** Nothing smaller counts as a drag, so a stray click selects nothing. */
-const MIN_MARQUEE_SIZE = 6;
+/**
+ * Nothing smaller counts as a drag, so a stray click selects nothing.
+ *
+ * Exported because it is also what tells a ⌘/Ctrl+click apart from a ⌘/Ctrl+drag:
+ * the modifier means both "collect this one" and "box these", and the two are only
+ * separable by movement. Reusing this number rather than picking a second one keeps
+ * a drag that promotes to a box from being one that selects nothing.
+ */
+export const MIN_MARQUEE_SIZE = 6;
 
 /** Ceiling on one selection. Reaching it is surfaced in the toolbar hint. */
 export const MAX_MARQUEE_ELEMENTS = 30;
