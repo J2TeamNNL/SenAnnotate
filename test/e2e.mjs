@@ -1642,6 +1642,17 @@ async function main() {
     await collapsed.locator('.tool[title^="Annotations"]').click();
     await collapsed.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
 
+    // The panel fades out before it is removed, so for a moment after a close there is
+    // a node on screen that nothing holds a reference to. Reopening inside that window
+    // must not leave two — one fading, one live.
+    await collapsed.locator('.tool[title^="Annotations"]').click();
+    await collapsed.locator('.tool[title^="Annotations"]').click();
+    check(
+      "closing and reopening inside the exit animation leaves one panel",
+      (await collapsed.locator(".panel").count()) === 1,
+      `${await collapsed.locator(".panel").count()} panels`,
+    );
+
     await handle.click();
     await collapsed.waitForTimeout(200);
 

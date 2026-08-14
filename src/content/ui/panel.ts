@@ -135,6 +135,10 @@ export class Panel {
       ),
     );
 
+    // A panel closed and reopened inside the exit animation would otherwise leave two
+    // in the layer — the old one still fading, the new one already live.
+    for (const stale of layer.querySelectorAll('.panel[data-leaving="true"]')) stale.remove();
+
     layer.append(this.element);
   }
 
@@ -254,7 +258,25 @@ export class Panel {
     this.summary.title = "Included automatically when you copy the report";
   }
 
+  /**
+   * Fades out before it goes, rather than vanishing mid-frame.
+   *
+   * The caller drops its reference synchronously, so from everywhere else the panel is
+   * already gone — this node is nothing but the tail of the animation. It is marked
+   * `data-leaving` so a panel reopened before the animation ends can clear it, and it
+   * stops taking pointer events immediately: a card you can still click after asking
+   * for it to close is worse than one that snaps away.
+   *
+   * The timeout is not belt-and-braces. `animationend` never fires if the animation is
+   * cancelled — a display change on an ancestor is enough — and a stranded panel would
+   * sit over the page forever.
+   */
   destroy(): void {
-    this.element.remove();
+    if (this.element.dataset.leaving === "true") return;
+    this.element.dataset.leaving = "true";
+
+    const remove = () => this.element.remove();
+    this.element.addEventListener("animationend", remove, { once: true });
+    window.setTimeout(remove, 400);
   }
 }

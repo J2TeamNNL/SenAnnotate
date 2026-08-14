@@ -90,7 +90,13 @@ button {
   box-shadow: var(--sa-shadow);
   pointer-events: auto;
   user-select: none;
-  transition: transform 0.18s ease, opacity 0.18s ease;
+  /* The last three are the collapse: the pill morphs into the handle. */
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease,
+    padding 0.16s ease,
+    gap 0.16s ease,
+    border-radius 0.16s ease;
 }
 
 /*
@@ -167,14 +173,53 @@ button {
  * The pill itself stays visible and becomes the handle. Hiding `.toolbar` outright
  * would take away the only way back — and ten e2e scenarios wait on it being visible.
  */
-.toolbar-dock[data-collapsed="true"] .toolbar > :not(.tool--collapse),
 .toolbar-dock[data-collapsed="true"] .toolbar-hint {
   display: none !important;
 }
 
+/*
+ * Folded rather than `display: none`d, so the pill can shrink into the handle instead
+ * of snapping. `max-width` and not `width`: `auto` is not an interpolable value, so a
+ * width transition on an auto-sized button animates nothing. The ceiling only has to
+ * clear the widest child; the cost of it being generous is a short lead-in.
+ *
+ * `visibility` closes the gap `max-width: 0` leaves — a zero-width button is off screen
+ * but still in the tab order. It is transitioned with a delay so it lands *after* the
+ * fold rather than blanking the contents on the first frame, and `0s` in the base rule
+ * so expanding brings them straight back.
+ */
+.toolbar > :not(.tool--collapse) {
+  max-width: 240px;
+  transition:
+    max-width 0.16s ease,
+    padding 0.16s ease,
+    opacity 0.12s ease,
+    visibility 0s;
+}
+
+.toolbar-dock[data-collapsed="true"] .toolbar > :not(.tool--collapse) {
+  max-width: 0 !important;
+  min-width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-left-width: 0 !important;
+  border-right-width: 0 !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+  transition:
+    max-width 0.16s ease,
+    padding 0.16s ease,
+    opacity 0.12s ease,
+    visibility 0s linear 0.16s !important;
+}
+
+/* `gap` too, or every folded child would still leave its 2px behind. */
 .toolbar-dock[data-collapsed="true"] .toolbar {
   padding: 3px;
   border-radius: 999px;
+  gap: 0;
 }
 
 /*
@@ -607,6 +652,22 @@ kbd {
   bottom: 72px;
   width: 380px;
   max-width: calc(100vw - 24px);
+  /*
+   * An animation rather than a transition, for the same reason the toast uses one:
+   * it runs on insertion with no second frame to arrange. `@starting-style` would be
+   * the modern way to transition in, and it is Chrome 117 — this project floors at 111.
+   */
+  animation: vt-rise 0.16s ease;
+}
+
+/*
+ * The tail of a close. `Panel.destroy` sets this, then removes the node when the
+ * animation ends; `forwards` holds the last frame so there is no flash back to full
+ * opacity in between.
+ */
+.panel[data-leaving="true"] {
+  animation: vt-fall 0.14s ease forwards;
+  pointer-events: none;
 }
 
 .capture-summary {
@@ -981,6 +1042,14 @@ kbd {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* Only `to`: an exit has to start from wherever the element actually is. */
+@keyframes vt-fall {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }
 
