@@ -10,7 +10,32 @@ matching the tag being released and refuses to publish without one.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.1] — unreleased
+## [0.7.0] — unreleased
+
+[Compare with v0.6.1](https://github.com/thangnm93/SenAnnotate/compare/v0.6.1...v0.7.0)
+
+### Added
+
+- strip settings from the popup and pin the card with tests (154e66d)
+- a settings card in the toolbar, with the help text behind tooltips (2e79355)
+- the panel fades in and out, the toolbar folds into its handle (61ce00d)
+- collapsing the toolbar dismisses inspect mode and the panel with it (f27583c)
+- ⌘/Ctrl+drag boxes elements without switching to area mode (5251a09)
+
+### Fixed
+
+- stop patching page natives inside iframes, which broke Cloudflare challenges (569580d)
+
+### Changed
+
+- extract the card exit into dismissCard (25190e5)
+
+### Documentation
+
+- correct the collapse description and index the 0.7.0 folders (0847a62)
+- spec for moving settings into the toolbar (ec13656)
+
+## [0.6.1] — 2026-08-14
 
 [Compare with v0.6.0](https://github.com/thangnm93/SenAnnotate/compare/v0.6.0...v0.6.1)
 
