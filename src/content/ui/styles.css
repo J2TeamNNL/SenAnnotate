@@ -561,6 +561,40 @@ button {
   color: var(--sa-accent);
 }
 
+/*
+ * Retarget controls, sitting on the Element row they change.
+ *
+ * `flex: none` and `align-self: center` because `.meta-row` aligns on the baseline —
+ * correct for two runs of text, wrong for a row of buttons, which would hang below it.
+ */
+.retarget {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 7px;
+  background: var(--sa-bg-sunken);
+}
+
+.retarget__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  color: var(--sa-fg-muted);
+  font-size: 11px;
+  line-height: 1;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+
+.retarget__button:hover {
+  background: color-mix(in srgb, var(--sa-fg) 10%, transparent);
+  color: var(--sa-fg);
+}
+
 .composer__input {
   width: 100%;
   min-height: 76px;

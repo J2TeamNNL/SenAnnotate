@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Retarget fixture</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; }
+      .row { display: flex; gap: 16px; padding: 24px; }
+      .ordercard, .secondcard { padding: 16px; border: 1px solid #d4d4d8; }
+      .cta { padding: 10px 16px; border: 1px solid #2563eb; background: #eff6ff; }
+      /* Near the bottom on purpose: `position()` clamps the composer's bottom edge here,
+         so a retarget that adds meta rows is what pushes the footer off screen. */
+      .low { position: absolute; left: 40px; bottom: 8px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Its own fixture. Annotations are keyed on origin + pathname in storage shared across
+      the suite's single context, and this block reads the `.composer__meta` rows — a page an
+      earlier block annotated opens with markers and a stored count that would change them.
+
+      Two things the class names are load-bearing for. `identifyElement` falls back to
+      `tag.class` when an element has no accessible name and no distinguishing attribute, so
+      the two cards carry *different* class names (`ordercard`/`secondcard`) rather than a
+      shared `.card`: with a shared one both read `div.card` and no assertion here can tell
+      "retargeted to the card" from "opened on the other card".
+
+      And the nesting is the point: `#label` is a <span> inside a <button> inside a card
+      inside a row, which is exactly the mis-click this feature exists to fix. Walking up
+      from the span gives `span` → `button "Place order"` → `div.ordercard` → `div.row`.
+    -->
+    <div class="row" id="row">
+      <div class="ordercard" id="card-one">
+        <button class="cta" id="cta"><span id="label">Place order</span></button>
+      </div>
+      <div class="secondcard" id="card-two">Second card</div>
+    </div>
+    <div class="low"><button id="low-button"><span id="low-label">Near the fold</span></button></div>
+  </body>
+</html>
