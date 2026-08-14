@@ -10,7 +10,19 @@ matching the tag being released and refuses to publish without one.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] — unreleased
+## [0.6.1] — unreleased
+
+[Compare with v0.6.0](https://github.com/thangnm93/SenAnnotate/compare/v0.6.0...v0.6.1)
+
+### Added
+
+- annotate inside native modals, ⌘/Ctrl+click multi-select, settable accent colour (9f4c209)
+
+### Internal
+
+- pin notes and settings across an extension upgrade (a8f8837)
+
+## [0.6.0] — 2026-08-14
 
 [Compare with v0.5.3](https://github.com/thangnm93/SenAnnotate/compare/v0.5.3...v0.6.0)
 
@@ -21,6 +33,7 @@ project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Internal
 
+- generate release notes from a changelog instead of the commit list (94ec53f)
 - README screenshots and the Web Store link (ac653df)
 
 ## [0.5.3] — 2026-08-11
