@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate fixture — iframes</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      iframe {
+        display: block;
+        border: 1px solid #d0d4da;
+        border-radius: 6px;
+      }
+      /* Deliberately offset from the top-left, so a coordinate translation that
+         forgets to add the frame's own position fails visibly rather than by luck. */
+      #embedded {
+        width: 420px;
+        height: 200px;
+        margin: 24px 0 0 60px;
+      }
+      /* A tracking-pixel-shaped frame. Under MIN_FRAME_SIZE, so the content script
+         inside it must bail out before building anything. */
+      #pixel {
+        width: 1px;
+        height: 1px;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1 id="headline">Frames</h1>
+      <p class="intro">The button worth annotating is inside the frame below.</p>
+
+      <iframe id="embedded" name="preview" title="Embedded preview" src="frame-inner.html"></iframe>
+      <iframe id="pixel" src="frame-pixel.html"></iframe>
+    </main>
+  </body>
+</html>

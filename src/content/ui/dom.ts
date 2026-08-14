@@ -110,6 +110,7 @@ const PATHS: Record<string, string> = {
   pencil: "M4 20h4L20 8a2.8 2.8 0 10-4-4L4 16z",
   bug: "M9 7a3 3 0 016 0M8 7h8v6a4 4 0 01-8 0zM4 11h4M16 11h4M5 6l2 2M19 6l-2 2M5 17l2.5-1.5M19 17l-2.5-1.5",
   chevron: "M6 9l6 6 6-6",
+  download: "M12 4v11M8 11l4 4 4-4M5 19h14",
 };
 
 export function icon(name: keyof typeof PATHS | string, size = 16): SVGSVGElement {

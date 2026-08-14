@@ -33,42 +33,67 @@ export async function loadAnnotations(): Promise<Annotation[]> {
   }
 }
 
-export async function saveAnnotations(annotations: Annotation[]): Promise<void> {
+/**
+ * Ceiling on one page's stored annotations.
+ *
+ * `chrome.storage.local` allows 10 MB across every key. An embedded screenshot is
+ * 60-120 KB of base64 and there is one key per page, so a few heavily-photographed
+ * pages could reach it — and `set()` failing here means *every* note on the page
+ * silently stops persisting, not just the images. 4 MB leaves room for the other
+ * pages and is far more than a review of one screen needs.
+ */
+const MAX_STORED_BYTES = 4_000_000;
+
+export interface SaveResult {
+  ok: boolean;
+  /** Embedded images dropped from the stored copy to stay under the quota. */
+  droppedImages: number;
+}
+
+/**
+ * Shed embedded images, oldest first, until the payload fits.
+ *
+ * Oldest first because the note being worked on right now is the one whose picture
+ * the user still expects to see. The originals are untouched on disk in either
+ * case — only the copy inside the report is lost, and only on reload.
+ */
+function fitToQuota(annotations: Annotation[]): { payload: Annotation[]; dropped: number } {
+  let total = JSON.stringify(annotations).length;
+  if (total <= MAX_STORED_BYTES) return { payload: annotations, dropped: 0 };
+
+  const payload = annotations.map((annotation) => ({ ...annotation }));
+  let dropped = 0;
+
+  for (const annotation of payload) {
+    if (total <= MAX_STORED_BYTES) break;
+    if (!annotation.screenshotData) continue;
+    total -= annotation.screenshotData.length;
+    delete annotation.screenshotData;
+    dropped += 1;
+  }
+
+  return { payload, dropped };
+}
+
+export async function saveAnnotations(annotations: Annotation[]): Promise<SaveResult> {
   try {
     const key = pageKey();
-    if (!annotations.length) await chrome.storage.local.remove(key);
-    else await chrome.storage.local.set({ [key]: annotations });
+    if (!annotations.length) {
+      await chrome.storage.local.remove(key);
+      return { ok: true, droppedImages: 0 };
+    }
+
+    const { payload, dropped } = fitToQuota(annotations);
+    await chrome.storage.local.set({ [key]: payload });
+    return { ok: true, droppedImages: dropped };
   } catch {
     // Nothing useful to do — the in-memory list is still intact.
+    return { ok: false, droppedImages: 0 };
   }
 }
 
-/** Every page that currently holds annotations, for the popup's overview. */
-export async function listAnnotatedPages(): Promise<{ page: string; count: number }[]> {
-  try {
-    const all = await chrome.storage.local.get(null);
-    return Object.entries(all)
-      .filter(([key, value]) => key.startsWith(ANNOTATION_PREFIX) && Array.isArray(value))
-      .map(([key, value]) => ({
-        page: key.slice(ANNOTATION_PREFIX.length),
-        count: (value as Annotation[]).length,
-      }))
-      .filter((entry) => entry.count > 0)
-      .sort((a, b) => b.count - a.count);
-  } catch {
-    return [];
-  }
-}
-
-export async function clearAllPages(): Promise<void> {
-  try {
-    const all = await chrome.storage.local.get(null);
-    const keys = Object.keys(all).filter((key) => key.startsWith(ANNOTATION_PREFIX));
-    if (keys.length) await chrome.storage.local.remove(keys);
-  } catch {
-    // ignore
-  }
-}
+// Cross-page reads and the "clear everything" sweep live in `shared/archive.ts`:
+// the popup is their only caller, and it must not import from `content/`.
 
 // -----------------------------------------------------------------------------
 // Settings

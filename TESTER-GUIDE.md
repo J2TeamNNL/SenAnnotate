@@ -14,6 +14,13 @@ requests**, and **the steps you just took**.
 
 ### 1. Install (one-time, ~2 minutes)
 
+**The easy way — from the Chrome Web Store.** Open
+[the listing](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla)
+and click **Add to Chrome**. It updates itself, and none of the warnings below
+apply. Skip to [section 2](#2-how-to-use-it).
+
+**From a zip**, if you were sent a build newer than the Store has reviewed:
+
 1. Unzip `senannotate.zip` into a **permanent** folder — not Downloads, where it
    might get cleaned up. Chrome needs this folder to keep existing.
 2. Open Chrome, go to `chrome://extensions`
@@ -152,6 +159,13 @@ một báo cáo đã kèm sẵn **lỗi console**, **request bị fail**, và **
 ---
 
 ### 1. Cài đặt (làm 1 lần, ~2 phút)
+
+**Cách dễ nhất — cài từ Chrome Web Store.** Mở
+[trang extension](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla)
+rồi bấm **Add to Chrome**. Extension tự cập nhật, và không dính cảnh báo nào ở dưới.
+Bỏ qua, sang thẳng [mục 2](#2-cách-dùng).
+
+**Cài từ file zip**, nếu bạn được gửi bản mới hơn bản đã lên Store:
 
 1. Giải nén file `senannotate.zip` ra một thư mục **cố định** — đừng để trong Downloads
    rồi xoá, Chrome cần thư mục này tồn tại lâu dài.

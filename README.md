@@ -23,14 +23,49 @@ vendoring any of this.
 
 MIT licensed. See [`LICENSE`](./LICENSE).
 
+**[Install from the Chrome Web Store →](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla)**
+
+---
+
+## What it looks like
+
+Hovering names the component and the file that rendered it, before you commit to
+anything:
+
+![Inspect mode: the hovered element labelled with its component and source line](./store/screenshots/inspect.jpg)
+
+Clicking opens the composer, already carrying the element, its source, the component
+chain and the owner's props — you only supply the sentence, and the type:
+
+![The composer, showing element, source, component chain, props and the type chips](./store/screenshots/composer.jpg)
+
+The panel is the list, the filter, and the button that produces the report:
+
+![The annotations panel with the All/Open/Done filter and captured diagnostics](./store/screenshots/panel.jpg)
+
+Drag-select takes everything a box fully contains, at the shallowest level contained:
+
+![Marquee selection across three cards, counted live under the toolbar](./store/screenshots/marquee.jpg)
+
+And this is what comes out — the thing you paste into your agent:
+
+![The generated Markdown report](./store/screenshots/report.jpg)
+
 ---
 
 ## Install
 
-Chrome only, and unpacked either way — this is not on the Web Store. Take the
-first route unless you intend to change the code.
+**Chrome 111 or newer.** The Web Store listing is the route for everyone who is not
+changing the code.
+
+### From the Chrome Web Store
+
+[**SenAnnotate — visual annotator**](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla)
+→ **Add to Chrome**. It updates itself from there; nothing below is needed.
 
 ### From a release — no Node, no build
+
+For a version newer than the Store has reviewed, or for an air-gapped machine.
 
 1. Download `senannotate-<version>.zip` from the
    [latest release](https://github.com/thangnm93/SenAnnotate/releases/latest).
@@ -53,10 +88,9 @@ npm run build
 
 Then steps 3–5 above, choosing the `dist/` folder instead of an unzipped one.
 
-### Either way
+### If you installed unpacked
 
-**Chrome 111 or newer** — the extension declares `world: "MAIN"` content scripts,
-which earlier versions do not support.
+Neither of these applies to the Web Store install.
 
 **Chrome will nag.** A "Disable developer mode extensions" popup appears on every
 launch. Click **Cancel**, not Disable. Chrome shows it for any unpacked extension;
@@ -66,8 +100,10 @@ nothing is wrong.
 in `chrome://extensions`, then reload the tabs you had open — the old content
 script is still running in them until you do.
 
-Handing this to someone who does not write code? [`TESTER-GUIDE.md`](./TESTER-GUIDE.md)
-covers the same install plus the reporting workflow, in English and Vietnamese.
+Handing this to someone who does not write code? Point them at the
+[Web Store listing](https://chromewebstore.google.com/detail/senannotate-%E2%80%94-visual-anno/nfplcbaoccfdgfpbkjiigfdpmjphbjla).
+[`TESTER-GUIDE.md`](./TESTER-GUIDE.md) covers the reporting workflow itself, in
+English and Vietnamese.
 
 ### Getting line numbers out of a Nuxt project
 
@@ -90,16 +126,26 @@ the line and column.
 |---|---|
 | Toggle inspect mode | click **Inspect**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> |
 | Annotate an element | click it |
+| Annotate what you are hovering | <kbd>C</kbd> — no click, so the menu stays open |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements | mode <kbd>3</kbd>, then drag a box around them |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button |
 | Copy the report | **Copy report** in the panel |
+| Save the report as a file | **.md** in the panel |
+| Copy every page at once | **Copy session report** in the extension popup |
 | Cancel / exit | <kbd>Esc</kbd> |
 
 The line under the toolbar always names what the current mode does and which keys
 switch to the others, so nothing above needs memorising.
+
+<kbd>C</kbd> is the one worth knowing about. Clicking is how you annotate, and clicking
+is also what closes the thing you wanted to annotate — a dropdown, a hover menu, a
+tooltip, anything styled `:hover`. <kbd>C</kbd> captures whatever the pointer is over
+without pressing anything, so the menu is still open while you type the note. Freeze
+does not help here: it parks timers and animation frames, and those surfaces are driven
+by pointer events rather than by time.
 
 The toolbar is docked bottom-right, which is exactly where a page tends to put its
 chat widget, cookie bar or footer actions. <kbd>H</kbd> collapses it to a single dot
@@ -118,16 +164,64 @@ can adjust before letting go.
 Annotations are stored per `origin + pathname`, so they survive a reload and come
 back when you return to the same screen.
 
+## Triage
+
+Each note carries a **type** — Bug, UI, Copy, Question — picked in the composer, and a
+**status** you tick off in the panel once it is fixed. The type reaches the report
+heading (`### 1. [bug] button "Save"`); a done note moves out of the numbered list into
+an `## Already fixed` section rather than disappearing, because "this was already
+handled" is context worth having.
+
+The panel filters by `All · Open · Done`, and the pins take a colour per type.
+
+Notes are only in `chrome.storage.local` until you move them, so the popup offers
+**Export** and **Import**: every page's notes as one JSON file, for a backup before
+*Clear all*, for handing a review to someone else, or for moving between machines.
+Import merges — it never replaces what is already there.
+
+## Screenshots
+
+The camera button in the composer photographs the element and opens a small editor
+first: **box**, **arrow**, and **blur**. Blur resamples the region rather than filtering
+it, so the pixels are genuinely gone from the saved file — which matters, because a
+tester photographing a real screen is photographing real customer data.
+
+How the shot reaches the report is a setting:
+
+| | |
+|---|---|
+| **Link to the saved file** (default) | the report names `~/Downloads/senannotate-….png`, which a coding agent opens with its own file tool. Costs a few dozen bytes. |
+| **Embed in the report** | a downscaled JPEG goes into the Markdown as a `data:` URI, so the report survives a paste into Slack or Jira. Around 60–120 KB a shot. |
+
+The PNG is saved either way.
+
+## Iframes
+
+Elements inside an iframe are annotated like any other — a Storybook preview, an
+embedded dashboard, a hosted checkout. The extension runs inside frames too, and hands
+each capture up to the top frame, which owns the toolbar and the storage. The report
+names which frame the element came from.
+
+Frames smaller than 50×50 are skipped entirely, so the tracking pixels and empty ad
+slots on a news page cost nothing. Three limits worth knowing:
+
+- a pin placed inside a frame does not follow that frame's *own* scrolling — the
+  report is unaffected;
+- a frame nested inside another frame falls back to annotating the outer `<iframe>`;
+- drag-select (mode <kbd>3</kbd>) stops at the frame boundary. Click and text
+  selection work inside frames; the marquee does not.
+
 ## What the report looks like
 
 ```markdown
 ## Page feedback: /dashboard
 **Stack:** Vue 3 3.5.35 · pinia  ·  **Viewport:** 1512×860
 
-### 1. button "Save changes"
+### 1. [bug] button "Save changes"
 **Source:** src/components/BaseButton.vue:12:5
 **Components:** <App> <TheSidebar> <BaseButton>
 **Location:** .sidebar > .base-button
+**Screenshot:** ~/Downloads/senannotate-1763029180000.png
 **Feedback:** Make this the primary action and move it above the divider.
 ```
 
@@ -403,19 +497,39 @@ npm test
 # 2. Bump the version. package.json is the only place that matters: the build
 #    stamps dist/manifest.json from it.
 #    …edit "version" in package.json…
+
+# 3. Regenerate the changelog for the version you just bumped to. The release
+#    refuses to publish without a section for its tag.
+npm run changelog
+
 git commit -am "chore: release 0.3.0"
 
-# 3. Push the commit first, then the tag. The tag must match package.json
+# 4. Push the commit first, then the tag. The tag must match package.json
 #    exactly or the workflow refuses to release.
 git tag v0.3.0
 git push && git push --tags
 ```
 
 `.github/workflows/release.yml` then builds, packs, and creates a GitHub Release with
-`senannotate-<version>.zip` attached and generated release notes — and, once the Chrome Web
-Store credentials are configured, uploads that same zip to the Store and submits it for
-review. Until they are, that step skips itself rather than failing the release. Setup and the
-two traps worth knowing are in [`docs/chrome-store-publish/context.md`](./docs/chrome-store-publish/context.md).
+`senannotate-<version>.zip` attached and the release notes taken from
+[`CHANGELOG.md`](./CHANGELOG.md) — and, once the Chrome Web Store credentials are
+configured, uploads that same zip to the Store and submits it for review. Until they are,
+that step skips itself rather than failing the release. Setup and the two traps worth
+knowing are in [`docs/chrome-store-publish/context.md`](./docs/chrome-store-publish/context.md).
+
+### The changelog
+
+[`CHANGELOG.md`](./CHANGELOG.md) is **generated, not written**. `npm run changelog` rebuilds
+it from the `v*.*.*` tags and the [Conventional Commit](https://www.conventionalcommits.org/)
+subjects between them, grouped into Added / Fixed / Changed / Documentation / Internal, with
+breaking changes first. Editing the file by hand is pointless — the next run overwrites it.
+The way to fix a bad release note is to write a better commit subject.
+
+The release workflow calls `node scripts/changelog.mjs --extract <version>` and pipes the
+result to `gh release create --notes-file`. That step runs *before* `npm ci`, so a tag whose
+version has no section fails in seconds and publishes nothing. The reasoning, including why
+`--generate-notes` was dropped, is in
+[`docs/release-changelog/context.md`](./docs/release-changelog/context.md).
 
 Publishing through the API still means *submitted for review*, and the host permission makes
 that review a manual one — days, not minutes.
@@ -431,12 +545,12 @@ git tag -d v0.3.0 && git push origin :refs/tags/v0.3.0
 
 ```
 src/
-├── shared/       types, wire protocol, Markdown generation
+├── shared/       types, wire protocol, Markdown generation, export/import
 ├── inspector/    MAIN world — freeze, diagnostics
 │   └── detectors/  one file per framework + a dispatcher
-├── content/      ISOLATED world — capture, storage, UI
+├── content/      ISOLATED world — capture, storage, UI, frame bridge
 ├── background/   service worker
-└── popup/        settings
+└── popup/        settings, session report, export/import
 ```
 
 Zero runtime dependencies. Build-time: `esbuild` and `typescript`.

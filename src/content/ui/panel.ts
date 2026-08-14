@@ -5,16 +5,29 @@
 import { formatSource } from "../../shared/output";
 import {
   OUTPUT_DETAIL_OPTIONS,
+  isDone,
+  kindOf,
   type Annotation,
   type OutputDetailLevel,
 } from "../../shared/types";
 import { clear, h, icon } from "./dom";
 
+/** What the list is showing. Panel-local: it is a view, not a stored preference. */
+type Filter = "all" | "open" | "done";
+
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "done", label: "Done" },
+];
+
 export interface PanelCallbacks {
   onClose(): void;
   onCopy(): void;
+  onDownload(): void;
   onClearAll(): void;
   onSelect(annotation: Annotation): void;
+  onToggleStatus(annotation: Annotation): void;
   onHoverChange(annotation: Annotation | null): void;
   onDetailChange(level: OutputDetailLevel): void;
 }
@@ -27,6 +40,12 @@ export class Panel {
   private readonly callbacks: PanelCallbacks;
 
   private readonly summary: HTMLElement;
+  private readonly filterButtons = new Map<Filter, HTMLButtonElement>();
+
+  private filter: Filter = "all";
+  /** Last arguments to `render`, replayed when the filter changes. */
+  private annotations: Annotation[] = [];
+  private detailLevel: OutputDetailLevel = "standard";
 
   constructor(layer: HTMLElement, callbacks: PanelCallbacks) {
     this.callbacks = callbacks;
@@ -46,6 +65,18 @@ export class Panel {
       this.select.append(node);
     }
 
+    for (const { value, label } of FILTERS) {
+      this.filterButtons.set(
+        value,
+        h("button", {
+          class: "panel__filter-button",
+          text: label,
+          attrs: { "aria-pressed": String(value === this.filter) },
+          on: { click: () => this.setFilter(value) },
+        }),
+      );
+    }
+
     this.copyButton = h(
       "button",
       { class: "button button--primary", on: { click: () => callbacks.onCopy() } },
@@ -61,6 +92,18 @@ export class Panel {
         { class: "card__header" },
         icon("list", 14),
         h("span", { class: "card__title", text: "Annotations" }),
+        // Secondary actions live in the header, not the footer. The footer is 380px
+        // minus padding and already holds a detail `<select>` whose widest option is
+        // 215px of it; a third control there squeezed "Copy report" onto two lines.
+        h(
+          "button",
+          {
+            class: "icon-button",
+            title: "Download the report as a .md file",
+            on: { click: () => callbacks.onDownload() },
+          },
+          icon("download", 14),
+        ),
         h(
           "button",
           {
@@ -76,32 +119,68 @@ export class Panel {
           icon("close", 14),
         ),
       ),
-      h("div", { class: "card__body" }, this.summary, this.list),
-      h("div", { class: "card__footer" }, this.select, h("span", { class: "spacer" }), this.copyButton),
+      h(
+        "div",
+        { class: "card__body" },
+        this.summary,
+        h("div", { class: "panel__filter" }, ...this.filterButtons.values()),
+        this.list,
+      ),
+      h(
+        "div",
+        { class: "card__footer" },
+        this.select,
+        h("span", { class: "spacer" }),
+        this.copyButton,
+      ),
     );
 
     layer.append(this.element);
   }
 
+  private setFilter(filter: Filter): void {
+    this.filter = filter;
+    for (const [candidate, button] of this.filterButtons) {
+      button.setAttribute("aria-pressed", String(candidate === filter));
+    }
+    this.render(this.annotations, this.detailLevel);
+  }
+
+  private visible(annotations: Annotation[]): Annotation[] {
+    if (this.filter === "open") return annotations.filter((item) => !isDone(item));
+    if (this.filter === "done") return annotations.filter((item) => isDone(item));
+    return annotations;
+  }
+
   render(annotations: Annotation[], detailLevel: OutputDetailLevel): void {
     const { callbacks } = this;
+    this.annotations = annotations;
+    this.detailLevel = detailLevel;
     this.select.value = detailLevel;
     this.copyButton.disabled = annotations.length === 0;
 
     clear(this.list);
 
-    if (!annotations.length) {
+    const shown = this.visible(annotations);
+
+    if (!shown.length) {
       this.list.append(
         h("div", {
           class: "empty",
-          text: "No annotations yet. Turn on inspect mode and click something.",
+          text: annotations.length
+            ? "Nothing in this filter."
+            : "No annotations yet. Turn on inspect mode and click something.",
         }),
       );
       return;
     }
 
-    annotations.forEach((annotation, index) => {
+    // Numbered against the full list, not the filtered view: note 3 has to stay note 3
+    // in the report whatever the panel is currently showing.
+    for (const annotation of shown) {
+      const number = annotations.indexOf(annotation) + 1;
       const source = formatSource(annotation.source);
+      const done = isDone(annotation);
 
       const body = h(
         "div",
@@ -111,22 +190,42 @@ export class Panel {
         h("div", { class: "entry__comment", text: annotation.comment }),
       );
 
+      const status = h(
+        "button",
+        {
+          class: "entry__status",
+          title: done ? "Mark as still open" : "Mark as done",
+          attrs: { "aria-pressed": String(done) },
+          on: {
+            click: (event) => {
+              // The row itself scrolls to the element and opens the editor; ticking
+              // a box must not also do that.
+              event.stopPropagation();
+              callbacks.onToggleStatus(annotation);
+            },
+          },
+        },
+        icon("check", 12),
+      );
+
       this.list.append(
         h(
           "div",
           {
             class: "entry",
+            dataset: { kind: kindOf(annotation), done: String(done) },
             on: {
               click: () => callbacks.onSelect(annotation),
               mouseenter: () => callbacks.onHoverChange(annotation),
               mouseleave: () => callbacks.onHoverChange(null),
             },
           },
-          h("span", { class: "entry__number", text: String(index + 1) }),
+          h("span", { class: "entry__number", text: String(number) }),
           body,
+          status,
         ),
       );
-    });
+    }
   }
 
   /**

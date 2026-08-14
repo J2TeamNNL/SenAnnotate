@@ -84,6 +84,13 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 await mkdir(OUT, { recursive: true });
 const { context, cleanup } = await launchWithExtension({ viewport: { width: 1280, height: 800 } });
+
+// Screenshot 5 is the *copied* report, read back off the clipboard — and a clipboard
+// read without this raises a permission prompt that nothing in a headed run answers,
+// so the script hangs forever instead of failing. `test/e2e.mjs` and
+// `test/verify-real-sites.mjs` both grant it; this one never did, which is why it
+// stopped silently after screenshot 3.
+await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
 const made = [];
 
 const shot = async (page, name, locator) => {

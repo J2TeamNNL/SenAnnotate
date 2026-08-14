@@ -51,11 +51,28 @@ That single fact forces the three-context split:
 |---|---|---|---|
 | `inspector.js` (IIFE) | MAIN, `document_start` | `src/inspector/` | framework detectors, motion freeze, diagnostics capture |
 | `content.js` (IIFE) | ISOLATED, `document_idle` | `src/content/` | shadow-DOM UI, element identification, storage, clipboard, screenshot crop |
+| ↳ same bundle, child frames | ISOLATED, `document_idle` | `src/content/frames.ts` | highlight + capture only; hands drafts up to the top frame |
 | `background.js` (ESM) | service worker | `src/background/` | `captureVisibleTab`, toolbar badge, keyboard command |
 | `popup.js` (IIFE) | popup page | `src/popup/` | settings |
 
 `src/shared/` is the only code all four import: `types.ts`, `protocol.ts` (wire protocol +
-storage keys), `output.ts` (the Markdown report).
+storage keys), `output.ts` (the Markdown report), `archive.ts` (export/import). Nothing in
+`popup/` or `background/` may import from `content/` — that inversion is what put
+`archive.ts` in `shared/` rather than next to `content/storage.ts`.
+
+**Both content scripts run with `all_frames: true`.** `src/content/index.ts` therefore
+ends in a branch, and it is the most important line in the file:
+
+```ts
+if (isTopFrame()) installTopFrame();
+else if (isFrameWorthInstrumenting()) installChildFrame(() => settings);
+```
+
+Everything with a side effect — `createUiRoot()`, the three UI constructors,
+`chrome.runtime.onMessage`, every `listen()`, `boot()` — lives inside `installTopFrame()`
+for that reason. Adding a new module-scope `listen(...)` or constructor to that file
+puts it in every iframe on the page: a second toolbar, a second answer to the popup's
+`get-status`, a second owner of the annotations. Put it inside `installTopFrame()`.
 
 Rules that fall out of this and are easy to violate:
 
@@ -98,8 +115,18 @@ round-trip, and works identically with no framework at all. Keep it that way.
 - **Every module opens with a banner comment explaining *why*, not what.** Match that density;
   the comments are load-bearing documentation here, not decoration.
 - **The e2e suite asserts on shadow-DOM class names** (`.tool--brand`, `.composer`,
-  `.stack-badge`, `.toolbar-hint`, `.count`, …). Renaming a class in `src/content/ui/` breaks
-  tests that look unrelated.
+  `.stack-badge`, `.toolbar-hint`, `.count`, …) *and* on the exact text of `.toolbar-hint`.
+  Renaming a class — or rewording a hint — in `src/content/ui/` breaks tests that look
+  unrelated.
+- **A fixture another block annotates cannot carry a count assertion.**
+  `chrome.storage.local` is shared across every page in the suite's single browser context
+  and annotations are keyed on `origin + pathname`, so a page opens with whatever an earlier
+  block left on it. Four assertions failed exactly this way in 0.6.0
+  (`docs/annotation-triage/changelog.md`); the fix is a fixture of your own.
+- **Never call a permission-gated API from the extension popup in the suite.**
+  `context.grantPermissions(…, { origin: base })` covers the fixture origin, not
+  `chrome-extension://`, and `navigator.clipboard.readText()` there raises a prompt nothing
+  answers — the suite *hangs* rather than failing. Drive the popup, observe from a page.
 - **Our UI must never deliver pointer events, or take focus, from the page.** `createUiRoot`
   stops nine pointer event types plus `focusin`/`focusout` at the shadow host, and cancels
   `mousedown` (text fields exempted) so a click takes no focus. Without these a toolbar click
@@ -136,13 +163,30 @@ manual gate before tagging (`docs/ci-cd/context.md` has the full argument).
 ```bash
 npm test                                    # 1. run it yourself
 # edit "version" in package.json            # 2. the only place that matters
+npm run changelog                           # 3. regenerate CHANGELOG.md
 git commit -am "chore: release 0.6.0"
-git tag v0.6.0 && git push && git push --tags   # 3. commit first, then the tag
+git tag v0.6.0 && git push && git push --tags   # 4. commit first, then the tag
 ```
 
 `release.yml` refuses to release if the tag and `package.json` disagree, before installing
 anything. To fix: correct `package.json`, then
 `git tag -d v0.6.0 && git push origin :refs/tags/v0.6.0`.
+
+It refuses for a second reason too: `node scripts/changelog.mjs --extract "$TAG"` runs in the
+same pre-install position, and exits non-zero when `CHANGELOG.md` has no section for the tag.
+Forgetting step 3 costs a deleted tag, not a bad release.
+
+**`CHANGELOG.md` is generated — never edit it.** `scripts/changelog.mjs` rebuilds the whole
+file from the tags and the Conventional Commit subjects between them, so a hand edit survives
+until the next release and no longer. The consequence worth internalising: **a commit subject
+is a release note.** `feat: screenshot markup, hover capture, triage, session reports and
+iframes` ships verbatim, as one bullet, for five features. Write the subject you would want to
+read in the release.
+
+The generator strips two kinds of bookkeeping from subjects — a trailing `; 0.5.3`, and a
+`release <version>` prefix on a `chore:` — and drops a commit whose subject is *only* the
+version bump. Anything it cannot parse lands in an `Other` section; if that section ever
+appears, the fix is the commit message, not the generator.
 
 ## Design record
 

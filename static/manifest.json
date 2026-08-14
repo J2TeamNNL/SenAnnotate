@@ -32,14 +32,14 @@
       "js": ["inspector.js"],
       "world": "MAIN",
       "run_at": "document_start",
-      "all_frames": false
+      "all_frames": true
     },
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "world": "ISOLATED",
       "run_at": "document_idle",
-      "all_frames": false
+      "all_frames": true
     }
   ],
   "commands": {

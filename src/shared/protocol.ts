@@ -21,6 +21,15 @@ export const BRIDGE_RESPONSE = `${NS}:response`;
 /** One-way, inspector → content. No request, no id. */
 export const BRIDGE_EVENT = `${NS}:event`;
 
+/**
+ * Third channel: top frame ↔ the content scripts running inside its iframes.
+ *
+ * Same transport as the MAIN↔ISOLATED bridge and for the same reason — an iframe's
+ * document is a different world with a different `elementFromPoint`, and only the
+ * script inside it can see what the pointer is actually over.
+ */
+export const FRAME_CHANNEL = `${NS}:frame`;
+
 /** Temporary marker used to hand an element reference across worlds. */
 export const PROBE_ATTR = `data-${NS}-probe`;
 /** Marks our own shadow host so page scripts and freeze CSS can exclude it. */

@@ -7,7 +7,7 @@
 // than viewport ones) is what lets them survive a reload.
 // =============================================================================
 
-import type { Annotation } from "../../shared/types";
+import { isDone, kindOf, type Annotation } from "../../shared/types";
 import { h } from "./dom";
 
 export interface MarkerCallbacks {
@@ -62,6 +62,11 @@ export class Markers {
       dot.textContent = String(index + 1);
       pin.title = annotation.comment;
       pin.style.display = visible ? "flex" : "none";
+
+      // Type is a hue, done is opacity. Two channels, so "done" never competes with
+      // "which kind" for the same one — and all of it lives in the stylesheet.
+      pin.dataset.kind = kindOf(annotation);
+      pin.dataset.done = String(isDone(annotation));
     });
 
     this.syncPositions();
