@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate fixture — settings card</title>
+    <style>
+      body { margin: 0; padding: 40px; font: 14px/1.5 system-ui, sans-serif; }
+      /* Room to the left of the card, which sits in the top-right corner. */
+      .target { width: 220px; padding: 16px; border: 1px solid #ccc; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <!-- Its own fixture, because this block annotates and then counts pins. Annotations
+         are keyed on origin + pathname and chrome.storage.local is shared across the
+         whole run, so a page another block has annotated cannot carry a count. -->
+    <main>
+      <h1 id="headline">Settings</h1>
+      <div class="target" id="target">A thing worth a pin.</div>
+    </main>
+  </body>
+</html>

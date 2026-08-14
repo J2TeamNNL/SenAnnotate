@@ -155,6 +155,17 @@ than trades off — and that a `grep` for a minified identifier is not a check a
 bundle. `context.md` lists the two gaps left open, the larger being that the
 `captureDiagnostics` setting does not gate the MAIN-world patch at all.
 
+## [`toolbar-settings/`](./toolbar-settings/) — unreleased
+
+Settings moved out of the popup and into a card behind a gear on the toolbar, with the
+help text behind tooltips. `brief.md` lists the five decisions and what each one costs —
+including the accepted hole: on `chrome://` pages there is no toolbar and therefore no
+way to reach any setting. `context.md` has the constraint that shaped the CSS twice over
+(Playwright counts `opacity: 0` as visible) and the `chrome.storage.sync` trap that makes
+a test block which flips real settings dangerous to every block after it. `changelog.md`
+records twenty minutes lost to reading event plumbing when the failing assertion, not the
+code, was wrong.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,

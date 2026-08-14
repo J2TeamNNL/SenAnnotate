@@ -1616,6 +1616,129 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // The settings card
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture: the block annotates and then counts pins, and annotations are
+    // keyed on origin + pathname in storage shared across the whole run.
+    //
+    // It also flips settings that live in chrome.storage.sync, which every other page in
+    // this context reads. Everything touched here is put back before the block ends —
+    // leaving `showMarkers` off would silently break every later `.marker` assertion,
+    // the same way a stray `toolbarCollapsed` would break every `.tool--brand` click.
+    const settingsPageUnderTest = await context.newPage();
+    await settingsPageUnderTest.goto(`${base}/settings.html`);
+    await settingsPageUnderTest.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const card = settingsPageUnderTest.locator(".settings");
+    const gear = settingsPageUnderTest.locator(".tool--settings");
+    const annotationsButton = settingsPageUnderTest.locator('.tool[title^="Annotations"]');
+
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    check("the gear opens the settings card", await card.isVisible());
+
+    // One slot, one card. Opening the panel has to take the settings card with it.
+    await annotationsButton.click();
+    await settingsPageUnderTest.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "opening the panel closes the settings card",
+      (await card.count()) === 0,
+      `${await card.count()} cards`,
+    );
+
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "opening settings closes the panel",
+      (await settingsPageUnderTest.locator(".panel").count()) === 0,
+      `${await settingsPageUnderTest.locator(".panel").count()} panels`,
+    );
+
+    // The help is the only explanation a setting gets, so it has to be reachable by
+    // keyboard as well as by pointer — hence a button rather than a span.
+    const tooltip = settingsPageUnderTest.locator(".tooltip");
+    await settingsPageUnderTest.locator('.settings .hint-dot').first().hover();
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("hovering the help dot shows a tooltip", await tooltip.isVisible());
+
+    await settingsPageUnderTest.locator('.settings .hint-dot').first().evaluate((el) => el.blur());
+    await settingsPageUnderTest.mouse.move(10, 400);
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("leaving the help dot hides it again", !(await tooltip.isVisible()));
+
+    await settingsPageUnderTest.locator('.settings .hint-dot').first().focus();
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("focusing the help dot shows the tooltip too", await tooltip.isVisible());
+    await settingsPageUnderTest.keyboard.press("Escape");
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("Escape dismisses the tooltip", !(await tooltip.isVisible()));
+
+    // A toggle has to change the page, not just the checkbox.
+    await gear.click();
+    await settingsPageUnderTest.waitForTimeout(300);
+    await settingsPageUnderTest.locator(".tool--brand").click();
+    await settingsPageUnderTest.locator("#target").click();
+    await settingsPageUnderTest.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.keyboard.type("A pin to switch off.");
+    await settingsPageUnderTest.locator(".composer .button--primary").click();
+    await settingsPageUnderTest.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    // `:visible`, not a bare count: `markers.ts` sets `display: none` on the pins rather
+    // than removing them, and Playwright's `count()` counts hidden nodes perfectly well.
+    check(
+      "the note is pinned while showMarkers is on",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 1,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.locator('.settings [data-setting="showMarkers"]').click();
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "turning off numbered pins removes them from the page",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 0,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+
+    await settingsPageUnderTest.reload();
+    await settingsPageUnderTest.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await settingsPageUnderTest.waitForTimeout(600); // settings load is async
+    check(
+      "the setting survives a reload",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 0,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+
+    // Collapsing takes the card with it, exactly as it takes the panel.
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.locator(".tool--collapse").click();
+    await settingsPageUnderTest.waitForTimeout(400);
+    check(
+      "collapsing closes the settings card",
+      (await card.count()) === 0,
+      `${await card.count()} cards`,
+    );
+    await settingsPageUnderTest.locator(".tool--collapse").click();
+    await settingsPageUnderTest.waitForTimeout(300);
+
+    // Put it back. Everything after this point assumes the shipped defaults.
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.locator('.settings [data-setting="showMarkers"]').click();
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "the block restored showMarkers before leaving",
+      (await settingsPageUnderTest.locator(".marker:visible").count()) === 1,
+      `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
+    );
+    await gear.click();
+    await settingsPageUnderTest.close();
+
+    // -------------------------------------------------------------------------
     // Collapse — the toolbar must get out of the way
     // -------------------------------------------------------------------------
     //
@@ -1968,46 +2091,68 @@ async function main() {
         return accented.locator(".highlight").first().evaluate((el) => getComputedStyle(el).borderColor);
       };
 
-      const settingsPage = await context.newPage();
-      await settingsPage.goto(`chrome-extension://${accentExtensionId}/popup.html`);
-      await settingsPage.locator("#accent-presets .swatch").first().waitFor({
-        state: "visible",
-        timeout: 10_000,
-      });
+      // The accent is picked in the toolbar's settings card now, not in the popup.
+      // The popup is still opened below, to prove it wears a colour it no longer chooses.
+      const openSettings = async () => {
+        await accented.locator(".tool--settings").click();
+        await accented.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+      };
+      const closeSettings = async () => {
+        await accented.locator(".tool--settings").click();
+        await accented.locator(".settings").waitFor({ state: "detached", timeout: 5_000 });
+      };
+
+      await openSettings();
       check(
-        "the popup offers the presets and a free picker",
-        (await settingsPage.locator("#accent-presets .swatch").count()) === 6 &&
-          (await settingsPage.locator("#accent-custom").count()) === 1,
-        `${await settingsPage.locator("#accent-presets .swatch").count()} swatches`,
+        "the settings card offers the presets and a free picker",
+        (await accented.locator(".settings .swatch").count()) === 6 &&
+          (await accented.locator(".settings .accent-custom").count()) === 1,
+        `${await accented.locator(".settings .swatch").count()} swatches`,
       );
 
       // A preset, by its title rather than its position, so reordering the list does not
       // silently change what this asserts.
-      await settingsPage.locator('#accent-presets .swatch[title="Blue"]').click();
-      await settingsPage.waitForTimeout(400);
+      await accented.locator('.settings .swatch[title="Blue"]').click();
+      await accented.waitForTimeout(400);
       check(
-        "a preset recolours the overlay in an open tab",
+        "a preset recolours the overlay",
         (await resolved("--sa-accent")) === "rgb(59, 130, 246)",
         `--sa-accent resolved to ${await resolved("--sa-accent")}`,
       );
+
+      // The card sits over the right of the page; the hover check needs it gone.
+      await closeSettings();
       check(
         "the highlight is drawn in the chosen colour",
         (await hoverHighlight()) === "rgb(59, 130, 246)",
         `border read ${await hoverHighlight()}`,
       );
+
+      // Opened after the change, because the popup reads settings once at load. It no
+      // longer writes any — this is the read half, and it still has to hold.
+      const settingsPage = await context.newPage();
+      await settingsPage.goto(`chrome-extension://${accentExtensionId}/popup.html`);
+      await settingsPage.locator("#pages").waitFor({ state: "attached", timeout: 10_000 });
       check(
-        "the popup recolours itself too",
+        "the popup wears the accent it no longer picks",
         (await settingsPage.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--accent").trim())) ===
           "#3b82f6",
         await settingsPage.evaluate(() =>
           getComputedStyle(document.documentElement).getPropertyValue("--accent").trim(),
         ),
       );
+      check(
+        "the popup no longer carries settings controls of its own",
+        (await settingsPage.locator("#detail, #props, #accent-presets").count()) === 0,
+        `${await settingsPage.locator("#detail, #props, #accent-presets").count()} stale controls`,
+      );
 
       // A dark colour is the case a "darken it" derivation gets wrong: the ink is text
       // drawn *on* the accent, so on navy it has to come out light, not black-on-black.
-      await settingsPage.locator("#accent-custom").fill("#0b3d91");
-      await settingsPage.waitForTimeout(400);
+      await openSettings();
+      await accented.locator(".settings .accent-custom").fill("#0b3d91");
+      await accented.waitForTimeout(400);
+      await closeSettings();
       const ink = await resolved("--sa-accent-ink");
       // A `color-mix()` result comes back as `color(srgb 0.82 0.86 0.92)`, not as
       // `rgb(…)` — the channels are already 0-1 there, and only the plain form needs
@@ -2071,8 +2216,10 @@ async function main() {
         `getBadgeBackgroundColor returned ${JSON.stringify(badge)}`,
       );
 
-      await settingsPage.locator("#accent-reset").click();
-      await settingsPage.waitForTimeout(400);
+      await openSettings();
+      await accented.locator(".settings .link-button").click();
+      await accented.waitForTimeout(400);
+      await closeSettings();
       check(
         "Reset puts the shipped colour back, with no inline override left behind",
         (await resolved("--sa-accent")) === "rgb(249, 115, 22)" &&

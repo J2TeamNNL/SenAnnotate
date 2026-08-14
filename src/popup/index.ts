@@ -1,41 +1,21 @@
 // =============================================================================
-// Extension popup — status and settings
+// Extension popup — status, pages, and the archive
+// =============================================================================
+//
+// Settings used to live here and now live in the toolbar's settings card, next to the
+// page they describe. What is left is the work that is genuinely *across* pages and has
+// no home inside any one of them: which pages hold notes, the session report, and
+// export/import.
+//
+// The popup still reads settings — it paints itself from `theme` and `accentColor` —
+// but no longer writes any. One owner, one writer.
 // =============================================================================
 
-import { ACCENT_PRESETS, DEFAULT_ACCENT, accentTheme } from "../shared/accent";
+import { accentTheme } from "../shared/accent";
 import { clearAllPages, exportAll, importAll } from "../shared/archive";
 import { generateSessionOutput } from "../shared/output";
 import { SETTINGS_KEY, type RuntimeMessage, type RuntimeResponse } from "../shared/protocol";
-import {
-  DEFAULT_SETTINGS,
-  OUTPUT_DETAIL_OPTIONS,
-  type Annotation,
-  type ComponentDetectionMode,
-  type OutputDetailLevel,
-  type ScreenshotDelivery,
-  type Settings,
-  type ThemePreference,
-} from "../shared/types";
-
-const COMPONENT_OPTIONS: { value: ComponentDetectionMode; label: string }[] = [
-  { value: "filtered", label: "Skip framework plumbing" },
-  { value: "smart", label: "Only names matching the DOM" },
-  { value: "all", label: "Every component" },
-  { value: "off", label: "Off (fastest)" },
-];
-
-const SCREENSHOT_OPTIONS: { value: ScreenshotDelivery; label: string }[] = [
-  { value: "path", label: "Link to the saved file" },
-  { value: "embed", label: "Embed in the report" },
-];
-
-const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
-  { value: "auto", label: "Match system" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-];
-
-// -----------------------------------------------------------------------------
+import { DEFAULT_SETTINGS, type Annotation, type Settings } from "../shared/types";
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 
@@ -43,14 +23,6 @@ const statusBox = $("status");
 const statusText = $("status-text");
 const statusCount = $("status-count");
 const toggleButton = $<HTMLButtonElement>("toggle");
-const detailSelect = $<HTMLSelectElement>("detail");
-const componentSelect = $<HTMLSelectElement>("components");
-const propsCheckbox = $<HTMLInputElement>("props");
-const diagnosticsCheckbox = $<HTMLInputElement>("diagnostics");
-const markersCheckbox = $<HTMLInputElement>("markers");
-const freezeCheckbox = $<HTMLInputElement>("freeze");
-const shotSelect = $<HTMLSelectElement>("shot");
-const themeSelect = $<HTMLSelectElement>("theme");
 const clearButton = $<HTMLButtonElement>("clear");
 const pagesBox = $("pages");
 const copySessionButton = $<HTMLButtonElement>("copy-session");
@@ -58,33 +30,14 @@ const exportButton = $<HTMLButtonElement>("export");
 const importButton = $<HTMLButtonElement>("import");
 const importInput = $<HTMLInputElement>("import-file");
 const archiveHint = $("archive-hint");
-const accentPresets = $("accent-presets");
-const accentCustom = $<HTMLInputElement>("accent-custom");
-const accentReset = $<HTMLButtonElement>("accent-reset");
 /** Preset colour → its button, so the current one can be marked without a re-render. */
-const swatches = new Map<string, HTMLButtonElement>();
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
 
-function fill(select: HTMLSelectElement, options: { value: string; label: string }[]): void {
-  for (const option of options) {
-    const node = document.createElement("option");
-    node.value = option.value;
-    node.textContent = option.label;
-    select.append(node);
-  }
-}
 
-fill(
-  detailSelect,
-  OUTPUT_DETAIL_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
-);
-fill(componentSelect, COMPONENT_OPTIONS);
-fill(shotSelect, SCREENSHOT_OPTIONS);
-fill(themeSelect, THEME_OPTIONS);
 
 // -----------------------------------------------------------------------------
-// Settings
+// Settings — read only
 // -----------------------------------------------------------------------------
 
 async function loadSettings(): Promise<void> {
@@ -95,14 +48,6 @@ async function loadSettings(): Promise<void> {
     settings = { ...DEFAULT_SETTINGS };
   }
 
-  detailSelect.value = settings.detailLevel;
-  componentSelect.value = settings.componentMode;
-  propsCheckbox.checked = settings.includeProps;
-  diagnosticsCheckbox.checked = settings.captureDiagnostics;
-  markersCheckbox.checked = settings.showMarkers;
-  freezeCheckbox.checked = settings.freezeOnInspect;
-  shotSelect.value = settings.screenshotDelivery;
-  themeSelect.value = settings.theme;
   applyAccent();
 }
 
@@ -111,76 +56,17 @@ async function loadSettings(): Promise<void> {
 // -----------------------------------------------------------------------------
 
 /**
- * Recolour the popup itself and mark which swatch is current.
+ * Recolour the popup itself.
  *
- * The popup is its own document with its own `--accent`, so it does not inherit anything
- * from the overlay — but a settings screen that picks a colour and then keeps its own
- * primary button orange reads as a bug rather than as scope.
+ * The popup is its own document with its own `--accent`, so it inherits nothing from the
+ * overlay. It no longer *picks* the colour — the settings card does — but it still has
+ * to wear it, or the accent you chose would stop at the edge of the page.
  */
 function applyAccent(): void {
   const { accent, ink } = accentTheme(settings.accentColor);
   document.documentElement.style.setProperty("--accent", accent);
   document.documentElement.style.setProperty("--accent-ink", ink);
-
-  accentCustom.value = accent;
-  for (const [value, button] of swatches) {
-    button.setAttribute("aria-pressed", String(value === accent));
-  }
 }
-
-for (const { value, label } of ACCENT_PRESETS) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "swatch";
-  button.title = label;
-  button.style.background = value;
-  button.setAttribute("aria-label", label);
-  button.setAttribute("aria-pressed", "false");
-  button.addEventListener("click", () => void patch({ accentColor: value }).then(applyAccent));
-  swatches.set(value, button);
-  accentPresets.append(button);
-}
-
-// `input`, not `change`: the native picker streams the colour while it is being dragged,
-// and waiting for the dialog to close makes choosing a colour feel like it did nothing.
-accentCustom.addEventListener("input", () => {
-  void patch({ accentColor: accentCustom.value }).then(applyAccent);
-});
-
-accentReset.addEventListener("click", () => {
-  void patch({ accentColor: DEFAULT_ACCENT }).then(applyAccent);
-});
-
-async function patch(update: Partial<Settings>): Promise<void> {
-  settings = { ...settings, ...update };
-  try {
-    await chrome.storage.sync.set({ [SETTINGS_KEY]: settings });
-  } catch {
-    // sync unavailable — the change still applies for this session via the
-    // storage.onChanged path, which simply will not fire. Nothing to recover.
-  }
-}
-
-detailSelect.addEventListener("change", () =>
-  void patch({ detailLevel: detailSelect.value as OutputDetailLevel }),
-);
-componentSelect.addEventListener("change", () =>
-  void patch({ componentMode: componentSelect.value as ComponentDetectionMode }),
-);
-propsCheckbox.addEventListener("change", () => void patch({ includeProps: propsCheckbox.checked }));
-diagnosticsCheckbox.addEventListener("change", () =>
-  void patch({ captureDiagnostics: diagnosticsCheckbox.checked }),
-);
-markersCheckbox.addEventListener("change", () => void patch({ showMarkers: markersCheckbox.checked }));
-freezeCheckbox.addEventListener("change", () =>
-  void patch({ freezeOnInspect: freezeCheckbox.checked }),
-);
-shotSelect.addEventListener("change", () =>
-  void patch({ screenshotDelivery: shotSelect.value as ScreenshotDelivery }),
-);
-themeSelect.addEventListener("change", () =>
-  void patch({ theme: themeSelect.value as ThemePreference }),
-);
 
 // -----------------------------------------------------------------------------
 // Active tab

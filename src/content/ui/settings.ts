@@ -158,6 +158,10 @@ export class SettingsCard {
     // it, and a second look for the same widget would be a bug you can see.
     const select = h("select", {
       class: "select setting-row__control",
+      // Named after the setting it writes. Four selects sharing one class would be
+      // indistinguishable to a test, and to anyone reading the DOM to work out which
+      // row is misbehaving.
+      attrs: { "data-setting": String(key) },
       on: { change: () => this.emit({ [key]: select.value } as unknown as Partial<Settings>) },
     });
 
@@ -171,7 +175,7 @@ export class SettingsCard {
 
   private toggle(key: keyof Settings, label: string, help: string): HTMLElement {
     const input = h("input", {
-      attrs: { type: "checkbox" },
+      attrs: { type: "checkbox", "data-setting": String(key) },
       on: { change: () => this.emit({ [key]: input.checked } as unknown as Partial<Settings>) },
     });
 

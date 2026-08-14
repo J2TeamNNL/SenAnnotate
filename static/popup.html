@@ -319,58 +319,10 @@
 
     <button class="primary" id="toggle" disabled>Toggle inspect mode</button>
 
-    <h2>Report</h2>
-    <div class="field">
-      <label for="detail">Detail level</label>
-      <select id="detail"></select>
-    </div>
-    <div class="field">
-      <label for="components">Components</label>
-      <select id="components"></select>
-    </div>
-    <div class="field">
-      <label for="props">Include component props</label>
-      <input type="checkbox" id="props" />
-    </div>
-    <div class="field">
-      <label for="shot">Screenshots</label>
-      <select id="shot"></select>
-    </div>
-    <p class="hint">
-      <strong>File path</strong> keeps the report small and names where the PNG was
-      saved, which a coding agent can open. <strong>Embedded</strong> puts a smaller
-      copy inside the Markdown so it survives a paste into Slack or Jira.
+    <p class="hint hint--pointer">
+      Settings moved into the toolbar — open any page you can annotate and click the
+      <strong>gear</strong>. They apply everywhere, so you only have to set them once.
     </p>
-
-    <h2>Bug reports</h2>
-    <div class="field">
-      <label for="diagnostics">Capture errors &amp; steps</label>
-      <input type="checkbox" id="diagnostics" />
-    </div>
-    <p class="hint">
-      Records console errors, failed requests and the steps you took, and attaches
-      them when you copy. Values you type are never recorded.
-    </p>
-
-    <h2>Behaviour</h2>
-    <div class="field">
-      <label for="markers">Show numbered pins</label>
-      <input type="checkbox" id="markers" />
-    </div>
-    <div class="field">
-      <label for="freeze">Freeze animations on inspect</label>
-      <input type="checkbox" id="freeze" />
-    </div>
-    <div class="field">
-      <label for="theme">Theme</label>
-      <select id="theme"></select>
-    </div>
-    <div class="field">
-      <label for="accent-custom">Accent colour</label>
-      <div class="swatches" id="accent-presets"></div>
-      <input type="color" id="accent-custom" title="Pick any colour" />
-      <button type="button" class="link-button" id="accent-reset">Reset</button>
-    </div>
 
     <h2>Pages</h2>
     <div id="pages" class="pages"></div>
