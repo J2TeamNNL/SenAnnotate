@@ -177,12 +177,6 @@ button {
   border-radius: 999px;
 }
 
-/* Inspect mode survives a collapse, so it still needs to be legible on the handle. */
-.toolbar-dock[data-collapsed="true"][data-inspecting="true"] .toolbar {
-  border-color: var(--sa-accent);
-  box-shadow: var(--sa-shadow), 0 0 0 2px color-mix(in srgb, var(--sa-accent) 45%, transparent);
-}
-
 /*
  * Circular to match the pill it has become. Without this the hover fill and the
  * browser's keyboard focus ring stay rounded-square, and a square ring drawn around

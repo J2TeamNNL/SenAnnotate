@@ -191,11 +191,12 @@ export class Toolbar {
   }
 
   /**
-   * Collapsing is a display change and nothing more: inspect mode, freeze and the
-   * annotations all carry on. Which is why `data-inspecting` goes on the dock — with
-   * the label gone, the handle is the only thing left that can say inspect mode is
-   * armed, and an unmarked handle would leave the next page click opening a composer
-   * for no visible reason.
+   * Collapsing takes inspect mode and the panel with it — see `toggleCollapsed`. The
+   * annotations and the freeze carry on.
+   *
+   * `data-inspecting` therefore no longer needs to make an armed handle legible; that
+   * state cannot occur. It stays because it is the one readable signal of `active` on
+   * the dock, which is what the e2e suite reads inspect mode off.
    */
   private applyCollapse({ collapsed, active, count }: ToolbarState): void {
     this.element.dataset.collapsed = String(collapsed);

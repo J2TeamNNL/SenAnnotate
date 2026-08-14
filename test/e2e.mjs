@@ -846,6 +846,10 @@ async function main() {
     );
     await modal.keyboard.press("h");
 
+    // Collapsing took inspect mode with it and expanding does not hand it back, so it
+    // has to be asked for again before the modal can be annotated.
+    await modal.locator(".tool--brand").click();
+
     // The point of all of the above: the modal can actually be annotated.
     await modal.locator(".dialog-body").click();
     await modal.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
@@ -1634,7 +1638,12 @@ async function main() {
     await collapseBrand.click(); // inspect on, so the hint line is showing too
     await collapseHint.waitFor({ state: "visible", timeout: 5_000 });
 
+    // Open too, so the collapse has something to close.
+    await collapsed.locator('.tool[title^="Annotations"]').click();
+    await collapsed.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+
     await handle.click();
+    await collapsed.waitForTimeout(200);
 
     check("collapsing hides the toolbar controls", !(await collapseBrand.isVisible()));
     check("collapsing hides the hint line", !(await collapseHint.isVisible()));
@@ -1643,12 +1652,25 @@ async function main() {
       (await pill.isVisible()) && (await handle.isVisible()),
     );
 
-    // A pill that shrank to a logo has nothing left saying inspect mode is armed,
-    // which would leave the next page click opening a composer out of nowhere.
+    // Collapsing is "get out of the way", not merely "get smaller". Inspect mode armed
+    // behind a logo is what made the next page click open a composer out of nowhere,
+    // and an open panel is the other thing a collapse would leave floating.
     check(
-      "the collapsed handle still marks inspect mode as on",
-      (await dock.getAttribute("data-inspecting")) === "true",
+      "collapsing turns inspect mode off",
+      (await dock.getAttribute("data-inspecting")) === "false",
       `data-inspecting read "${await dock.getAttribute("data-inspecting")}"`,
+    );
+    check(
+      "collapsing closes an open panel",
+      (await collapsed.locator(".panel").count()) === 0,
+      `${await collapsed.locator(".panel").count()} panels`,
+    );
+
+    await collapsed.locator("#card-a").click();
+    await collapsed.waitForTimeout(200);
+    check(
+      "a page click after collapsing belongs to the page again",
+      (await collapsed.locator(".composer").count()) === 0,
     );
 
     const handleBox = await handle.boundingBox();
@@ -1664,14 +1686,25 @@ async function main() {
       !(await handleCount.isVisible()),
     );
 
-    // Collapsing is a display change, not a mode change.
+    // Expanding restores nothing on its own — inspect mode has to be asked for again,
+    // which is the half of the asymmetry worth pinning.
+    await collapsed.keyboard.press("h");
+    await collapsed.waitForTimeout(200);
+    check(
+      "expanding does not turn inspect mode back on",
+      (await dock.getAttribute("data-inspecting")) === "false",
+      `data-inspecting read "${await dock.getAttribute("data-inspecting")}"`,
+    );
+
+    await collapseBrand.click();
     await collapsed.locator("#card-a").click();
     await collapsed.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
-    check("a collapsed toolbar still annotates", await collapsed.locator(".composer").isVisible());
-    await collapsed.locator(".composer__input").fill("Noted while the toolbar was collapsed.");
+    await collapsed.locator(".composer__input").fill("Noted before the toolbar collapsed.");
     await collapsed.locator(".composer .button--primary").click();
     await collapsed.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
+    await handle.click();
+    await collapsed.waitForTimeout(200);
     check(
       "the collapsed handle carries the annotation count",
       ((await handleCount.textContent())?.trim() ?? "") === "1",

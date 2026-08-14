@@ -316,12 +316,31 @@ function togglePanel(force?: boolean): void {
  * the page being reviewed does not put the pill back over the corner you were
  * looking at. `onSettingsChanged` carries it to the other open tabs for free.
  */
+/**
+ * Collapse means get out of the way, not merely get smaller.
+ *
+ * Inspect mode and the panel go with it. Leaving inspect armed behind a logo was the
+ * older behaviour and it had a sharp edge: the toolbar you had just dismissed was still
+ * intercepting every click on the page, so the next one opened a composer for no reason
+ * the screen could explain. An open panel is the other thing a collapse would otherwise
+ * leave floating over the page it was supposed to clear.
+ *
+ * Expanding restores neither. Turning inspect mode back on for someone is the same
+ * surprise in the other direction — the state you get back should be the one you asked
+ * for, and `h` only asks for the toolbar.
+ */
 function toggleCollapsed(force?: boolean): void {
   const next = force ?? !settings.toolbarCollapsed;
   if (next === settings.toolbarCollapsed) return;
 
   settings = { ...settings, toolbarCollapsed: next };
   void saveSettings(settings);
+
+  if (next) {
+    setActive(false);
+    togglePanel(false);
+  }
+
   render();
 }
 
