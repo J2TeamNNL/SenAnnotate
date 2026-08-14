@@ -126,6 +126,11 @@ export class SettingsCard {
           "Freeze animations on inspect",
           "Parks animations and timers as soon as inspect mode goes on, so a menu or a carousel holds still long enough to annotate.",
         ),
+        this.toggle(
+          "clearOnCopy",
+          "Clear after copying",
+          "Empties the page's annotations once a copy has reached the clipboard, ready for the next round. Off by default — a failed copy never clears.",
+        ),
         this.hideUntilRestartRow(),
 
         this.group("Appearance"),

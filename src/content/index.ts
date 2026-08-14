@@ -674,17 +674,32 @@ function buildReport(): string {
 }
 
 function copyReport(): void {
-  if (!annotations.length) return;
+  // Read before the clipboard call, not inside the callback: `clearOnCopy` empties
+  // the list by the time the toast is written, and the toast should report what was
+  // copied rather than what is left.
+  const count = annotations.length;
+  if (!count) return;
 
   const markdown = buildReport();
 
   void copyText(markdown, ui.shadow).then((copied) => {
-    ui.toast(
-      copied
-        ? `Copied ${annotations.length} annotation${annotations.length === 1 ? "" : "s"}`
-        : "Copy failed",
-      copied ? "success" : "error",
-    );
+    if (!copied) {
+      ui.toast("Copy failed", "error");
+      return;
+    }
+
+    const noun = `${count} annotation${count === 1 ? "" : "s"}`;
+
+    // Only ever on a confirmed write. Clearing on the strength of having *asked* for
+    // a copy would, the one time the clipboard refuses, throw the session away with
+    // nothing to show for it — and `copyText` has a fallback path that can fail.
+    if (settings.clearOnCopy) {
+      wipeAnnotations();
+      ui.toast(`Copied ${noun} · cleared`, "success");
+      return;
+    }
+
+    ui.toast(`Copied ${noun}`, "success");
   });
 }
 
@@ -802,17 +817,27 @@ async function deliverScreenshot(
   void persist();
 }
 
-function clearAll(): void {
-  if (!annotations.length) return;
+/**
+ * Drop every annotation, and the diagnostics gathered alongside them.
+ *
+ * The trail goes too: keeping steps and errors from a bug you already filed would
+ * attach them to the next, unrelated report. Deliberately silent — its two callers
+ * are a deliberate "clear all" and the tail of a successful copy, and those want to
+ * say quite different things.
+ */
+function wipeAnnotations(): void {
   annotations = [];
   closeComposer();
-  // Clear the trail too: keeping steps and errors from a bug you already filed
-  // would attach them to the next, unrelated report.
   clearActions();
   diagnosticsCache = null;
   void clearDiagnostics();
   void persist();
   render();
+}
+
+function clearAll(): void {
+  if (!annotations.length) return;
+  wipeAnnotations();
   ui.toast("All annotations cleared");
 }
 

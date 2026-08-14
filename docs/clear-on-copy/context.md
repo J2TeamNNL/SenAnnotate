@@ -1,0 +1,67 @@
+# Context — clear after copying
+
+## Why this is the only automatic way annotations are destroyed
+
+This landed as the first slice of a larger batch of overlay work, and the batch
+originally carried a second destructive path: a close button that also wiped the
+annotations, mirroring `agentation`'s `X` — *"Clear all annotations"*.
+
+That was cut deliberately. Annotations persist to `chrome.storage.local` and there is
+no undo. A close button is pressed reflexively and often — to see the page underneath,
+to get the pill off a cookie bar — and binding a reflex to an irreversible wipe of the
+session's work is a trap regardless of how the button is labelled.
+
+So the rule the rest of this batch inherits: **closing, collapsing, leaving inspect
+mode and reloading all keep the annotations.** Only two things remove them — the
+explicit "Clear all" in the panel, and this setting, which is off until asked for.
+
+Worth noting `agentation` splits them the same way in practice: `Esc` closes the
+toolbar, `X` clears, and they are separate keys. The upstream settings panel carries
+this feature as **"Clear on copy/send" — *"Automatically clear annotations after
+copying"*, default off**, which is where the name and the default come from.
+
+## Only on a confirmed write
+
+`copyReport()` clears inside `copyText().then()`, gated on the resolved boolean, never
+before the call. This is not defensive padding: `copyText` has a fallback path for when
+`navigator.clipboard` is unavailable or refuses, and it can return `false`. Clearing on
+the strength of *having asked* for a copy means the one time the clipboard says no, the
+session is gone and there is nothing on the clipboard to paste.
+
+The count is also read *before* the copy, not inside the callback. By the time the
+toast is written the list is empty, and `Copied 0 annotations` would be a lie about
+the thing that just succeeded.
+
+## Copy only, not download
+
+0.6.0 added `downloadReport()` — the same Markdown as a `.md` file, for reports too
+large to be worth pasting. Clearing deliberately does not follow it.
+
+The argument for including it is real: a downloaded report is just as "handed over" as
+a copied one, and `agentation` names its equivalent setting **"Clear on copy/send"**,
+which covers both. The argument against won: the checkbox says *Clear after copying*,
+and a setting that also fires on a button it does not name is a setting that destroys
+work by surprise. If download should clear too, the label has to change first — and
+that is a decision about wording, not a detail to slip in behind one.
+
+## There is no copy shortcut
+
+This feature originally carried one — `C`, on the grounds that copying was the only
+frequent action with no key. It was cut when the work was rebased onto 0.6.0, which had
+meanwhile bound `C` to `captureHovered()`: annotate whatever the pointer is over,
+*without* clicking, because a click is the one thing that closes the dropdown or tooltip
+you were trying to report.
+
+That is a much better use of the key. Copying already has a button that is visible
+whenever the panel is open; hover-capture has no mouse equivalent at all, because using
+the mouse is what destroys the state. Nothing was rebound to compensate — a second-choice
+letter for an action that already has a discoverable button is not worth the collision
+risk with whatever 0.7 wants next.
+
+## Shared with the rest of the batch
+
+`clearAll()` was split into `wipeAnnotations()` (silent) and a caller that toasts, so
+copy-then-clear and clear-all cannot drift on *what* clearing means — in particular
+that both drop the diagnostics buffer and the action trail alongside the annotations.
+The reasoning there is unchanged and predates this work: steps and errors from a bug
+you already filed would otherwise attach themselves to the next, unrelated report.

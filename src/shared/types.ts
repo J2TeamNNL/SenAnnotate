@@ -319,6 +319,15 @@ export interface Settings {
    */
   captureDiagnostics: boolean;
   /**
+   * Wipe the annotations once a copy has actually reached the clipboard.
+   *
+   * Off by default, and deliberately the *only* automatic way annotations are
+   * destroyed: a report you have handed to your agent is finished, but a report
+   * you have not is the whole session's work. Nothing else — closing the overlay,
+   * leaving inspect mode — may clear it.
+   */
+  clearOnCopy: boolean;
+  /**
    * Shrink the toolbar to a single handle. Persisted rather than session-only so
    * that reviewing a page whose bottom-right corner matters — a chat widget, a
    * cookie bar — does not mean re-collapsing after every reload.
@@ -343,6 +352,7 @@ export const DEFAULT_SETTINGS: Settings = {
   includeProps: true,
   maxComponents: 6,
   captureDiagnostics: true,
+  clearOnCopy: false,
   toolbarCollapsed: false,
   screenshotDelivery: "path",
   accentColor: DEFAULT_ACCENT,

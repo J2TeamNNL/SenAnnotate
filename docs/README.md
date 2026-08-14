@@ -204,6 +204,15 @@ mostly about the one real decision — `sessionStorage`, not `chrome.storage`, b
 state is per-tab and per-session — and why there is deliberately no in-tab way back.
 `changelog.md` has the miscounting-test wrong turn: a hidden node still counts.
 
+## [`clear-on-copy/`](./clear-on-copy/) — unreleased
+
+Copying the report can now empty the page's annotations, so the next round starts clean.
+Its `context.md` is the one to read for the rule the rest of the overlay inherits: **only
+two things ever remove annotations** — the explicit "Clear all" and this setting. A close
+button that also cleared was designed and then cut, and the argument is recorded there
+rather than lost. Its `changelog.md` records the copy shortcut this feature originally
+carried, and the 0.6.0 binding it collided with.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,
