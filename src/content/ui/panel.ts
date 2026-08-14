@@ -10,7 +10,7 @@ import {
   type Annotation,
   type OutputDetailLevel,
 } from "../../shared/types";
-import { clear, h, icon } from "./dom";
+import { clear, dismissCard, h, icon } from "./dom";
 
 /** What the list is showing. Panel-local: it is a view, not a stored preference. */
 type Filter = "all" | "open" | "done";
@@ -258,25 +258,7 @@ export class Panel {
     this.summary.title = "Included automatically when you copy the report";
   }
 
-  /**
-   * Fades out before it goes, rather than vanishing mid-frame.
-   *
-   * The caller drops its reference synchronously, so from everywhere else the panel is
-   * already gone — this node is nothing but the tail of the animation. It is marked
-   * `data-leaving` so a panel reopened before the animation ends can clear it, and it
-   * stops taking pointer events immediately: a card you can still click after asking
-   * for it to close is worse than one that snaps away.
-   *
-   * The timeout is not belt-and-braces. `animationend` never fires if the animation is
-   * cancelled — a display change on an ancestor is enough — and a stranded panel would
-   * sit over the page forever.
-   */
   destroy(): void {
-    if (this.element.dataset.leaving === "true") return;
-    this.element.dataset.leaving = "true";
-
-    const remove = () => this.element.remove();
-    this.element.addEventListener("animationend", remove, { once: true });
-    window.setTimeout(remove, 400);
+    dismissCard(this.element);
   }
 }
