@@ -75,7 +75,9 @@ import {
 } from "./ui/marquee";
 import { Overlay } from "./ui/overlay";
 import { Panel } from "./ui/panel";
+import { SettingsCard } from "./ui/settings";
 import { createUiRoot, type UiRoot } from "./ui/root";
+import { installTooltips } from "./ui/tooltip";
 import { ShotEditor } from "./ui/shot-editor";
 import { Toolbar } from "./ui/toolbar";
 
@@ -156,6 +158,7 @@ let overlay!: Overlay;
 let markers!: Markers;
 let toolbar!: Toolbar;
 let panel: Panel | null = null;
+let settingsCard: SettingsCard | null = null;
 
 /**
  * Build the chrome. Top frame only — a second toolbar inside every iframe is both
@@ -163,6 +166,7 @@ let panel: Panel | null = null;
  */
 function createTopUi(): void {
   ui = createUiRoot();
+  installTooltips(ui.cardLayer);
   overlay = new Overlay(ui.overlayLayer);
 
   markers = new Markers(ui.markerLayer, {
@@ -192,9 +196,28 @@ function createTopUi(): void {
     },
     onToggleFreeze: () => toggleFreeze(),
     onTogglePanel: () => togglePanel(),
+    onToggleSettings: () => toggleSettings(),
     onToggleCollapse: () => toggleCollapsed(),
   });
 }
+
+const settingsCallbacks = {
+  onClose: () => toggleSettings(false),
+  onChange: (patch: Partial<Settings>) => {
+    // Changing the detail level moves `componentMode` to its preset, exactly as the
+    // panel's own detail select does. A suggestion, not a lock: the components row can
+    // be set to anything afterwards and stays there until the level changes again.
+    const derived =
+      patch.detailLevel !== undefined
+        ? { componentMode: DETAIL_TO_COMPONENT_MODE[patch.detailLevel] }
+        : {};
+
+    settings = { ...settings, ...derived, ...patch };
+    void saveSettings(settings);
+    applyAppearance();
+    render();
+  },
+};
 
 const panelCallbacks = {
   onClose: () => togglePanel(false),
@@ -233,12 +256,14 @@ function render(): void {
     mode,
     frozen,
     panelOpen,
+    settingsOpen: !!settingsCard,
     collapsed: settings.toolbarCollapsed,
     count: annotations.length,
     page,
   });
   markers.render(annotations, settings.showMarkers && !!annotations.length);
   panel?.render(annotations, settings.detailLevel);
+  settingsCard?.render(settings);
   void notifyBadge();
 }
 
@@ -294,9 +319,32 @@ async function toggleFreeze(force?: boolean): Promise<void> {
   render();
 }
 
+/**
+ * The settings card and the annotations panel share one slot, so opening either closes
+ * the other. Two cards stacked in the same 380px column is not a layout, and finding
+ * room for both would mean giving one of them a permanently worse home.
+ */
+function toggleSettings(force?: boolean): void {
+  const next = force ?? !settingsCard;
+  if (next === !!settingsCard) return;
+
+  if (next) {
+    togglePanel(false);
+    settingsCard = new SettingsCard(ui.cardLayer, settingsCallbacks);
+    settingsCard.render(settings);
+  } else {
+    settingsCard?.destroy();
+    settingsCard = null;
+  }
+
+  render();
+}
+
 function togglePanel(force?: boolean): void {
   const next = force ?? !panelOpen;
   panelOpen = next;
+
+  if (panelOpen) toggleSettings(false);
 
   if (panelOpen && !panel) {
     panel = new Panel(ui.cardLayer, panelCallbacks);
@@ -339,6 +387,7 @@ function toggleCollapsed(force?: boolean): void {
   if (next) {
     setActive(false);
     togglePanel(false);
+    toggleSettings(false);
   }
 
   render();

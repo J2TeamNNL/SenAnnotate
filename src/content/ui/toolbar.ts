@@ -10,6 +10,7 @@ export interface ToolbarState {
   mode: InspectMode;
   frozen: boolean;
   panelOpen: boolean;
+  settingsOpen: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -21,6 +22,7 @@ export interface ToolbarCallbacks {
   onModeChange(mode: InspectMode): void;
   onToggleFreeze(): void;
   onTogglePanel(): void;
+  onToggleSettings(): void;
   onToggleCollapse(): void;
 }
 
@@ -50,6 +52,7 @@ export class Toolbar {
   private readonly modeGroup: HTMLElement;
   private readonly freezeButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
+  private readonly settingsButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
   private readonly countBadge: HTMLElement;
   /**
@@ -120,6 +123,17 @@ export class Toolbar {
       this.countBadge,
     );
 
+    this.settingsButton = h(
+      "button",
+      {
+        class: "tool tool--settings",
+        title: "Settings",
+        attrs: { "aria-pressed": "false" },
+        on: { click: () => callbacks.onToggleSettings() },
+      },
+      icon("gear"),
+    );
+
     this.stackBadge = h("span", { class: "stack-badge", style: { display: "none" } });
 
     // Both icons live in the button and the stylesheet picks one. `update()` runs on
@@ -156,6 +170,7 @@ export class Toolbar {
       h("span", { class: "divider" }),
       this.freezeButton,
       this.panelButton,
+      this.settingsButton,
       this.collapseButton,
     );
 
@@ -183,6 +198,7 @@ export class Toolbar {
 
     this.freezeButton.setAttribute("aria-pressed", String(state.frozen));
     this.panelButton.setAttribute("aria-pressed", String(state.panelOpen));
+    this.settingsButton.setAttribute("aria-pressed", String(state.settingsOpen));
 
     this.countBadge.textContent = String(state.count);
     this.countBadge.style.display = state.count > 0 ? "inline-flex" : "none";
