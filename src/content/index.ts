@@ -119,6 +119,13 @@ let marqueeFrame = 0;
 /** Elements the composer is currently about — kept live for screenshotting. */
 let composerTargets: Element[] = [];
 
+/**
+ * Elements gathered by shift-clicking, waiting for <kbd>Enter</kbd> to become one
+ * annotation. Empty the rest of the time, and emptying it is always safe — nothing
+ * here has been captured yet.
+ */
+let pendingSelection: Element[] = [];
+
 // -----------------------------------------------------------------------------
 // UI
 // -----------------------------------------------------------------------------
@@ -156,6 +163,7 @@ function createTopUi(): void {
     onToggleActive: () => setActive(!active),
     onModeChange: (next) => {
       mode = next;
+      clearPendingSelection();
       resetMarquee();
       overlay.hideAll();
       render();
@@ -226,6 +234,7 @@ function setActive(next: boolean): void {
   if (active && !page?.detected) void ensureDetection();
 
   if (!active) {
+    clearPendingSelection();
     resetMarquee();
     overlay.hideAll();
     hoveredElement = null;
@@ -685,6 +694,83 @@ function eligible(element: Element): boolean {
   return isAnnotatable(element) && !isOurUi(element) && !isLiveChildFrame(element);
 }
 
+// --- shift-click selection ---------------------------------------------------
+//
+// The marquee answers "annotate this region"; this answers "annotate these four
+// things", which a rectangle cannot express when they are scattered — a label in
+// one column and the input three columns over, two buttons at opposite ends of a
+// toolbar. Same destination as a drag: one annotation covering several elements.
+
+/**
+ * Repaint the pending set, plus whatever the pointer is over.
+ *
+ * Deliberately unlabelled and in the marquee's `preview` style: every box here is
+ * an equal member of one selection, and the drag already established that look for
+ * exactly this meaning. Skipping the label also skips `updateHover`'s bridge round
+ * trip on every move while a selection is being gathered.
+ */
+function paintPendingSelection(hovering?: Element | null): void {
+  const rects = pendingSelection.map((element) => element.getBoundingClientRect());
+  if (hovering && !pendingSelection.includes(hovering)) {
+    rects.push(hovering.getBoundingClientRect());
+  }
+
+  overlay.showHighlights(rects, undefined, { preview: true });
+
+  const count = pendingSelection.length;
+  toolbar.setHint(
+    count === MAX_MARQUEE_ELEMENTS
+      ? `${count} elements (limit) · Enter to annotate · Esc to clear`
+      : `${count} element${count === 1 ? "" : "s"} selected · shift-click to add · Enter to annotate`,
+  );
+}
+
+/** Shift-click is a toggle, so a mis-click costs one more click and not the set. */
+function togglePendingSelection(element: Element): void {
+  const index = pendingSelection.indexOf(element);
+  if (index >= 0) {
+    pendingSelection.splice(index, 1);
+  } else {
+    // Same ceiling as the marquee. Past it the report stops being a report.
+    if (pendingSelection.length >= MAX_MARQUEE_ELEMENTS) {
+      ui.toast(`${MAX_MARQUEE_ELEMENTS} elements is the limit`, "error");
+      return;
+    }
+    // An ancestor and its own descendant in one annotation describes the same
+    // pixels twice; the marquee solves this by keeping only the outermost, and
+    // clicking is explicit enough that replacing is friendlier than refusing.
+    pendingSelection = pendingSelection.filter(
+      (existing) => !existing.contains(element) && !element.contains(existing),
+    );
+    pendingSelection.push(element);
+  }
+
+  if (!pendingSelection.length) {
+    clearPendingSelection();
+    return;
+  }
+  paintPendingSelection();
+}
+
+function clearPendingSelection(): void {
+  if (!pendingSelection.length) return;
+  pendingSelection = [];
+  overlay.hideHighlights();
+  toolbar.setHint(null);
+}
+
+/** Hand the gathered set to the composer, in document order rather than click order. */
+function commitPendingSelection(): void {
+  const elements = pendingSelection.filter((element) => element.isConnected);
+  clearPendingSelection();
+  if (!elements.length) return;
+
+  elements.sort((a, b) =>
+    a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+  );
+  void beginAnnotation(elements);
+}
+
 
 
 // --- marquee -----------------------------------------------------------------
@@ -740,7 +826,15 @@ function queueSync(): void {
   requestAnimationFrame(() => {
     syncQueued = false;
     markers.syncPositions();
-    if (!composer && hoveredElement && active && mode === "point") {
+    if (composer || !active || mode !== "point") return;
+
+    // A pending selection outlives a scroll, so its boxes have to follow the page
+    // the way the markers do — otherwise they sit where the elements used to be.
+    if (pendingSelection.length) {
+      paintPendingSelection(hoveredElement);
+      return;
+    }
+    if (hoveredElement) {
       overlay.showHighlights([hoveredElement.getBoundingClientRect()], hoverLabel ?? undefined);
     }
   });
@@ -866,12 +960,23 @@ function installTopFrame(): void {
 
       const target = document.elementFromPoint(event.clientX, event.clientY);
       if (!target || !eligible(target)) {
-        overlay.hideHighlights();
+        if (pendingSelection.length) paintPendingSelection();
+        else overlay.hideHighlights();
         hoveredElement = null;
         hoverLabel = null;
         return;
       }
       if (target === hoveredElement) return;
+
+      // Mid-selection the hover highlight is a preview of what shift-click would
+      // add, not a lookup — so it joins the set's own boxes instead of replacing
+      // them, and skips the bridge call that would only feed a label nobody sees.
+      if (pendingSelection.length) {
+        hoveredElement = target;
+        paintPendingSelection(target);
+        return;
+      }
+
       void updateHover(target);
     },
     { passive: true },
@@ -893,6 +998,16 @@ function installTopFrame(): void {
       if (mode !== "point") return;
       const target = document.elementFromPoint(event.clientX, event.clientY);
       if (!target || !eligible(target)) return;
+
+      if (event.shiftKey) {
+        togglePendingSelection(target);
+        return;
+      }
+
+      // A plain click is a fresh start, the way it is everywhere else that has
+      // shift-select. The set is discarded rather than annotated: nothing in it
+      // has been captured, so there is no work to lose.
+      clearPendingSelection();
       void beginAnnotation([target]);
     },
     { capture: true },
@@ -1002,6 +1117,12 @@ function installTopFrame(): void {
         closeComposer();
         return;
       }
+      // Before `setActive`, so Escape backs out of a half-built selection rather
+      // than leaving inspect mode and taking the selection with it silently.
+      if (pendingSelection.length) {
+        clearPendingSelection();
+        return;
+      }
       if (active) {
         setActive(false);
         return;
@@ -1026,21 +1147,32 @@ function installTopFrame(): void {
 
     if (!active) return;
 
+    // Checked before the switch, where Enter otherwise means `captureHovered()`.
+    // Mid-selection the set is what you are pointing at, not whatever the pointer
+    // happens to be resting on when you reach for the key.
+    if (keyboard.key === "Enter" && pendingSelection.length) {
+      commitPendingSelection();
+      return;
+    }
+
     switch (keyboard.key) {
       case "1":
         mode = "point";
+        clearPendingSelection();
         resetMarquee();
         overlay.hideAll();
         render();
         break;
       case "2":
         mode = "text";
+        clearPendingSelection();
         resetMarquee();
         overlay.hideAll();
         render();
         break;
       case "3":
         mode = "area";
+        clearPendingSelection();
         resetMarquee();
         overlay.hideAll();
         render();

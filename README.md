@@ -129,6 +129,7 @@ the line and column.
 | Annotate what you are hovering | <kbd>C</kbd> — no click, so the menu stays open |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements | mode <kbd>3</kbd>, then drag a box around them |
+| …when a box will not do | shift-click each one, then <kbd>Enter</kbd> |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button |

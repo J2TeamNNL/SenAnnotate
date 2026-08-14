@@ -117,6 +117,13 @@ and a release that fails before installing anything when its tag has no section.
 `context.md` reverses the "generated release notes are enough" call made in
 `ci-cd/brief.md` and says what changed to justify that.
 
+## [`shift-multiselect/`](./shift-multiselect/) — 0.7.0
+
+Shift-click gathers scattered elements into one annotation, for the selections a
+marquee cannot draw — a label in one column and its input three columns over. Its
+`changelog.md` is worth reading for the four teardown paths the state needed and the
+one that is only visible if you scroll mid-selection.
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from
