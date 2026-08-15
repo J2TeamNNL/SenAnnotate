@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate fixture — React controlled input</title>
+    <style>
+      body { font: 14px system-ui; margin: 0; padding: 24px; }
+      .field { display: block; padding: 8px; width: 260px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      A controlled React input, the shape that leaks: React attaches the live host props
+      to the DOM node, and for `<input value={state}>` those props carry the typed text.
+      Its own fixture so the redaction check annotates without contaminating the shared
+      react-app.html, and so it can carry a value that must never appear in a report.
+    -->
+    <div id="root">
+      <input class="field" type="password" value="hunter2-should-never-ship" />
+    </div>
+
+    <script>
+      window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+        renderers: new Map([[1, { version: "18.3.1" }]]),
+      };
+
+      const FIBER_KEY = "__reactFiber$inp7x";
+      const PROPS_KEY = "__reactProps$inp7x";
+
+      const parent = {
+        elementType: { name: "LoginForm" },
+        type: { name: "LoginForm" },
+        return: null,
+        _debugSource: { fileName: "/build/app/src/LoginForm.jsx", lineNumber: 20, columnNumber: 5 },
+      };
+
+      const input = document.querySelector(".field");
+      // The host fiber sits on the input itself, so findOwner resolves to the input and
+      // reads these props — value included.
+      input[FIBER_KEY] = {
+        elementType: "input",
+        type: "input",
+        return: parent,
+        _debugSource: { fileName: "/build/app/src/LoginForm.jsx", lineNumber: 22, columnNumber: 7 },
+      };
+      input[PROPS_KEY] = {
+        value: "hunter2-should-never-ship",
+        type: "password",
+        name: "password",
+        placeholder: "Password",
+      };
+      document.querySelector("#root")[FIBER_KEY] = {
+        elementType: "div",
+        type: "div",
+        return: parent,
+        _debugSource: null,
+      };
+    </script>
+  </body>
+</html>

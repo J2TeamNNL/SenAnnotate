@@ -30,6 +30,8 @@ import { attachTooltip, hideTooltip } from "./tooltip";
 export interface SettingsCallbacks {
   onClose(): void;
   onChange(patch: Partial<Settings>): void;
+  /** Hide the whole overlay in this tab until the tab is closed. Not a stored setting. */
+  onHideUntilRestart(): void;
 }
 
 type Option = { value: string; label: string };
@@ -124,6 +126,7 @@ export class SettingsCard {
           "Freeze animations on inspect",
           "Parks animations and timers as soon as inspect mode goes on, so a menu or a carousel holds still long enough to annotate.",
         ),
+        this.hideUntilRestartRow(),
 
         this.group("Appearance"),
         this.select("theme", "Theme", "The overlay's own colours. Match system follows your browser.", THEME_OPTIONS),
@@ -201,6 +204,25 @@ export class SettingsCard {
     return this.row(
       label,
       help,
+      h("label", { class: "switch" }, input, h("span", { class: "switch__track" })),
+    );
+  }
+
+  /**
+   * Not in the `switches` map and not a `Settings` key: this is a per-tab, per-session
+   * act, not a preference. Flipping it hides the card it lives in, so the control is
+   * never seen in its "on" state — the row is a button wearing a switch's clothes,
+   * which is also how the reference design presents it.
+   */
+  private hideUntilRestartRow(): HTMLElement {
+    const input = h("input", {
+      attrs: { type: "checkbox", "data-action": "hide-until-restart" },
+      on: { change: () => this.callbacks.onHideUntilRestart() },
+    });
+
+    return this.row(
+      "Hide until restart",
+      "Hides the toolbar and everything else in this tab. It stays hidden here — reloads included — until the tab is closed; other tabs are untouched.",
       h("label", { class: "switch" }, input, h("span", { class: "switch__track" })),
     );
   }
