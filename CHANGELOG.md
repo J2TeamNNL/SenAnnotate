@@ -10,7 +10,24 @@ matching the tag being released and refuses to publish without one.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] — unreleased
+## [0.8.0] — unreleased
+
+[Compare with v0.7.0](https://github.com/thangnm93/SenAnnotate/compare/v0.7.0...v0.8.0)
+
+### Added
+
+- Hide until restart; redact field values from props; drop forged iframe drafts (52708d7)
+- show the extension version in the settings card (6607926)
+
+### Fixed
+
+- open the settings card beside the toolbar, and inline the accent row (3408e68)
+
+### Documentation
+
+- record Hide until restart and the props-value redaction (c9a82d5)
+
+## [0.7.0] — 2026-08-14
 
 [Compare with v0.6.1](https://github.com/thangnm93/SenAnnotate/compare/v0.6.1...v0.7.0)
 
