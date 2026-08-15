@@ -204,7 +204,7 @@ export class SettingsCard {
 
     return h(
       "div",
-      { class: "setting-row setting-row--stacked" },
+      { class: "setting-row" },
       this.labelFor(
         "Accent colour",
         "Colours the overlay, the pins and the markup pen. The two shades either side of it are derived, so one colour is all you pick.",
