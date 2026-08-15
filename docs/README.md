@@ -212,6 +212,17 @@ two things ever remove annotations** — the explicit "Clear all" and this setti
 button that also cleared was designed and then cut, and the argument is recorded there
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
+## [`design-edits/`](./design-edits/) — unreleased
+
+"Tighten this and make it feel less heavy" makes the agent invent the numbers, and the
+reviewer never found out whether their own idea was right. Thirteen properties can now be
+tried on the real element from inside the composer, and what they settled on reaches the
+report as a `from → to` table. Its `context.md` states the rule the whole feature is built
+around and the one place it diverges from the tool it was modelled on: **the preview is a
+loan**. It is undone whenever the composer closes, saving included, down to removing a
+`style` attribute left empty — a reviewer testing against a change that exists in no
+codebase is worse served than one who saw it for a minute.
+
 
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
