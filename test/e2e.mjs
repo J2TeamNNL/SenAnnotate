@@ -3228,6 +3228,35 @@ async function main() {
         `${parsed?.pages?.length ?? 0} pages exported`,
       );
 
+      // The shareable copy: one HTML file, readable by someone with no extension.
+      const shared = popup
+        .waitForEvent("download", { timeout: 15_000 })
+        .then((download) => download.path())
+        .catch(() => null);
+      await popup.locator("#share").click();
+      const sharePath = await shared;
+      const shareHtml = sharePath ? await readFile(sharePath, "utf8") : "";
+
+      check("the popup saves a shareable HTML file", typeof sharePath === "string");
+      check(
+        "the shared file carries the notes",
+        /Clicking this does nothing/.test(shareHtml),
+        `${shareHtml.length} bytes written`,
+      );
+      check(
+        "the shared file loads nothing from the network",
+        shareHtml.length > 0 &&
+          !/<script/i.test(shareHtml) &&
+          !/(src|href)="(?!data:)(https?:)?\/\//i.test(shareHtml),
+        "an external reference or a script survived into the shared file",
+      );
+      // The one field that is scraped off the page and interpolated into HTML.
+      check(
+        "an element name cannot close a tag in the shared file",
+        !/<h3 class="note__title">[^<]*<(?!\/h3)/.test(shareHtml),
+        "an element name reached the document unescaped",
+      );
+
       // A file that is not ours must be refused rather than written into storage.
       const junk = join(profile, "not-an-export.json");
       await writeFile(junk, JSON.stringify({ hello: "world" }), "utf8");
@@ -3267,6 +3296,62 @@ async function main() {
           `${await triage.locator(".entry").count()} entries after import`,
         );
       }
+
+      // A review captured somewhere else — staging, production, a colleague's machine —
+      // lands on a key this browser will never open unless the origin is rewritten.
+      const foreign = join(profile, "foreign-origin.json");
+      await writeFile(
+        foreign,
+        JSON.stringify({
+          format: "senannotate/annotations",
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          pages: [
+            {
+              page: "https://staging.example.test/triage.html",
+              annotations: [
+                {
+                  id: "remap-check",
+                  comment: "Captured on staging",
+                  element: "body",
+                  elementPath: "body",
+                  selector: "body",
+                  x: 10,
+                  y: 10,
+                  isFixed: false,
+                  timestamp: Date.now(),
+                },
+              ],
+            },
+          ],
+        }),
+        "utf8",
+      );
+
+      // Clicks are avoided on purpose: `activeTabOrigin` reads the *active* tab, and
+      // clicking anything in the popup would make the popup itself that tab.
+      await popup.evaluate(() => {
+        document.getElementById("import-remap").checked = true;
+      });
+      await triage.bringToFront();
+      await popup.locator("#import-file").setInputFiles(foreign);
+      await popup.waitForTimeout(600);
+
+      check(
+        "a remapped import says which origin it landed on",
+        (await popup.locator("#archive-hint").textContent())?.includes(`moved onto ${base}`) ?? false,
+        `hint read "${(await popup.locator("#archive-hint").textContent())?.trim() ?? ""}"`,
+      );
+
+      await triage.reload();
+      await triage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+      await triage.locator('.tool[title^="Annotations"]').click();
+      await triage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "a note captured on another origin arrives on this one",
+        (await triage.locator(".entry").count()) === 3,
+        `${await triage.locator(".entry").count()} entries after the remapped import`,
+      );
 
       await popup.close();
     }
