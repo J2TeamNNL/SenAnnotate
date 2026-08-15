@@ -53,6 +53,7 @@ import {
   downloadBlob,
   downloadPath,
   encodeForEmbed,
+  encodeSuppliedImage,
 } from "./screenshot";
 import { resolveSource } from "./source";
 import {
@@ -579,16 +580,28 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
       elementCount: draft.elementBoundingBoxes?.length,
       initialComment: existing?.comment,
       initialKind: existing?.kind,
+      initialImages: existing?.referenceImages ?? draft.referenceImages,
     },
     {
-      onSubmit: (comment, kind: AnnotationKind) => {
+      onSubmit: (comment, kind: AnnotationKind, referenceImages: string[]) => {
+        // Undefined rather than an empty array: it keeps the stored shape identical to
+        // what every annotation written before this feature looks like.
+        const images = referenceImages.length ? referenceImages : undefined;
         if (existing) {
           existing.comment = comment;
           existing.kind = kind;
+          existing.referenceImages = images;
         } else {
           annotations = [
             ...annotations,
-            { ...draft, id: newId(), comment, kind, timestamp: Date.now() } as Annotation,
+            {
+              ...draft,
+              id: newId(),
+              comment,
+              kind,
+              referenceImages: images,
+              timestamp: Date.now(),
+            } as Annotation,
           ];
         }
         closeComposer();
@@ -598,6 +611,7 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
       },
       onCancel: () => closeComposer(),
       onScreenshot: () => void captureScreenshot(existing ?? draft),
+      onAttach: (files) => void attachReferenceImages(files),
       onDelete: existing
         ? () => {
             annotations = annotations.filter((item) => item.id !== existing.id);
@@ -609,6 +623,36 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
         : undefined,
     },
   );
+}
+
+/**
+ * Encode pasted or picked images and hand them to the open composer.
+ *
+ * The composer collects them rather than the annotation: nothing is written until the
+ * note is saved, so a paste into a composer you then cancel leaves no trace — the same
+ * contract the typed comment already has.
+ */
+async function attachReferenceImages(files: File[]): Promise<void> {
+  if (!composer || !files.length) return;
+
+  const encoded = (await Promise.all(files.map((file) => encodeSuppliedImage(file)))).filter(
+    (uri): uri is string => uri !== null,
+  );
+
+  if (!encoded.length) {
+    ui.toast("Could not read that image", "error");
+    return;
+  }
+
+  // `composer` is checked again: encoding is async, and Esc during it is not rare.
+  const kept = composer?.addReferenceImages(encoded) ?? 0;
+  composer?.focus();
+
+  if (!kept) {
+    ui.toast("Three reference images is the limit", "error");
+    return;
+  }
+  ui.toast(`Attached ${kept} image${kept === 1 ? "" : "s"}`);
 }
 
 function closeComposer(): void {

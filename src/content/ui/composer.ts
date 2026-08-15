@@ -16,12 +16,18 @@ export interface ComposerData {
   elementCount?: number;
   initialComment?: string;
   initialKind?: AnnotationKind;
+  initialImages?: string[];
 }
 
 export interface ComposerCallbacks {
-  onSubmit(comment: string, kind: AnnotationKind): void;
+  onSubmit(comment: string, kind: AnnotationKind, referenceImages: string[]): void;
   onCancel(): void;
   onScreenshot(): void;
+  /**
+   * Files the user pasted or picked. Encoding them is the orchestrator's job — this
+   * layer draws, and does not know what a canvas is for.
+   */
+  onAttach(files: File[]): void;
   onDelete?(): void;
 }
 
@@ -29,11 +35,23 @@ const WIDTH = 380;
 const GAP = 12;
 const EDGE = 12;
 
+/**
+ * Ceiling on reference images per note.
+ *
+ * Not a storage limit — `fitToQuota` owns that. It is a "you are describing one change"
+ * limit: past three pictures the note is a mood board, and the strip stops fitting
+ * across a 380px card without wrapping into something that needs a scroller.
+ */
+const MAX_REFERENCE_IMAGES = 3;
+
 export class Composer {
   readonly element: HTMLElement;
   private readonly textarea: HTMLTextAreaElement;
   private readonly teardown: Array<() => void> = [];
   private readonly kindButtons = new Map<AnnotationKind, HTMLButtonElement>();
+  private readonly strip: HTMLElement;
+  private readonly fileInput: HTMLInputElement;
+  private images: string[];
   private kind: AnnotationKind;
 
   constructor(
@@ -43,6 +61,20 @@ export class Composer {
     callbacks: ComposerCallbacks,
   ) {
     this.kind = data.initialKind ?? "ui";
+    this.images = [...(data.initialImages ?? [])];
+
+    this.strip = h("div", { class: "composer__images" });
+    this.fileInput = h("input", {
+      class: "composer__file",
+      attrs: { type: "file", accept: "image/*", multiple: "" },
+      on: {
+        change: () => {
+          callbacks.onAttach([...(this.fileInput.files ?? [])]);
+          // The same file twice in a row would not fire `change` without this.
+          this.fileInput.value = "";
+        },
+      },
+    });
 
     this.textarea = h("textarea", {
       class: "composer__input",
@@ -111,6 +143,15 @@ export class Composer {
         },
         icon("camera", 14),
       ),
+      h(
+        "button",
+        {
+          class: "button button--ghost button--attach",
+          title: "Attach a reference image — or just paste one",
+          on: { click: () => this.fileInput.click() },
+        },
+        icon("image", 14),
+      ),
       submit,
     );
 
@@ -132,9 +173,11 @@ export class Composer {
           icon("close", 14),
         ),
       ),
-      h("div", { class: "card__body" }, meta, kinds, this.textarea),
+      h("div", { class: "card__body" }, meta, kinds, this.textarea, this.strip, this.fileInput),
       footer,
     );
+
+    this.renderImages();
 
     layer.append(this.element);
     this.position(anchor);
@@ -154,6 +197,26 @@ export class Composer {
       }),
     );
 
+    // Paste is the point of this feature — a screenshot from another window, a Figma
+    // frame, a competitor's page — and the file picker is only the fallback for an
+    // image that is already on disk. It is listened for on the whole card rather than
+    // on the textarea: an image on the clipboard is not text, so wherever the caret
+    // happens to be is not information.
+    this.teardown.push(
+      listen(this.element, "paste", (event) => {
+        const items = [...((event as ClipboardEvent).clipboardData?.items ?? [])];
+        const files = items
+          .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+          .map((item) => item.getAsFile())
+          .filter((file): file is File => file !== null);
+
+        if (!files.length) return;
+        // Only once there is an image: a plain text paste has to keep working.
+        event.preventDefault();
+        callbacks.onAttach(files);
+      }),
+    );
+
     // Keystrokes inside the composer must never reach the page's own shortcuts.
     for (const type of ["keydown", "keyup", "keypress"] as const) {
       this.teardown.push(listen(this.element, type, (event) => event.stopPropagation()));
@@ -165,6 +228,49 @@ export class Composer {
   /** Put the caret back after something else — the markup editor — borrowed focus. */
   focus(): void {
     this.textarea.focus();
+  }
+
+  /**
+   * Hand back encoded images. Returns how many were kept, so the caller can say when
+   * the cap swallowed some rather than leaving the user wondering.
+   */
+  addReferenceImages(uris: string[]): number {
+    const room = MAX_REFERENCE_IMAGES - this.images.length;
+    const kept = uris.slice(0, Math.max(0, room));
+    this.images = [...this.images, ...kept];
+    this.renderImages();
+    return kept.length;
+  }
+
+  private renderImages(): void {
+    this.strip.replaceChildren(
+      ...this.images.map((uri, index) => {
+        const thumb = h("img", {
+          class: "composer__thumb",
+          attrs: { src: uri, alt: `Reference image ${index + 1}` },
+        });
+
+        return h(
+          "div",
+          { class: "composer__image" },
+          thumb,
+          h(
+            "button",
+            {
+              class: "composer__image-remove",
+              title: "Remove this image",
+              on: {
+                click: () => {
+                  this.images = this.images.filter((_, at) => at !== index);
+                  this.renderImages();
+                },
+              },
+            },
+            icon("close", 10),
+          ),
+        );
+      }),
+    );
   }
 
   private selectKind(kind: AnnotationKind): void {
@@ -182,7 +288,7 @@ export class Composer {
       this.textarea.focus();
       return;
     }
-    callbacks.onSubmit(comment, this.kind);
+    callbacks.onSubmit(comment, this.kind, this.images);
   }
 
   private metaRow(key: string, value: string, accent = false): HTMLElement {

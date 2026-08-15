@@ -99,6 +99,38 @@ export function encodeForEmbed(canvas: HTMLCanvasElement): string | null {
 }
 
 /**
+ * Take an image the user supplied — pasted or attached — and put it through the same
+ * downscale-and-re-encode the captured screenshots go through.
+ *
+ * Necessary rather than tidy: a Figma frame off the clipboard arrives as a full-size
+ * PNG, and three of them would fill the page's whole storage budget on their own. The
+ * ceiling is the same 900px, so a reference image and a screenshot cost the same and
+ * `fitToQuota` has one size of thing to reason about.
+ *
+ * `createObjectURL` rather than a `FileReader` data URL: the file is decoded straight
+ * into a canvas and the base64 round trip in between would be pure cost.
+ */
+export async function encodeSuppliedImage(file: Blob): Promise<string | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(url);
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0);
+
+    return encodeForEmbed(canvas);
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
  * Save a blob to the user's downloads.
  *
  * An anchor with `download`, deliberately — `chrome.downloads` would work but costs

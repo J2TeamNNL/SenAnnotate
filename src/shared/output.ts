@@ -229,7 +229,35 @@ function renderAnnotation(
   }
 
   lines.push(...renderScreenshot(annotation));
+  lines.push(...renderReferences(annotation));
   lines.push(`**Feedback:** ${annotation.comment}`, "");
+  return lines;
+}
+
+/**
+ * The images the user supplied, under a heading that says what they are *for*.
+ *
+ * "Reference" and the sentence after it are the whole feature. A screenshot and a
+ * target rendered under one heading leave the reader to guess which is which, and the
+ * cost of guessing wrong is an agent implementing the current state on purpose.
+ *
+ * The nudge about design tokens is deliberate too: an agent handed a picture will
+ * otherwise reach for literal hex values, where the repo it is editing has a variable
+ * for that colour.
+ */
+function renderReferences(annotation: Annotation): string[] {
+  const images = annotation.referenceImages ?? [];
+  if (!images.length) return [];
+
+  const alt = annotation.element.replace(/[[\]]/g, "");
+  const lines = [
+    `**Reference — how it should look, not how it looks now (${images.length}):**`,
+    "",
+  ];
+  images.forEach((uri, index) => {
+    lines.push(`![${alt} — reference ${index + 1}](${uri})`, "");
+  });
+  lines.push("_Match this using the project's own tokens or utility classes, not the literal values._", "");
   return lines;
 }
 
