@@ -1695,9 +1695,28 @@ async function main() {
       `card says "${shownVersion}", manifest says "${manifestVersion}"`,
     );
 
+    // Neither card may cover the toolbar's hint line. Inspect mode adds that line above
+    // the pill, so a card whose bottom stops at the pill's clearance overlaps it — both
+    // cards did, by 22px, and both are now lifted by the same sibling rule.
+    const clearsTheHint = async (selector) => {
+      await settingsPageUnderTest.waitForTimeout(250);
+      return settingsPageUnderTest.evaluate((sel) => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        const card = root.querySelector(sel);
+        const hint = root.querySelector(".toolbar-hint");
+        if (!card || !hint) return null;
+        return card.getBoundingClientRect().bottom <= hint.getBoundingClientRect().top;
+      }, selector);
+    };
+
+    await settingsPageUnderTest.locator(".tool--brand").click(); // inspect on → hint shows
+    check("the settings card clears the hint line", (await clearsTheHint(".settings")) === true);
+
     // One slot, one card. Opening the panel has to take the settings card with it.
     await annotationsButton.click();
     await settingsPageUnderTest.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    check("the panel clears the hint line too", (await clearsTheHint(".panel")) === true);
+    await settingsPageUnderTest.locator(".tool--brand").click(); // inspect back off
     await settingsPageUnderTest.waitForTimeout(300);
     check(
       "opening the panel closes the settings card",
