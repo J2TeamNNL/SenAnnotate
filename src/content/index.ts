@@ -330,7 +330,11 @@ function toggleSettings(force?: boolean): void {
 
   if (next) {
     togglePanel(false);
-    settingsCard = new SettingsCard(ui.cardLayer, settingsCallbacks);
+    settingsCard = new SettingsCard(
+      ui.cardLayer,
+      settingsCallbacks,
+      chrome.runtime.getManifest().version,
+    );
     settingsCard.render(settings);
   } else {
     settingsCard?.destroy();

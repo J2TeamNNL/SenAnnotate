@@ -1077,6 +1077,18 @@ kbd {
   overflow-y: auto;
 }
 
+/* Right-aligned and quiet: it is a fact to look up, not something to read past. */
+.settings__footer {
+  justify-content: flex-end;
+  padding: 7px 12px;
+}
+
+.settings__version {
+  color: var(--sa-fg-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
 .settings__group {
   margin: 14px 0 6px;
   color: var(--sa-fg-muted);

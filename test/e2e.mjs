@@ -1638,6 +1638,25 @@ async function main() {
     await card.waitFor({ state: "visible", timeout: 5_000 });
     check("the gear opens the settings card", await card.isVisible());
 
+    // The version is handed to the card rather than read inside it, so an empty or stale
+    // string is a real possibility and nothing else on screen would show it.
+    //
+    // Read from `dist/manifest.json` here, not from the page: `chrome.runtime` does not
+    // exist in the page's main world, which is where `page.evaluate` runs. The built
+    // manifest is what Chrome actually loaded, and `build.mjs` stamps it from
+    // package.json — so this also catches a build that shipped a stale version.
+    const shownVersion = (
+      await settingsPageUnderTest.locator(".settings__version").textContent()
+    )?.trim();
+    const manifestVersion = JSON.parse(
+      await readFile(join(DIST, "manifest.json"), "utf8"),
+    ).version;
+    check(
+      "the card names the version that is actually running",
+      shownVersion === `SenAnnotate ${manifestVersion}`,
+      `card says "${shownVersion}", manifest says "${manifestVersion}"`,
+    );
+
     // One slot, one card. Opening the panel has to take the settings card with it.
     await annotationsButton.click();
     await settingsPageUnderTest.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });

@@ -42,7 +42,18 @@ export class SettingsCard {
   private readonly swatches = new Map<string, HTMLButtonElement>();
   private readonly accentCustom: HTMLInputElement;
 
-  constructor(layer: HTMLElement, private readonly callbacks: SettingsCallbacks) {
+  /**
+   * `version` is passed in rather than read here.
+   *
+   * Nothing else in `ui/` touches `chrome.*`, and the one fact this card needs from the
+   * extension API is a string that never changes — cheaper to hand over than to make a
+   * presentational module aware of the runtime it happens to be running in.
+   */
+  constructor(
+    layer: HTMLElement,
+    private readonly callbacks: SettingsCallbacks,
+    version: string,
+  ) {
     this.accentCustom = h("input", {
       class: "accent-custom",
       attrs: { type: "color", "aria-label": "Pick any accent colour" },
@@ -117,6 +128,13 @@ export class SettingsCard {
         this.group("Appearance"),
         this.select("theme", "Theme", "The overlay's own colours. Match system follows your browser.", THEME_OPTIONS),
         this.accentRow(),
+      ),
+      // Which build you are looking at. The first question about any reported oddity is
+      // "which version?", and until now the only answer was chrome://extensions.
+      h(
+        "div",
+        { class: "card__footer settings__footer" },
+        h("span", { class: "settings__version", text: `SenAnnotate ${version}` }),
       ),
     );
 
