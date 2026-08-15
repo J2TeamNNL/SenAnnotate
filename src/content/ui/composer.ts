@@ -2,7 +2,9 @@
 // Composer — the popup you type the annotation into
 // =============================================================================
 
-import { ANNOTATION_KINDS, type AnnotationKind } from "../../shared/types";
+import { ANNOTATION_KINDS, type AnnotationKind, type DesignChange } from "../../shared/types";
+import type { DesignSnapshot } from "../design";
+import { DesignPanel } from "./design-panel";
 import { h, icon, listen, takeFocus } from "./dom";
 
 /**
@@ -28,18 +30,38 @@ export interface ComposerMeta {
 export interface ComposerData extends ComposerMeta {
   initialComment?: string;
   initialKind?: AnnotationKind;
+  /**
+   * Present only when the annotation is about one element that can carry a preview —
+   * absent for a text selection or a multi-element note, where "the element" the
+   * controls would edit is not a single thing.
+   */
+  design?: {
+    snapshot: DesignSnapshot;
+    changes?: DesignChange[];
+    text?: string;
+  };
 }
 
 /** Which way to walk the DOM from the element the composer is currently about. */
 export type RetargetDirection = "parent" | "child" | "previous" | "next";
 
 export interface ComposerCallbacks {
-  onSubmit(comment: string, kind: AnnotationKind): void;
+  onSubmit(comment: string, kind: AnnotationKind, design: ComposerDesign): void;
   onCancel(): void;
   onScreenshot(): void;
+  /** Show one property on the page while it is being chosen. */
+  onDesignPreview?(property: string, value: string): void;
+  onTextPreview?(text: string): void;
   onDelete?(): void;
   /** Absent when retargeting does not apply — a saved note, text, or a multi-select. */
   onRetarget?(direction: RetargetDirection): void;
+}
+
+export interface ComposerDesign {
+  /** Property → requested value, for `diffDesign`. Empty when nothing was touched. */
+  values: Record<string, string>;
+  /** The rewritten text, or null when it was left alone. */
+  text: string | null;
 }
 
 const WIDTH = 380;
@@ -63,6 +85,7 @@ export class Composer {
   private readonly textarea: HTMLTextAreaElement;
   private readonly teardown: Array<() => void> = [];
   private readonly kindButtons = new Map<AnnotationKind, HTMLButtonElement>();
+  private readonly design: DesignPanel | null;
   private kind: AnnotationKind;
   /** Rebuilt whole on every retarget — see `renderMeta`. */
   private readonly meta: HTMLElement;
@@ -83,6 +106,16 @@ export class Composer {
     this.callbacks = callbacks;
     this.anchor = anchor;
     this.kind = data.initialKind ?? "ui";
+    this.design = data.design
+      ? new DesignPanel(
+          data.design.snapshot,
+          {
+            onChange: (property, value) => callbacks.onDesignPreview?.(property, value),
+            onTextChange: (text) => callbacks.onTextPreview?.(text),
+          },
+          { changes: data.design.changes, text: data.design.text },
+        )
+      : null;
 
     this.textarea = h("textarea", {
       class: "composer__input",
@@ -165,7 +198,7 @@ export class Composer {
           icon("close", 14),
         ),
       ),
-      h("div", { class: "card__body" }, this.meta, kinds, this.textarea),
+      h("div", { class: "card__body" }, this.meta, kinds, this.textarea, this.design?.element ?? null),
       footer,
     );
 
@@ -257,7 +290,10 @@ export class Composer {
       takeFocus(this.textarea);
       return;
     }
-    this.callbacks.onSubmit(comment, this.kind);
+    this.callbacks.onSubmit(comment, this.kind, {
+      values: this.design?.currentValues() ?? {},
+      text: this.design?.currentText() ?? null,
+    });
   }
 
   /**

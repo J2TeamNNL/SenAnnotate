@@ -36,6 +36,14 @@ import {
   setFrozen,
 } from "./bridge";
 import { captureDraft, resolveElement, viewportBoxes, type Draft } from "./capture";
+import {
+  diffDesign,
+  previewDesign,
+  previewText,
+  readDesign,
+  revertDesign,
+  type DesignSnapshot,
+} from "./design";
 import { copyText } from "./clipboard";
 import {
   broadcastFrameState,
@@ -205,6 +213,15 @@ let retargetToken = 0;
  * Downloads and the report has no screenshot at all.
  */
 let screenshotPending = false;
+
+/**
+ * The element's styling as the composer found it, so the preview can be undone.
+ *
+ * Held here rather than in the composer because it belongs to the *page*: whatever
+ * closes the composer — save, cancel, Escape, the panel opening another note — has to
+ * put the element back, and only this module sees all of those.
+ */
+let designSnapshot: DesignSnapshot | null = null;
 
 // -----------------------------------------------------------------------------
 // UI
@@ -657,6 +674,11 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
     { primary: draft.element, secondary: formatSource(draft.source) },
   );
 
+  // One element, no text selection: anything else has no single thing to preview on.
+  const designTarget =
+    composerTargets.length === 1 && !draft.selectedText ? composerTargets[0] : null;
+  designSnapshot = designTarget ? readDesign(designTarget) : null;
+
   // The draft is replaced wholesale by a retarget, and `onSubmit` has to store the one on
   // screen rather than the one the composer opened with. Module state, not a closure: see
   // the declaration.
@@ -664,14 +686,33 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
   retargetFrom = composerTargets[0] ?? null;
 
   const callbacks: ComposerCallbacks = {
-    onSubmit: (comment, kind: AnnotationKind) => {
+    onSubmit: (comment, kind: AnnotationKind, design) => {
+      const changes = designSnapshot ? diffDesign(designSnapshot, design.values) : [];
+      // Undefined rather than an empty array or a null: an annotation with no design
+      // edits keeps exactly the stored shape it had before this feature existed.
+      const designChanges = changes.length ? changes : undefined;
+      const textChange =
+        design.text !== null && designSnapshot?.text != null
+          ? { from: designSnapshot.text, to: design.text }
+          : undefined;
+
       if (existing) {
         existing.comment = comment;
         existing.kind = kind;
+        existing.designChanges = designChanges;
+        existing.textChange = textChange;
       } else {
         annotations = [
           ...annotations,
-          { ...(composerDraft ?? draft), id: newId(), comment, kind, timestamp: Date.now() } as Annotation,
+          {
+            ...(composerDraft ?? draft),
+            id: newId(),
+            comment,
+            kind,
+            designChanges,
+            textChange,
+            timestamp: Date.now(),
+          } as Annotation,
         ];
       }
       closeComposer();
@@ -681,6 +722,18 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
     },
     onCancel: () => closeComposer(),
     onScreenshot: () => void captureScreenshot(existing ?? composerDraft ?? draft),
+    onDesignPreview: (property, value) => {
+      if (designTarget) previewDesign(designTarget, property, value);
+      // The highlight is drawn from a measurement taken before the change; a box
+      // that no longer fits the element is worse than no box.
+      overlay.showHighlights(composerTargets.map((el) => el.getBoundingClientRect()), {
+        primary: draft.element,
+        secondary: formatSource(draft.source),
+      });
+    },
+    onTextPreview: (text) => {
+      if (designTarget) previewText(designTarget, text);
+    },
     onDelete: existing
       ? () => {
           annotations = annotations.filter((item) => item.id !== existing.id);
@@ -695,7 +748,23 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
       : undefined,
   };
 
-  composer = new Composer(ui.cardLayer, anchor, { ...composerMeta(draft), initialComment: existing?.comment, initialKind: existing?.kind }, callbacks);
+  composer = new Composer(
+    ui.cardLayer,
+    anchor,
+    {
+      ...composerMeta(draft),
+      initialComment: existing?.comment,
+      initialKind: existing?.kind,
+      design: designSnapshot
+        ? {
+            snapshot: designSnapshot,
+            changes: existing?.designChanges,
+            text: existing?.textChange?.to,
+          }
+        : undefined,
+    },
+    callbacks,
+  );
 }
 
 /**
@@ -873,6 +942,16 @@ function closeComposer(): void {
   // is decorating lives in that composer's closure. Leaving it up would strand a card
   // with nowhere to put its result.
   closeShotEditor();
+
+  // Before the targets are dropped, and unconditionally — saving does not keep the
+  // preview either. The report describes a change to make in the codebase; leaving
+  // the page wearing it would have the reviewer testing against a mirage, and the
+  // next reload would silently take it away again.
+  if (designSnapshot && composerTargets.length === 1) {
+    revertDesign(composerTargets[0], designSnapshot);
+  }
+  designSnapshot = null;
+
   composer?.destroy();
   composer = null;
   composerEditing = null;

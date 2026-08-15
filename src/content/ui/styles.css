@@ -682,6 +682,121 @@ button {
   color: var(--sa-fg-muted);
 }
 
+/* ==========================================================================
+   Design edits
+   ========================================================================== */
+
+.design {
+  margin-top: 8px;
+  border-top: 1px solid var(--sa-border);
+  padding-top: 8px;
+}
+
+.design__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  color: var(--sa-fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.design__toggle:hover {
+  color: var(--sa-fg);
+}
+
+/* Right-pointing when shut, down when open — the same rotation the toolbar uses. */
+.design__toggle svg {
+  transform: rotate(-90deg);
+  transition: transform 0.14s ease;
+}
+
+.design[data-open="true"] .design__toggle svg {
+  transform: rotate(0deg);
+}
+
+/* How many properties are pending, so a collapsed section cannot hide them. */
+.design__count:not(:empty) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--sa-accent);
+  color: var(--sa-accent-ink);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.design__body {
+  display: none;
+  /*
+   * The list is longer than the card is tall on a short viewport, and the composer
+   * is positioned once, on open. Scrolling inside the section keeps the card the
+   * size it was placed at rather than growing off the bottom of the screen.
+   */
+  max-height: 210px;
+  overflow-y: auto;
+  margin-top: 6px;
+}
+
+.design[data-open="true"] .design__body {
+  display: block;
+}
+
+.design__group {
+  margin: 8px 0 4px;
+  color: var(--sa-fg-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.design__group:first-child {
+  margin-top: 0;
+}
+
+.design__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.design__label {
+  flex: 0 0 74px;
+  color: var(--sa-fg-muted);
+  font-size: 12px;
+}
+
+.design__control {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--sa-border);
+  border-radius: 6px;
+  background: var(--sa-bg-sunken);
+  color: var(--sa-fg);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.design__control:focus {
+  border-color: var(--sa-accent);
+}
+
+/* A swatch, not a text field — padding would show as a frame around the colour. */
+.design__control--color {
+  flex: 0 0 44px;
+  padding: 2px;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
