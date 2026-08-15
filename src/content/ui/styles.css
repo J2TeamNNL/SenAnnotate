@@ -661,6 +661,18 @@ kbd {
 }
 
 /*
+ * Same clearance the settings card needs, and for the same reason: inspect mode adds
+ * the hint line above the pill, making the dock ~32px taller, and a panel stopping at
+ * 72px covers it — measured at 22px. The two rules are kept separate rather than
+ * grouped because the cards do not otherwise share a positioning rule, and grouping
+ * them would imply a shared anchor they do not have: the panel is pinned top *and*
+ * bottom, the settings card only bottom.
+ */
+.toolbar-dock[data-inspecting="true"] ~ .panel {
+  bottom: 104px;
+}
+
+/*
  * The tail of a close. `Panel.destroy` sets this, then removes the node when the
  * animation ends; `forwards` holds the last frame so there is no flash back to full
  * opacity in between.
