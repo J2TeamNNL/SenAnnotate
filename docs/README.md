@@ -212,6 +212,15 @@ two things ever remove annotations** — the explicit "Clear all" and this setti
 button that also cleared was designed and then cut, and the argument is recorded there
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
+## [`reference-images/`](./reference-images/) — unreleased
+
+Every image the extension held was a photograph of the *current* state. This adds the
+other kind: paste or attach what the element should look like **instead**. Its
+`context.md` is the one to read before touching image storage — it explains why this is a
+separate field rather than a `kind` on one list, why references outlive screenshots under
+quota pressure (a screenshot can be retaken; a pasted Figma frame cannot), and why `paste`
+is deliberately not one of the untrusted events `dom.ts` drops.
+
 
 ## [`composer-retarget/`](./composer-retarget/) — unreleased
 
