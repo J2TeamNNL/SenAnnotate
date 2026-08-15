@@ -188,6 +188,22 @@ a test block which flips real settings dangerous to every block after it. `chang
 records twenty minutes lost to reading event plumbing when the failing assertion, not the
 code, was wrong.
 
+## [`props-value-redaction/`](./props-value-redaction/) — unreleased
+
+A full-codebase security pass, and the one confirmed exposure it found: `includeProps`
+(default on) recorded a controlled input's typed value — a password included — into
+storage, exports and forensic reports, past the "field values are never recorded"
+guarantee. `context.md` traces every hop and explains why the fix sits in the detector
+dispatcher rather than in each detector or on the content side. `changelog.md` records
+what the sweep cleared as well as what it caught.
+
+## [`hide-until-restart/`](./hide-until-restart/) — unreleased
+
+A per-tab switch that hides the overlay until the tab is closed. Its `context.md` is
+mostly about the one real decision — `sessionStorage`, not `chrome.storage`, because the
+state is per-tab and per-session — and why there is deliberately no in-tab way back.
+`changelog.md` has the miscounting-test wrong turn: a hidden node still counts.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,
