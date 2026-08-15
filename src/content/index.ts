@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { formatSource, generateOutput } from "../shared/output";
+import { HIDDEN_KEY } from "../shared/protocol";
 import type { RuntimeMessage, RuntimeResponse } from "../shared/protocol";
 import {
   DEFAULT_SETTINGS,
@@ -203,6 +204,7 @@ function createTopUi(): void {
 
 const settingsCallbacks = {
   onClose: () => toggleSettings(false),
+  onHideUntilRestart: () => hideUntilRestart(),
   onChange: (patch: Partial<Settings>) => {
     // Changing the detail level moves `componentMode` to its preset, exactly as the
     // panel's own detail select does. A suggestion, not a lock: the components row can
@@ -319,6 +321,34 @@ async function toggleFreeze(force?: boolean): Promise<void> {
   render();
 }
 
+/** Whether this tab was asked to hide the overlay for the rest of its session. */
+function isHiddenThisSession(): boolean {
+  try {
+    return window.sessionStorage.getItem(HIDDEN_KEY) === "1";
+  } catch {
+    // sessionStorage throws in a sandboxed frame or with storage disabled. Not hidden.
+    return false;
+  }
+}
+
+/**
+ * Hide the whole overlay in this tab until the tab is closed.
+ *
+ * Not a `Settings` field: the other settings are preferences that follow the user
+ * everywhere, this is a one-off "not on this tab, this session". The flag goes in
+ * `sessionStorage` (see `HIDDEN_KEY`) and the host is hidden immediately; a reload
+ * re-reads the flag in `installTopFrame` and stays hidden, a new tab never saw it.
+ */
+function hideUntilRestart(): void {
+  try {
+    window.sessionStorage.setItem(HIDDEN_KEY, "1");
+  } catch {
+    // If it cannot be stored the hide will not survive a reload; hiding now is still
+    // the more useful half of what was asked.
+  }
+  ui.host.style.setProperty("display", "none", "important");
+}
+
 /**
  * The settings card and the annotations panel share one slot, so opening either closes
  * the other. Two cards stacked in the same 380px column is not a layout, and finding
@@ -330,7 +360,11 @@ function toggleSettings(force?: boolean): void {
 
   if (next) {
     togglePanel(false);
-    settingsCard = new SettingsCard(ui.cardLayer, settingsCallbacks);
+    settingsCard = new SettingsCard(
+      ui.cardLayer,
+      settingsCallbacks,
+      chrome.runtime.getManifest().version,
+    );
     settingsCard.render(settings);
   } else {
     settingsCard?.destroy();
@@ -1108,11 +1142,27 @@ async function boot(): Promise<void> {
 function installTopFrame(): void {
   createTopUi();
 
+  // "Hide until restart" is a flag on this tab's session, so a tab that opened hidden
+  // stays hidden across its own reloads and no other tab is touched. Applied before the
+  // first paint would show anything, and left permanent for this session — there is no
+  // in-tab control to bring it back, which is the whole point.
+  if (isHiddenThisSession()) {
+    ui.host.style.setProperty("display", "none", "important");
+    return;
+  }
+
   // A capture that happened inside an iframe arrives already translated into this
   // document's coordinate space, so from here it is an ordinary draft.
   onFrameDraft((draft) => {
+    // Inspect mode off means the user is not annotating, so an iframe-originated draft
+    // then can only be a forged one — the honest child path never captures while
+    // inactive. Ignoring it keeps a hostile embedded frame from popping a composer on
+    // a page the user was only reading.
+    if (!active) return;
     composerTargets = [];
-    openComposer(draft, frameAnchor(draft), null);
+    // Screenshots are a top-frame flow; the honest child capture never sets this, so a
+    // value here is fabricated. Drop it rather than let it into the report or storage.
+    openComposer({ ...draft, screenshotData: undefined }, frameAnchor(draft), null);
   });
 
   chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {

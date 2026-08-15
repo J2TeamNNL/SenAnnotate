@@ -1041,18 +1041,31 @@ kbd {
 /*
  * Same corner as the panel, which is why the two are mutually exclusive.
  *
- * Unlike the panel it is *not* pinned to `bottom` — the panel is a list that grows and
- * wants the height, this is a fixed set of rows and a full-height card two-thirds empty
- * reads as something failing to load. `max-height` keeps it clear of the toolbar and
- * hands the overflow to the body.
+ * Anchored to `bottom`, not `top`, and pinned to neither end. The panel is a list that
+ * grows and earns the full height; this is a fixed set of rows, so it sizes to its
+ * content and sits just above the toolbar that opened it — the pointer is already there,
+ * and a card that opens at the far end of the screen from its own button reads as
+ * belonging to something else. `max-height` catches the case where the rows outgrow the
+ * viewport and hands the overflow to the body.
  */
 .settings {
-  top: 20px;
+  bottom: 72px;
   right: 20px;
   width: 380px;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 92px);
   animation: vt-rise 0.16s ease;
+}
+
+/*
+ * Inspect mode adds the hint line above the pill, making the dock ~32px taller, and the
+ * card would otherwise cover it. A sibling selector because the dock is not an ancestor:
+ * `createTopUi` builds the Toolbar before any card exists, so `.toolbar-dock` is always
+ * an earlier sibling in the card layer. If that order ever changes the symptom is a
+ * 22px overlap, not a crash — but it is the reason this cannot be a descendant rule.
+ */
+.toolbar-dock[data-inspecting="true"] ~ .settings {
+  bottom: 104px;
 }
 
 .settings[data-leaving="true"] {
@@ -1062,6 +1075,18 @@ kbd {
 
 .settings__body {
   overflow-y: auto;
+}
+
+/* Right-aligned and quiet: it is a fact to look up, not something to read past. */
+.settings__footer {
+  justify-content: flex-end;
+  padding: 7px 12px;
+}
+
+.settings__version {
+  color: var(--sa-fg-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .settings__group {
@@ -1083,13 +1108,6 @@ kbd {
   justify-content: space-between;
   gap: 10px;
   min-height: 30px;
-}
-
-/* The swatch strip needs the full width, so its label sits above rather than beside. */
-.setting-row--stacked {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
 }
 
 .setting-row__label {

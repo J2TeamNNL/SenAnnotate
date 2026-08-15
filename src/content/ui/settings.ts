@@ -30,6 +30,8 @@ import { attachTooltip, hideTooltip } from "./tooltip";
 export interface SettingsCallbacks {
   onClose(): void;
   onChange(patch: Partial<Settings>): void;
+  /** Hide the whole overlay in this tab until the tab is closed. Not a stored setting. */
+  onHideUntilRestart(): void;
 }
 
 type Option = { value: string; label: string };
@@ -42,7 +44,18 @@ export class SettingsCard {
   private readonly swatches = new Map<string, HTMLButtonElement>();
   private readonly accentCustom: HTMLInputElement;
 
-  constructor(layer: HTMLElement, private readonly callbacks: SettingsCallbacks) {
+  /**
+   * `version` is passed in rather than read here.
+   *
+   * Nothing else in `ui/` touches `chrome.*`, and the one fact this card needs from the
+   * extension API is a string that never changes — cheaper to hand over than to make a
+   * presentational module aware of the runtime it happens to be running in.
+   */
+  constructor(
+    layer: HTMLElement,
+    private readonly callbacks: SettingsCallbacks,
+    version: string,
+  ) {
     this.accentCustom = h("input", {
       class: "accent-custom",
       attrs: { type: "color", "aria-label": "Pick any accent colour" },
@@ -113,10 +126,18 @@ export class SettingsCard {
           "Freeze animations on inspect",
           "Parks animations and timers as soon as inspect mode goes on, so a menu or a carousel holds still long enough to annotate.",
         ),
+        this.hideUntilRestartRow(),
 
         this.group("Appearance"),
         this.select("theme", "Theme", "The overlay's own colours. Match system follows your browser.", THEME_OPTIONS),
         this.accentRow(),
+      ),
+      // Which build you are looking at. The first question about any reported oddity is
+      // "which version?", and until now the only answer was chrome://extensions.
+      h(
+        "div",
+        { class: "card__footer settings__footer" },
+        h("span", { class: "settings__version", text: `SenAnnotate ${version}` }),
       ),
     );
 
@@ -187,6 +208,25 @@ export class SettingsCard {
     );
   }
 
+  /**
+   * Not in the `switches` map and not a `Settings` key: this is a per-tab, per-session
+   * act, not a preference. Flipping it hides the card it lives in, so the control is
+   * never seen in its "on" state — the row is a button wearing a switch's clothes,
+   * which is also how the reference design presents it.
+   */
+  private hideUntilRestartRow(): HTMLElement {
+    const input = h("input", {
+      attrs: { type: "checkbox", "data-action": "hide-until-restart" },
+      on: { change: () => this.callbacks.onHideUntilRestart() },
+    });
+
+    return this.row(
+      "Hide until restart",
+      "Hides the toolbar and everything else in this tab. It stays hidden here — reloads included — until the tab is closed; other tabs are untouched.",
+      h("label", { class: "switch" }, input, h("span", { class: "switch__track" })),
+    );
+  }
+
   private accentRow(): HTMLElement {
     const presets = h("div", { class: "swatches" });
 
@@ -204,7 +244,7 @@ export class SettingsCard {
 
     return h(
       "div",
-      { class: "setting-row setting-row--stacked" },
+      { class: "setting-row" },
       this.labelFor(
         "Accent colour",
         "Colours the overlay, the pins and the markup pen. The two shades either side of it are derived, so one colour is all you pick.",

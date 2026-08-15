@@ -1362,6 +1362,44 @@ async function main() {
     check("the raw token never appears", !bugReport.includes("SUPERSECRET123"));
     check("typed input values never appear", !bugReport.includes(SECRET_INPUT));
 
+    // The same guarantee down the *props* path, which is a separate way in: a controlled
+    // React input carries its typed value as a `value` prop, and `includeProps` (default
+    // on) records the owner's props. Forensic detail renders them, so this is where a
+    // password would surface if the redaction in the detector dispatcher failed.
+    const privacy = await context.newPage();
+    await privacy.goto(`${base}/react-input.html`);
+    await privacy.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await privacy.waitForTimeout(800);
+
+    await privacy.locator(".tool--settings").click();
+    await privacy.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await privacy.selectOption('.settings [data-setting="detailLevel"]', "forensic");
+    await privacy.locator(".tool--settings").click();
+    await privacy.waitForTimeout(200);
+
+    await privacy.locator(".tool--brand").click();
+    await privacy.locator(".field").click({ force: true });
+    await privacy.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await privacy.locator(".composer__input").fill("Props privacy check.");
+    await privacy.locator(".composer .button--primary").click();
+    await privacy.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    await privacy.locator('.tool[title^="Annotations"]').click();
+    await privacy.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await privacy.locator(".panel .button--primary").click();
+    const propsReport = await privacy.evaluate(() => navigator.clipboard.readText());
+    check(
+      "a controlled input's typed value never reaches the report via props",
+      !propsReport.includes("hunter2-should-never-ship"),
+      propsReport.slice(0, 500),
+    );
+    check(
+      "the redacted prop key is kept, so the signal survives without the secret",
+      propsReport.includes("value=[redacted]"),
+      propsReport.slice(0, 500),
+    );
+    await privacy.close();
+
     // -------------------------------------------------------------------------
     // Production builds — what a QA tester actually gets
     // -------------------------------------------------------------------------
@@ -1638,6 +1676,25 @@ async function main() {
     await card.waitFor({ state: "visible", timeout: 5_000 });
     check("the gear opens the settings card", await card.isVisible());
 
+    // The version is handed to the card rather than read inside it, so an empty or stale
+    // string is a real possibility and nothing else on screen would show it.
+    //
+    // Read from `dist/manifest.json` here, not from the page: `chrome.runtime` does not
+    // exist in the page's main world, which is where `page.evaluate` runs. The built
+    // manifest is what Chrome actually loaded, and `build.mjs` stamps it from
+    // package.json — so this also catches a build that shipped a stale version.
+    const shownVersion = (
+      await settingsPageUnderTest.locator(".settings__version").textContent()
+    )?.trim();
+    const manifestVersion = JSON.parse(
+      await readFile(join(DIST, "manifest.json"), "utf8"),
+    ).version;
+    check(
+      "the card names the version that is actually running",
+      shownVersion === `SenAnnotate ${manifestVersion}`,
+      `card says "${shownVersion}", manifest says "${manifestVersion}"`,
+    );
+
     // One slot, one card. Opening the panel has to take the settings card with it.
     await annotationsButton.click();
     await settingsPageUnderTest.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
@@ -1711,6 +1768,44 @@ async function main() {
       (await settingsPageUnderTest.locator(".marker:visible").count()) === 0,
       `${await settingsPageUnderTest.locator(".marker:visible").count()} markers`,
     );
+
+    // Hide until restart: per-tab, not a stored setting. It lives in sessionStorage so
+    // it survives a reload of this tab, never follows the user to another page, and
+    // clears itself when the tab closes — which is what "restart" means here.
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.locator('.settings [data-action="hide-until-restart"]').click();
+    await settingsPageUnderTest.waitForTimeout(300);
+    // The host is hidden, so nothing in the overlay is visible — the card node lingers
+    // in the DOM inside the hidden host, so this asserts on visibility, not on count.
+    check(
+      "hide-until-restart hides the whole overlay in this tab",
+      !(await settingsPageUnderTest.locator(".toolbar").isVisible()) &&
+        !(await settingsPageUnderTest.locator(".settings").isVisible()),
+    );
+
+    await settingsPageUnderTest.reload();
+    await settingsPageUnderTest.waitForTimeout(800);
+    check(
+      "the hide survives a reload of the same tab",
+      !(await settingsPageUnderTest.locator(".toolbar").isVisible()),
+    );
+
+    // A different page is a different tab as far as the user is concerned — the
+    // toolbar must be there.
+    const otherTab = await context.newPage();
+    await otherTab.goto(`${base}/plain.html`);
+    await otherTab.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    check("another tab still shows the toolbar", await otherTab.locator(".toolbar").isVisible());
+    await otherTab.close();
+
+    // Put the tab back: clear the flag the way closing the tab would.
+    await settingsPageUnderTest.evaluate(() =>
+      window.sessionStorage.removeItem("senannotate:hide-until-restart"),
+    );
+    await settingsPageUnderTest.reload();
+    await settingsPageUnderTest.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await settingsPageUnderTest.waitForTimeout(600);
 
     // Collapsing takes the card with it, exactly as it takes the panel.
     await gear.click();

@@ -133,6 +133,7 @@ the line and column.
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Open settings | the gear on the toolbar |
+| Hide the overlay on this tab | **Hide until restart** in settings — back on any other tab, or when this one is closed |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button — this also leaves inspect mode and closes the open card |
 | Copy the report | **Copy report** in the panel |
 | Save the report as a file | **.md** in the panel |
@@ -200,6 +201,13 @@ leave alone. They apply everywhere, so you set them once.
 The one place this costs something: on `chrome://` pages, the Web Store and the PDF
 viewer the extension has no toolbar, so there is nothing to open — including for theme
 and accent, which are otherwise global. Open any ordinary page instead.
+
+**Hide until restart** is the exception to "set it once": it is per-tab, not a
+preference. Turn it on and the overlay disappears from *this* tab — reloads included —
+and stays gone until you close the tab; every other tab is untouched. It is for the
+moment a demo or a screen-share needs the page clean without turning the extension off
+everywhere. The card's footer shows which version you are running, so a bug report can
+name it.
 
 ## Triage
 

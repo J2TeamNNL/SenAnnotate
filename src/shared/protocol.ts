@@ -45,6 +45,17 @@ export const INSPECTOR_ATTR = "data-v-inspector";
 export const ANNOTATION_PREFIX = `${NS}:page:`;
 export const SETTINGS_KEY = `${NS}:settings`;
 
+/**
+ * "Hide until restart" — a `sessionStorage` key, not a `chrome.storage` one.
+ *
+ * The other stores are wrong for it: `sync` or `local` would hide the extension in
+ * every tab, when the request is "get out of *this* tab". `sessionStorage` is scoped to
+ * one tab, survives that tab's reloads, and evaporates when the tab closes — which is
+ * exactly what "restart" means here. The page can see and clear the key; it guards a
+ * UI preference, not anything worth guarding.
+ */
+export const HIDDEN_KEY = `${NS}:hide-until-restart`;
+
 // -----------------------------------------------------------------------------
 // content → inspector
 // -----------------------------------------------------------------------------

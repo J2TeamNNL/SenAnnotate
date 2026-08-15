@@ -72,6 +72,47 @@ export function detectPage(): PageFrameworkInfo {
   return { ...NOTHING_DETECTED };
 }
 
+/**
+ * Prop names whose value is a secret wherever it appears, regardless of the element.
+ * Kept beside — not shared with — `diagnostics.ts`'s URL-param list: that one matches
+ * loosely on substrings inside a query string, this one names whole prop keys.
+ */
+const SENSITIVE_PROP = /(pass(word|wd)?|secret|token|apikey|api[-_]?key|auth|jwt|otp|pin|cvv|ssn|creditcard|cardnumber|email|phone)/i;
+
+/** Value-bearing keys — a secret only when the element they belong to is a field. */
+const VALUE_PROP = new Set(["value", "modelValue", "defaultValue", "inputValue", "checked", "defaultChecked"]);
+
+const FIELD_SELECTOR = "input, textarea, select, [contenteditable], [contenteditable=true]";
+
+/**
+ * Strip typed field values out of a props snapshot before it can leave the MAIN world.
+ *
+ * A controlled input carries its current text as a `value` (or `modelValue`) prop, so
+ * capturing the owner's props verbatim records exactly what the user typed — the one
+ * thing the privacy guarantee promises is never recorded. This is the single place all
+ * four detectors funnel through, and it runs in every frame's MAIN world, so redacting
+ * here covers them all and keeps the secret from ever crossing the bridge.
+ *
+ * The key is kept and only the value is replaced, so the report still shows
+ * `value=[redacted]` — useful signal, no secret.
+ */
+function sanitizeProps(props: Record<string, string>, element: Element): Record<string, string> {
+  let isField: boolean | null = null; // resolved lazily; the DOM query is not free
+
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(props)) {
+    let redact = SENSITIVE_PROP.test(key);
+    if (!redact && VALUE_PROP.has(key)) {
+      if (isField === null) {
+        isField = element.matches(FIELD_SELECTOR) || element.querySelector(FIELD_SELECTOR) !== null;
+      }
+      redact = isField;
+    }
+    out[key] = redact ? "[redacted]" : value;
+  }
+  return out;
+}
+
 export function inspectElement(
   element: Element,
   options: InspectOptions,
@@ -85,7 +126,10 @@ export function inspectElement(
   for (const detector of order) {
     try {
       const info = detector.inspect(element, options);
-      if (info) return info;
+      if (info) {
+        info.props = sanitizeProps(info.props, element);
+        return info;
+      }
     } catch {
       continue;
     }
