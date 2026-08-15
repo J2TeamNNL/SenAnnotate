@@ -12,8 +12,9 @@
 // =============================================================================
 
 import { accentTheme } from "../shared/accent";
-import { clearAllPages, exportAll, importAll } from "../shared/archive";
+import { clearAllPages, exportAll, importAll, type ExportFile } from "../shared/archive";
 import { generateSessionOutput } from "../shared/output";
+import { buildShareHtml } from "../shared/share";
 import { SETTINGS_KEY, type RuntimeMessage, type RuntimeResponse } from "../shared/protocol";
 import { DEFAULT_SETTINGS, type Annotation, type Settings } from "../shared/types";
 
@@ -27,6 +28,8 @@ const clearButton = $<HTMLButtonElement>("clear");
 const pagesBox = $("pages");
 const copySessionButton = $<HTMLButtonElement>("copy-session");
 const exportButton = $<HTMLButtonElement>("export");
+const shareButton = $<HTMLButtonElement>("share");
+const remapCheckbox = $<HTMLInputElement>("import-remap");
 const importButton = $<HTMLButtonElement>("import");
 const importInput = $<HTMLInputElement>("import-file");
 const archiveHint = $("archive-hint");
@@ -75,6 +78,16 @@ function applyAccent(): void {
 async function activeTabId(): Promise<number | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab?.id ?? null;
+}
+
+/** The origin an import can be moved onto, or null on a tab that has no useful one. */
+async function activeTabOrigin(): Promise<string | null> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  try {
+    return new URL(tab?.url ?? "").origin;
+  } catch {
+    return null;
+  }
 }
 
 async function askTab(message: RuntimeMessage): Promise<RuntimeResponse | null> {
@@ -199,6 +212,20 @@ function reportArchive(message: string, tone: "ok" | "error" = "ok"): void {
   archiveHint.dataset.tone = tone;
 }
 
+/** Blob + `<a download>`, the same permission-free route the screenshot takes. */
+function download(content: string, type: string, name: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function countNotes(file: ExportFile): number {
+  return file.pages.reduce((total, entry) => total + entry.annotations.length, 0);
+}
+
 exportButton.addEventListener("click", async () => {
   try {
     const file = await exportAll();
@@ -207,19 +234,42 @@ exportButton.addEventListener("click", async () => {
       return;
     }
 
-    // Blob + `<a download>`, the same permission-free route the screenshot takes.
-    const blob = new Blob([JSON.stringify(file, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `senannotate-${file.exportedAt.slice(0, 10)}.json`;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    const day = file.exportedAt.slice(0, 10);
+    download(JSON.stringify(file, null, 2), "application/json", `senannotate-${day}.json`);
 
-    const notes = file.pages.reduce((total, entry) => total + entry.annotations.length, 0);
+    const notes = countNotes(file);
     reportArchive(`Exported ${notes} note${notes === 1 ? "" : "s"} from ${file.pages.length} page${file.pages.length === 1 ? "" : "s"}.`);
   } catch {
     reportArchive("Could not export.", "error");
+  }
+});
+
+// The reader of this one has no extension, so nothing about it is a round trip: it is
+// the only export that is finished when it lands.
+shareButton.addEventListener("click", async () => {
+  try {
+    const file = await exportAll();
+    if (!file.pages.length) {
+      reportArchive("Nothing to share yet.", "error");
+      return;
+    }
+
+    const day = file.exportedAt.slice(0, 10);
+    download(buildShareHtml(file), "text/html", `senannotate-review-${day}.html`);
+
+    // Worth saying, because it is the difference between a review someone can read and
+    // a list of filenames they cannot open — and it is fixed one setting away.
+    const embedded = file.pages.some((entry) =>
+      entry.annotations.some((annotation) => annotation.screenshotData),
+    );
+    const notes = countNotes(file);
+    reportArchive(
+      embedded
+        ? `Saved ${notes} note${notes === 1 ? "" : "s"} with their screenshots.`
+        : `Saved ${notes} note${notes === 1 ? "" : "s"}. No screenshots embedded — set Screenshots to embed before capturing.`,
+    );
+  } catch {
+    reportArchive("Could not build the file.", "error");
   }
 });
 
@@ -230,14 +280,18 @@ importInput.addEventListener("change", async () => {
   if (!file) return;
 
   try {
-    const summary = await importAll(JSON.parse(await file.text()));
+    const remapOrigin = remapCheckbox.checked ? ((await activeTabOrigin()) ?? undefined) : undefined;
+    const summary = await importAll(JSON.parse(await file.text()), { remapOrigin });
     if (!summary) {
       reportArchive("That is not a SenAnnotate export.", "error");
       return;
     }
     const skipped = summary.skipped ? `, ${summary.skipped} skipped` : "";
+    // Named rather than counted: which origin the notes landed on is the one thing a
+    // remap can get wrong, and "3 pages moved" would not say.
+    const moved = summary.remapped && remapOrigin ? `, moved onto ${remapOrigin}` : "";
     reportArchive(
-      `Imported ${summary.annotations} note${summary.annotations === 1 ? "" : "s"} across ${summary.pages} page${summary.pages === 1 ? "" : "s"}${skipped}.`,
+      `Imported ${summary.annotations} note${summary.annotations === 1 ? "" : "s"} across ${summary.pages} page${summary.pages === 1 ? "" : "s"}${skipped}${moved}.`,
     );
   } catch {
     reportArchive("Could not read that file.", "error");
