@@ -1992,6 +1992,191 @@ async function main() {
     check("clicking the handle expands the toolbar", await collapseBrand.isVisible());
 
     // -------------------------------------------------------------------------
+    // Drag — the toolbar moves, and every button still clicks
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, for the reason `drag.html` states: dock positions are keyed on
+    // origin + pathname in shared storage, so a dragged toolbar would move for every
+    // later block on the same page and every boundingBox after it would measure the
+    // wrong thing.
+    //
+    // This block collapses the toolbar, which is `toolbarCollapsed` in
+    // chrome.storage.sync — the same profile-wide state the Collapse block above is
+    // careful to restore. It ends expanded, with inspect mode off, for that reason.
+    const drag = await context.newPage();
+    await drag.setViewportSize({ width: 1280, height: 900 });
+    await drag.goto(`${base}/drag.html`);
+    await drag.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await drag.waitForTimeout(600); // settings and the stored position load async
+
+    const dragDock = drag.locator(".toolbar-dock");
+    const dragPill = drag.locator(".toolbar");
+    const dragBrand = drag.locator(".tool--brand");
+
+    check(
+      "a page with no stored position keeps the CSS corner",
+      (await dragDock.getAttribute("data-floating")) === null,
+      `data-floating read "${await dragDock.getAttribute("data-floating")}"`,
+    );
+
+    // The whole risk of making the pill its own drag handle: a threshold that fires too
+    // eagerly breaks every toolbar button at once. Asserted before anything is dragged.
+    await dragBrand.click();
+    check(
+      "a plain click on the toolbar still toggles inspect mode",
+      (await dragDock.getAttribute("data-inspecting")) === "true",
+      `data-inspecting read "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+    await dragBrand.click();
+    check(
+      "and clicking it again turns inspect mode back off",
+      (await dragDock.getAttribute("data-inspecting")) === "false",
+      `data-inspecting read "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+
+    // A drag started *on a button* has to move the dock and leave the button alone —
+    // the two meanings every pixel of the pill now carries.
+    const dockBefore = await dragDock.boundingBox();
+    const brandBox = await dragBrand.boundingBox();
+    const grabAt = { x: brandBox.x + brandBox.width / 2, y: brandBox.y + brandBox.height / 2 };
+    await drag.mouse.move(grabAt.x, grabAt.y);
+    await drag.mouse.down();
+    await drag.mouse.move(grabAt.x - 320, grabAt.y - 260, { steps: 12 });
+    await drag.mouse.up();
+    await drag.waitForTimeout(250);
+
+    const dockDragged = await dragDock.boundingBox();
+    check(
+      "a drag from a button moves the dock",
+      Math.abs(dockDragged.x - dockBefore.x) > 200 && Math.abs(dockDragged.y - dockBefore.y) > 150,
+      `dock moved from ${Math.round(dockBefore.x)},${Math.round(dockBefore.y)} to ${Math.round(dockDragged.x)},${Math.round(dockDragged.y)}`,
+    );
+    check(
+      "the drag did not press the button it started on",
+      (await dragDock.getAttribute("data-inspecting")) === "false",
+      `data-inspecting read "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+    check("a dragged dock is marked floating", (await dragDock.getAttribute("data-floating")) === "true");
+
+    // Capture is only taken once the threshold is crossed, so a press released just off
+    // the pill's edge never reaches `end()`. What must not happen next is the pill
+    // following a cursor with no button held.
+    const edgeBox = await dragPill.boundingBox();
+    await drag.mouse.move(edgeBox.x + 1, edgeBox.y + 1);
+    await drag.mouse.down();
+    // One hop, straight off the pill: `.toolbar` never sees a move past the threshold,
+    // and never sees the release either.
+    await drag.mouse.move(edgeBox.x - 9, edgeBox.y - 9);
+    await drag.mouse.up();
+    const beforeHover = await dragDock.boundingBox();
+    await drag.mouse.move(edgeBox.x + 40, edgeBox.y + 12);
+    await drag.mouse.move(edgeBox.x + 120, edgeBox.y + 22);
+    await drag.waitForTimeout(200);
+    const afterHover = await dragDock.boundingBox();
+    check(
+      "hovering after a press that ended off the pill does not drag it",
+      Math.abs(afterHover.x - beforeHover.x) < 2 && Math.abs(afterHover.y - beforeHover.y) < 2,
+      `dock drifted to ${Math.round(afterHover.x)},${Math.round(afterHover.y)} from ${Math.round(beforeHover.x)},${Math.round(beforeHover.y)}`,
+    );
+
+    // Persisted on drop, and re-clamped rather than trusted on load.
+    await drag.reload();
+    await drag.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await drag.waitForTimeout(700);
+    const dockRestored = await dragDock.boundingBox();
+    check(
+      "the dragged position survives a reload",
+      Math.abs(dockRestored.x - dockDragged.x) < 4 && Math.abs(dockRestored.y - dockDragged.y) < 4,
+      `restored at ${Math.round(dockRestored.x)},${Math.round(dockRestored.y)}, dropped at ${Math.round(dockDragged.x)},${Math.round(dockDragged.y)}`,
+    );
+
+    // Per page, not per user — the whole argument for `local` over `sync`. Read-only on
+    // a fixture another block owns, so nothing is left behind on it.
+    const untouched = await context.newPage();
+    await untouched.goto(`${base}/pick.html`);
+    await untouched.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await untouched.waitForTimeout(600);
+    check(
+      "another page opens at the default corner",
+      (await untouched.locator(".toolbar-dock").getAttribute("data-floating")) === null,
+      `data-floating read "${await untouched.locator(".toolbar-dock").getAttribute("data-floating")}"`,
+    );
+    await untouched.close();
+
+    // A window narrower than the pill makes the clamp's upper bound negative. Applied in
+    // the wrong order it wins, and the pill is pushed off the left edge — out of reach,
+    // in the one path that exists to bring it back.
+    await drag.setViewportSize({ width: 320, height: 700 });
+    await drag.waitForTimeout(400);
+    const dockNarrow = await dragDock.boundingBox();
+    check(
+      "a window narrower than the pill still leaves it against the left edge",
+      dockNarrow.x >= 0,
+      `dock at x=${Math.round(dockNarrow.x)} in a 320px window`,
+    );
+    await drag.setViewportSize({ width: 1280, height: 900 });
+    await drag.waitForTimeout(400);
+
+    // The dock changes size for reasons `resize` cannot see. Collapse, drop the handle at
+    // the right edge, expand: the dock is left-anchored, so without a re-clamp the full
+    // pill grows out of the viewport and every button but collapse is off-screen.
+    await drag.keyboard.press("h");
+    await drag.waitForTimeout(400);
+    const handleAtEdge = await drag.locator(".tool--collapse").boundingBox();
+    await drag.mouse.move(
+      handleAtEdge.x + handleAtEdge.width / 2,
+      handleAtEdge.y + handleAtEdge.height / 2,
+    );
+    await drag.mouse.down();
+    await drag.mouse.move(1250, 420, { steps: 10 });
+    await drag.mouse.up();
+    await drag.waitForTimeout(300);
+    await drag.keyboard.press("h"); // expand again
+    await drag.waitForTimeout(600); // the pill animates its width over 160ms
+    const dockExpanded = await dragDock.boundingBox();
+    check(
+      "expanding a handle dropped at the right edge brings the whole pill back on screen",
+      dockExpanded.x + dockExpanded.width <= 1280,
+      `right edge at ${Math.round(dockExpanded.x + dockExpanded.width)} of 1280`,
+    );
+
+    // Dragging the pill in `area` mode must not also draw a selection: the marquee's
+    // document handler returns early on `isOurUi`, and a shadow event retargets to the
+    // host, which carries that attribute. True today, and easy to break.
+    await dragBrand.click();
+    await drag.keyboard.press("3");
+    await drag.waitForTimeout(200);
+    const pillInArea = await dragPill.boundingBox();
+    await drag.mouse.move(
+      pillInArea.x + pillInArea.width / 2,
+      pillInArea.y + pillInArea.height / 2,
+    );
+    await drag.mouse.down();
+    await drag.mouse.move(
+      pillInArea.x + pillInArea.width / 2 - 220,
+      pillInArea.y + pillInArea.height / 2 + 160,
+      { steps: 10 },
+    );
+    check(
+      "dragging the toolbar in area mode draws no marquee",
+      !(await drag.locator(".marquee").isVisible()),
+    );
+    await drag.mouse.up();
+    await drag.waitForTimeout(200);
+
+    // Left expanded with inspect mode off: `toolbarCollapsed` is profile-wide.
+    await drag.keyboard.press("1");
+    await dragBrand.click();
+    await drag.waitForTimeout(200);
+    check(
+      "the drag block leaves the toolbar expanded and inspect mode off",
+      (await dragBrand.isVisible()) &&
+        (await dragDock.getAttribute("data-inspecting")) === "false",
+      `brand visible ${await dragBrand.isVisible()}, data-inspecting "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+    await drag.close();
+
+    // -------------------------------------------------------------------------
     // Triage — type, status, and what each does to the report
     // -------------------------------------------------------------------------
     // Its own fixture: annotations are keyed on origin + pathname and storage is

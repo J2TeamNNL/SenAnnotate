@@ -10,7 +10,7 @@
 // annotations stay in `local`, which has room for them.
 // =============================================================================
 
-import { ANNOTATION_PREFIX, SETTINGS_KEY } from "../shared/protocol";
+import { ANNOTATION_PREFIX, DOCK_PREFIX, SETTINGS_KEY } from "../shared/protocol";
 import { DEFAULT_SETTINGS, type Annotation, type Settings } from "../shared/types";
 
 export function pageKey(): string {
@@ -94,6 +94,46 @@ export async function saveAnnotations(annotations: Annotation[]): Promise<SaveRe
 
 // Cross-page reads and the "clear everything" sweep live in `shared/archive.ts`:
 // the popup is their only caller, and it must not import from `content/`.
+
+// -----------------------------------------------------------------------------
+// Toolbar position
+// -----------------------------------------------------------------------------
+//
+// Scoped to `origin + pathname`, exactly like the annotations, and for the same
+// reason: the pill is moved because of what *this* screen has in the corner. A
+// checkout page with a sticky summary panel needs it moved; the dashboard you
+// visit next does not, and should not inherit the workaround.
+//
+// Only customised pages get an entry, so the default costs nothing to store.
+
+export function dockKey(): string {
+  return `${DOCK_PREFIX}${location.origin}${location.pathname}`;
+}
+
+export async function loadDockPosition(): Promise<{ x: number; y: number } | null> {
+  try {
+    const key = dockKey();
+    const stored = (await chrome.storage.local.get(key))[key];
+    if (typeof stored !== "object" || stored === null) return null;
+
+    // Written by an older build, or hand-edited: anything not a pair of finite
+    // numbers is discarded rather than fed to the clamp as `NaN`.
+    const { x, y } = stored as { x?: unknown; y?: unknown };
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: x as number, y: y as number };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDockPosition(position: { x: number; y: number }): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [dockKey()]: position });
+  } catch {
+    // Over quota, or the extension context went away mid-drag. The pill is already
+    // where it was dropped; only remembering it across a reload is lost.
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Settings

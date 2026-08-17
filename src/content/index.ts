@@ -57,9 +57,11 @@ import {
 import { resolveSource } from "./source";
 import {
   loadAnnotations,
+  loadDockPosition,
   loadSettings,
   onSettingsChanged,
   saveAnnotations,
+  saveDockPosition,
   saveSettings,
 } from "./storage";
 import { Composer } from "./ui/composer";
@@ -147,6 +149,13 @@ let marqueeFrame = 0;
  */
 let picked: Element[] = [];
 
+/**
+ * Where the toolbar sits on *this* page, or `null` for the default corner. Held here
+ * as well as in storage because `resize` re-clamps against it on every frame of a
+ * window drag, which is no place for a storage read.
+ */
+let dockPosition: { x: number; y: number } | null = null;
+
 /** Elements the composer is currently about — kept live for screenshotting. */
 let composerTargets: Element[] = [];
 
@@ -199,6 +208,12 @@ function createTopUi(): void {
     onTogglePanel: () => togglePanel(),
     onToggleSettings: () => toggleSettings(),
     onToggleCollapse: () => toggleCollapsed(),
+    onMove: (position) => {
+      // Saved on drop rather than per frame — a drag would otherwise write sixty
+      // times a second for as long as the button is held.
+      dockPosition = position;
+      void saveDockPosition(position);
+    },
   });
 }
 
@@ -1070,11 +1085,23 @@ function drawMarquee(): void {
 // --- viewport ----------------------------------------------------------------
 
 let syncQueued = false;
+/**
+ * Set by `resize` only. The dock re-clamp is a `getBoundingClientRect()` plus two style
+ * writes, and `scroll` — which shares this rAF — cannot change the viewport it clamps
+ * against, so doing it on every scroll frame would be a forced layout for nothing.
+ */
+let resizeQueued = false;
 function queueSync(): void {
   if (syncQueued) return;
   syncQueued = true;
   requestAnimationFrame(() => {
     syncQueued = false;
+    if (resizeQueued) {
+      resizeQueued = false;
+      // A window narrowed since the position was saved can leave the pill off-screen,
+      // so the stored coordinates are re-clamped rather than trusted.
+      toolbar.applyPosition(dockPosition);
+    }
     // A dialog that resizes, or animates into place after it opened, changes whether it is a
     // containing block for our fixed host — and a resize changes the viewport we fit to.
     ui.syncPlacement();
@@ -1133,6 +1160,14 @@ async function boot(): Promise<void> {
   applyAppearance();
   annotations = await loadAnnotations();
 
+  // Keyed like the annotations and loaded with them, because it answers the same
+  // question: what did this page look like when you were last on it. Applied after the
+  // first `render()` below rather than here: `createTopUi` never renders, so at this
+  // point `data-collapsed` is still absent and the clamp would measure a fully expanded
+  // pill for a user whose toolbar starts collapsed — moving a handle dropped at the
+  // right edge some 300px inward on every reload.
+  dockPosition = await loadDockPosition();
+
   onSettingsChanged((next) => {
     settings = next;
     applyAppearance();
@@ -1152,6 +1187,7 @@ async function boot(): Promise<void> {
   }
 
   render();
+  toolbar.applyPosition(dockPosition);
   await ensureDetection();
 }
 
@@ -1220,6 +1256,12 @@ function installTopFrame(): void {
     (event) => {
       if (!active || composer || marqueeStart) return;
       if (mode !== "point") return;
+      // Pointer capture retargets the toolbar drag's moves; it does not stop them
+      // propagating, and `root.ts` deliberately lets `pointermove` through the host. So
+      // during a fast drag the cursor outruns the pill, lands on page content, and this
+      // would paint highlights across the page — one bridge RPC per element — and leave
+      // `hoveredElement` on a page element for a following `C` to capture.
+      if (toolbar.isDragging()) return;
 
       const target = document.elementFromPoint(event.clientX, event.clientY);
       if (!target || !eligible(target)) {
@@ -1486,7 +1528,15 @@ function installTopFrame(): void {
   });
 
   listen(window, "scroll", queueSync, { passive: true, capture: true });
-  listen(window, "resize", queueSync, { passive: true });
+  listen(
+    window,
+    "resize",
+    () => {
+      resizeQueued = true;
+      queueSync();
+    },
+    { passive: true },
+  );
 
   void boot();
 }

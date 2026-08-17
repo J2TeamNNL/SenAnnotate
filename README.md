@@ -135,6 +135,7 @@ the line and column.
 | Open settings | the gear on the toolbar |
 | Hide the overlay on this tab | **Hide until restart** in settings — back on any other tab, or when this one is closed |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button — this also leaves inspect mode and closes the open card |
+| Move the toolbar | drag it anywhere |
 | Copy the report | **Copy report** in the panel |
 | Save the report as a file | **.md** in the panel |
 | Copy every page at once | **Copy session report** in the extension popup |
@@ -164,6 +165,15 @@ untouched, because it is a property of the page rather than of the toolbar.
 The collapsed state is a setting rather than a session flag, so a reload does not put
 the pill back over the corner you were looking at. <kbd>H</kbd> works whether or not
 inspect mode is on, unlike the mode keys.
+
+If collapsing is not enough — the corner itself is what you need to look at — **drag
+the toolbar anywhere**. Grab it by any part of the pill, buttons included; a press
+that travels more than a few pixels moves it instead of clicking it.
+
+The position is remembered **per page**, the same way annotations are: move it out of
+the way of the checkout page's order summary and it stays there on that page, while
+every other page keeps the default corner. It is clamped back into view if you later
+open the same page in a narrower window.
 
 Dragging a box selects **everything it fully contains**, at the shallowest level
 contained — draw around three cards and you get three cards, not the `<div>`s
