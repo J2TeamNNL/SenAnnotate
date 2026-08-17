@@ -155,8 +155,21 @@ button {
  * Sits above the pill, not below it — the toolbar is pinned to the bottom of
  * the viewport, so there is nothing below it to sit in.
  */
+/*
+ * `point` mode's hint is the longest line the overlay draws — five clauses, about 470px at
+ * 11px — and a 340px ceiling with `nowrap` overflowed it to the right, off the screen edge,
+ * since the dock is right-aligned. The last two clauses (`2 text · 3 area`) were the ones
+ * lost, which is exactly the part the hint exists to advertise.
+ *
+ * Widened and clamped to the viewport rather than allowed to wrap: the cards above are
+ * lifted by a fixed 104px when inspecting (see `~ .settings` below), so a second hint line
+ * would put the toolbar back under the settings card. Ellipsis is the graceful end for a
+ * viewport too narrow even for that — visibly truncated beats silently off screen.
+ */
 .toolbar-hint {
-  max-width: 340px;
+  max-width: min(520px, calc(100vw - 40px));
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 3px 9px;
   border-radius: 8px;
   background: var(--sa-bg);

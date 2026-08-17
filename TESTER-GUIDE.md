@@ -73,7 +73,7 @@ apply. Skip to [section 2](#2-how-to-use-it).
 | <kbd>F</kbd> | Freeze animations (to catch the exact moment of a bug) |
 | <kbd>A</kbd> | Open the notes list |
 | <kbd>H</kbd> | Collapse the toolbar to a dot / bring it back |
-| <kbd>Esc</kbd> | Cancel / exit Inspect |
+| <kbd>Esc</kbd> | Close whatever is in front: the note, an open card, a picked set, the list — then Inspect |
 
 #### Tips
 
@@ -221,7 +221,7 @@ bấm nút ⟳ trên card của SenAnnotate. Sau đó **reload lại tab đang t
 | <kbd>F</kbd> | Đóng băng animation (để bắt đúng khoảnh khắc lỗi) |
 | <kbd>A</kbd> | Mở danh sách ghi chú |
 | <kbd>H</kbd> | Thu toolbar thành một dot / mở lại |
-| <kbd>Esc</kbd> | Huỷ / thoát Inspect |
+| <kbd>Esc</kbd> | Đóng thứ đang ở trước mặt: ghi chú, card đang mở, set đã chọn, danh sách — rồi mới thoát Inspect |
 
 #### Mẹo
 

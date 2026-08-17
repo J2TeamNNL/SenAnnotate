@@ -4,6 +4,7 @@
 
 import type { InspectMode, PageFrameworkInfo } from "../../shared/types";
 import { h, icon } from "./dom";
+import { attachTooltip } from "./tooltip";
 
 export interface ToolbarState {
   active: boolean;
@@ -108,8 +109,7 @@ export class Toolbar {
       "button",
       {
         class: "tool tool--brand",
-        title: "Toggle inspect mode (Alt+Shift+S)",
-        attrs: { "aria-pressed": "false" },
+        attrs: { "aria-label": "Toggle inspect mode (Alt+Shift+S)", "aria-pressed": "false" },
         on: { click: () => callbacks.onToggleActive() },
       },
       icon("s", 17),
@@ -119,8 +119,7 @@ export class Toolbar {
     for (const { mode, iconName, title } of MODES) {
       const button = h("button", {
         class: "tool",
-        title,
-        attrs: { "aria-pressed": "false" },
+        attrs: { "aria-label": title, "aria-pressed": "false" },
         on: { click: () => callbacks.onModeChange(mode) },
       });
       button.append(icon(iconName));
@@ -138,8 +137,7 @@ export class Toolbar {
       "button",
       {
         class: "tool",
-        title: "Freeze animations (F)",
-        attrs: { "aria-pressed": "false" },
+        attrs: { "aria-label": "Freeze animations (F)", "aria-pressed": "false" },
         on: { click: () => callbacks.onToggleFreeze() },
       },
       icon("snowflake"),
@@ -150,8 +148,7 @@ export class Toolbar {
       "button",
       {
         class: "tool",
-        title: "Annotations (A)",
-        attrs: { "aria-pressed": "false" },
+        attrs: { "aria-label": "Annotations (A)", "aria-pressed": "false" },
         on: { click: () => callbacks.onTogglePanel() },
       },
       icon("list"),
@@ -162,8 +159,7 @@ export class Toolbar {
       "button",
       {
         class: "tool tool--settings",
-        title: "Settings",
-        attrs: { "aria-pressed": "false" },
+        attrs: { "aria-label": "Settings", "aria-pressed": "false" },
         on: { click: () => callbacks.onToggleSettings() },
       },
       icon("gear"),
@@ -185,8 +181,7 @@ export class Toolbar {
       "button",
       {
         class: "tool tool--collapse",
-        title: "Collapse toolbar (H)",
-        attrs: { "aria-expanded": "true" },
+        attrs: { "aria-label": "Collapse toolbar (H)", "aria-expanded": "true" },
         on: { click: () => callbacks.onToggleCollapse() },
       },
       collapseIcon,
@@ -212,6 +207,23 @@ export class Toolbar {
     // The dock owns the fixed position; `.toolbar` stays the pill so the e2e
     // locators and every existing style keep working.
     this.element = h("div", { class: "toolbar-dock" }, this.hintElement, bar);
+
+    // Every button is icon-only bar the brand one, so the label *is* the affordance. The
+    // browser's own `title=` used to carry it: it waits about a second, cannot be styled,
+    // and on a dark pill in the corner of someone else's page it reads as the page's own
+    // tooltip. `aria-label` keeps the name for assistive tech and for the e2e locators;
+    // this shows it on hover and on focus, immediately, in our own styling.
+    for (const button of [
+      this.brandButton,
+      ...this.modeButtons.values(),
+      this.freezeButton,
+      this.panelButton,
+      this.settingsButton,
+      this.collapseButton,
+    ]) {
+      // Read at show time, not now: the collapse button's label carries the count.
+      attachTooltip(button, () => button.getAttribute("aria-label") ?? "");
+    }
 
     layer.append(this.element);
     this.installDrag(bar, callbacks);
@@ -472,12 +484,13 @@ export class Toolbar {
     this.handleCount.style.display = collapsed && count > 0 ? "inline-flex" : "none";
 
     if (!collapsed) {
-      this.collapseButton.title = "Collapse toolbar (H)";
+      this.collapseButton.setAttribute("aria-label", "Collapse toolbar (H)");
       return;
     }
-    this.collapseButton.title = count
-      ? `Show toolbar (H) — ${count} annotation${count === 1 ? "" : "s"}`
-      : "Show toolbar (H)";
+    this.collapseButton.setAttribute(
+      "aria-label",
+      count ? `Show toolbar (H) — ${count} annotation${count === 1 ? "" : "s"}` : "Show toolbar (H)",
+    );
   }
 
   /**
