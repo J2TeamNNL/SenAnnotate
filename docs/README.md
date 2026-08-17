@@ -213,6 +213,15 @@ button that also cleared was designed and then cut, and the argument is recorded
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
 
+## [`context-menu/`](./context-menu/) — unreleased
+
+Right-click an element and annotate it, with no mode to arm first — the gesture DevTools'
+*Inspect* established. Its `context.md` is the one to read: `chrome.contextMenus` gives an
+extension **no element and no coordinates**, so the whole design is a capture-phase recorder
+in the page plus a menu click that only says "use it". It also records why a right-click
+inside an iframe is *reported* rather than handled, and the security-relevant change to the
+frame boundary that fixing it would need.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,
