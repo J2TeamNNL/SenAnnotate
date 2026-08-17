@@ -92,9 +92,15 @@ const LEGACY_NOTE = {
   isFixed: false,
 };
 
+// `SENANNOTATE_HEADLESS=1`, as in `e2e.mjs`: Chrome's new headless does load extensions, and
+// `channel: "chromium"` is what reaches it. Default headed — see that file.
+const HEADLESS_LAUNCH = process.env.SENANNOTATE_HEADLESS
+  ? { headless: true, channel: "chromium" }
+  : { headless: false };
+
 async function launch(chromium, profile) {
   const context = await chromium.launchPersistentContext(profile, {
-    headless: false,
+    ...HEADLESS_LAUNCH,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     viewport: { width: 1280, height: 800 },
   });
@@ -219,7 +225,7 @@ async function main() {
       );
       await page.locator(".tool--settings").click();
 
-      await page.locator('.tool[title^="Annotations"]').click();
+      await page.locator('.tool[aria-label^="Annotations"]').click();
       await page.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
 
       const entries = await page.locator(".entry").count();
