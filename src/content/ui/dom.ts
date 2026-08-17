@@ -7,6 +7,8 @@
 // of event helpers that return their own teardown.
 // =============================================================================
 
+import { UI_ATTR } from "../../shared/protocol";
+
 type Child = Node | string | null | undefined | false;
 
 export interface Attrs {
@@ -99,6 +101,37 @@ export function dismissCard(element: HTMLElement): void {
   const remove = () => element.remove();
   element.addEventListener("animationend", remove, { once: true });
   window.setTimeout(remove, 400);
+}
+
+/**
+ * Focus one of our own elements without a focus trap on the page noticing.
+ *
+ * A trap — Reka UI, Radix and Headless UI are the same code — restores focus when it sees a
+ * `focusout` whose `relatedTarget` is outside the dialog. That event fires on the **page's**
+ * element and never travels through our host, so the propagation guards in `createUiRoot`
+ * have nothing to stop: measured, the composer's textarea lost focus back to the dialog
+ * before the first keystroke and the note went nowhere.
+ *
+ * What every implementation of that pattern shares is an early return on
+ * `relatedTarget === null` — focus that left the document is the browser's business, not the
+ * trap's. Blurring first produces exactly that event, so the trap sits still. The page's own
+ * element receives the same `blur` it would have received anyway; only the `relatedTarget`
+ * differs. `docs/modal-trap-refocus/` has the measurement and the rejected alternatives.
+ */
+export function takeFocus(element: HTMLElement, options?: FocusOptions): void {
+  const active = document.activeElement;
+  // Only when focus is coming from the page. If it is already ours, `focusout` does travel
+  // through the host and is stopped there, and the extra blur would cost a caret flicker for
+  // nothing. `body` and `documentElement` mean nothing was focused; blurring them is noise.
+  if (
+    active instanceof HTMLElement &&
+    active !== document.body &&
+    active !== document.documentElement &&
+    !active.hasAttribute(UI_ATTR)
+  ) {
+    active.blur();
+  }
+  element.focus(options);
 }
 
 /** Adds a listener and hands back the function that removes it. */

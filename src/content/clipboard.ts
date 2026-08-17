@@ -8,6 +8,8 @@
 // fallback, run inside our own shadow root so the page's selection is untouched.
 // =============================================================================
 
+import { takeFocus } from "./ui/dom";
+
 export async function copyText(text: string, container: ShadowRoot | HTMLElement): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -31,7 +33,9 @@ export async function copyText(text: string, container: ShadowRoot | HTMLElement
     } satisfies Partial<CSSStyleDeclaration>);
 
     container.append(textarea);
-    textarea.focus();
+    // Same trap problem as the composer: without the blur, a dialog can pull focus back
+    // before `select()` and the copy silently returns false. See `takeFocus`.
+    takeFocus(textarea);
     textarea.select();
     const copied = document.execCommand("copy");
     textarea.remove();

@@ -13,12 +13,14 @@
       }
       #dialog-close { top: 80px; }
       #dialog-restore { top: 80px; }
+      #dialog-trap { top: 80px; }
     </style>
   </head>
   <body>
     <h1>Focus-trap modal fixture</h1>
     <button id="open-close">Open the close-on-focus-loss modal</button>
     <button id="open-restore">Open the restore-focus modal</button>
+    <button id="open-trap">Open the focusout-trap modal</button>
 
     <!-- A: dismisses when focus leaves the dialog. -->
     <div class="backdrop" id="backdrop-close">
@@ -33,6 +35,18 @@
       <div class="dialog" id="dialog-restore" tabindex="-1">
         <h2>Restore focus</h2>
         <p class="restore-body">This dialog yanks focus back.</p>
+      </div>
+    </div>
+
+    <!-- C: Reka UI / Radix / Headless UI, ported line for line — the trap that watches
+         `focusout` on the dialog rather than `focusin` on the arrival. Nothing of ours is in
+         that event's path, so it is the variant our host cannot stop by propagation.
+         `docs/modal-trap-refocus/context.md` quotes the library source. -->
+    <div class="backdrop" id="backdrop-trap">
+      <div class="dialog" id="dialog-trap" role="dialog" aria-modal="true" tabindex="-1">
+        <h2>Restore focus on focusout</h2>
+        <p class="trap-body">This dialog watches focus leaving it.</p>
+        <button id="trap-swatch" type="button">Swatch</button>
       </div>
     </div>
 
@@ -65,13 +79,47 @@
         }, 0);
       });
 
-      // Variant B. The shape `focus-trap`, Radix and Headless UI all use: watch focus
-      // arriving anywhere outside the dialog and pull it back.
+      // Variant B. Watch focus arriving anywhere outside the dialog and pull it back.
       document.addEventListener("focusin", (event) => {
         if (!restoreBackdrop.classList.contains("open")) return;
         if (restoreDialog.contains(event.target)) return;
         window.__focusLog.push("restore:focusin target=" + (event.target.tagName || "?").toLowerCase());
         restoreDialog.focus();
+      });
+
+      // Variant C. Reka UI's `FocusScope`, which is Radix's ported to Vue and what Nuxt UI v4
+      // modals are built on. Both handlers, in its order, with its early returns — the
+      // `relatedTarget === null` bail especially, which is why blurring first is invisible to
+      // it. `lastFocused` is Reka's `lastFocusedElementRef`.
+      const trapBackdrop = document.getElementById("backdrop-trap");
+      const trapDialog = document.getElementById("dialog-trap");
+      const trapSwatch = document.getElementById("trap-swatch");
+      let lastFocused = null;
+
+      document.getElementById("open-trap").addEventListener("click", () => {
+        trapBackdrop.classList.add("open");
+        // Reka autofocuses the first tabbable element in the dialog, which is what gives its
+        // `lastFocusedElementRef` a value to restore to.
+        trapSwatch.focus();
+      });
+
+      document.addEventListener("focusin", (event) => {
+        if (!trapBackdrop.classList.contains("open")) return;
+        if (trapDialog.contains(event.target)) {
+          lastFocused = event.target;
+          return;
+        }
+        window.__focusLog.push("trap:focusin target=" + (event.target.tagName || "?").toLowerCase());
+        if (lastFocused) lastFocused.focus();
+      });
+
+      document.addEventListener("focusout", (event) => {
+        if (!trapBackdrop.classList.contains("open")) return;
+        const related = event.relatedTarget;
+        if (related === null) return;
+        if (trapDialog.contains(related)) return;
+        window.__focusLog.push("trap:focusout related=" + (related.tagName || "?").toLowerCase());
+        if (lastFocused) lastFocused.focus();
       });
     </script>
   </body>
