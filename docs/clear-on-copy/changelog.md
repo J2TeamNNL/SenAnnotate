@@ -85,3 +85,61 @@ such a check needs to pin, when the suite can next be run:
 
 0.6.0 grew `test/e2e.mjs` by 375 lines, so the suite is now the larger part of the
 verification story and skipping it is a bigger gap than it was when this was written.
+
+---
+
+## 2026-08-18 — audited, and the e2e gap above closed
+
+The feature was re-read against its own brief and then driven in a real browser. It
+behaves as its label says: `clearOnCopy` fires on the panel's *Copy report* only, only
+after `copyText` resolves `true`, and takes the annotations, the diagnostics buffer and
+the action trail with it, in storage as well as on screen.
+
+Two runs were needed, because one criterion cannot be reached from inside the suite.
+
+**Added to `test/e2e.mjs`** — a block of 14 checks on its own fixture,
+`test/fixtures/clear-copy.html`, placed immediately before the export/import block:
+
+- the default path is unchanged: report on the clipboard, annotations and badge intact,
+  toast reading exactly `Copied 1 annotation`
+- the checkbox is off on arrival
+- with it on: the report still reaches the clipboard, the toast reads
+  `Copied 1 annotation · cleared`, markers and badge go to zero, the panel falls back to
+  its empty state, and a reload proves the clear reached storage
+- the action trail goes too — a distinctly-named click before the clear is absent from
+  the next report, and that report's trail carries only the click made after it
+- the next report carries only the new note
+- **download does not clear** (asserted on the download event, not just the click)
+- the popup's *Copy session* does not clear either, whatever the setting says
+- the setting turns back off and the default path returns
+
+The block ends with the setting off deliberately: it lives in `storage.sync`, so leaving
+it on would make every copy in the blocks below wipe the page it had just copied. The
+fixture is its own for the usual reason — this block counts markers and reads `.count`.
+
+**Not in the suite: a failed copy must never clear.** Reaching it needs both clipboard
+routes to refuse *inside the ISOLATED world*, and neither `navigator.clipboard` nor
+`document.execCommand` can be patched from the page — each world has its own. It was
+verified instead against a copy of `dist/` whose `content.js` was prefixed with a stub
+making `writeText` reject and `execCommand` return `false`: the toast read `Copy failed`,
+the annotation stayed on the page, and it was still there after a reload. Same shape of
+reason `upgrade.mjs` sits outside `e2e.mjs` — a second bundle, so a second launch.
+
+### What went wrong while writing it
+
+The trail assertion failed on its first run, and the feature was not at fault. It matched
+`/Stale click/` over the whole report; at **forensic** detail an entry carries
+`**Nearby elements:**`, which quoted `div.row "Stale click Fresh click"` — the fixture's
+own buttons, nothing to do with the trail. An earlier block leaves `detailLevel` at
+forensic, so any regex over a whole report in this file is level-dependent by default.
+The check now extracts the `## Steps to reproduce` section and reads only that.
+
+### Two things worth a decision, neither changed here
+
+- **The popup's *Copy session* never clears.** Defensible — it spans pages, and clearing
+  across pages is out of scope by design — but `context.md` argues the download exclusion
+  at length and never mentions this one. It is now at least pinned by a test.
+- **`count` is read before the `await`, and `wipeAnnotations()` empties the whole list.**
+  An annotation arriving during the clipboard round-trip — realistically only a draft
+  handed up from a child frame — would be wiped uncounted, and the toast would understate
+  what was destroyed. Clearing by copied id rather than by truncation would close it.

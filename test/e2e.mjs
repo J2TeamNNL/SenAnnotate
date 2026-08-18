@@ -2638,6 +2638,208 @@ async function main() {
     }
 
     // -------------------------------------------------------------------------
+    // Clear after copying — the one automatic way annotations are destroyed
+    // -------------------------------------------------------------------------
+    // Its own fixture, for the usual reason: this block counts markers and reads the
+    // toolbar count, and storage is shared by every page in this context.
+    //
+    // The block ends with the setting back off. It lives in `storage.sync`, so leaving
+    // it on would make every copy in the blocks below wipe the page it just copied.
+    //
+    // One criterion cannot be reached from here, and it is the one that matters most:
+    // a *failed* copy must never clear. Both clipboard routes have to refuse inside the
+    // ISOLATED world, and neither `navigator.clipboard` nor `document.execCommand` can be
+    // patched from the page — each world gets its own. Reaching it needs a sabotaged
+    // second bundle, the same kind of reason `upgrade.mjs` is not in this file. The gate
+    // is `copyReport`'s `if (!copied) { toast("Copy failed"); return; }`, and it was
+    // verified by hand against a bundle with both routes stubbed out.
+    const clearPage = await context.newPage();
+    await clearPage.goto(`${base}/clear-copy.html`);
+    await clearPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const clearMarkers = () => clearPage.locator(".marker").count();
+    const clearToast = async () => ((await clearPage.locator(".toast").last().textContent()) ?? "").trim();
+    const clearBadge = async () => ((await clearPage.locator(".count").textContent()) ?? "").trim();
+
+    const annotateClearPage = async (selector, comment) => {
+      await clearPage.locator(".tool--brand").click(); // inspect on
+      await clearPage.locator(selector).click();
+      await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await clearPage.locator(".composer__input").fill(comment);
+      await clearPage.locator(".composer .button--primary").click();
+      await clearPage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+      await clearPage.locator(".tool--brand").click(); // inspect off
+    };
+
+    /** Copy from the panel, and hand back whatever landed on the clipboard. */
+    const copyFromPanel = async () => {
+      if (!(await clearPage.locator(".panel").count())) {
+        await clearPage.locator('.tool[aria-label^="Annotations"]').click();
+        await clearPage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+      }
+      // The panel is rebuilt on every render and a settings change queues one, so a click
+      // that lands inside that window hits a button already detached from the DOM.
+      await clearPage.waitForTimeout(600);
+      await clearPage.locator(".panel .button--primary").click();
+      await clearPage.waitForTimeout(400);
+      return clearPage.evaluate(() => navigator.clipboard.readText());
+    };
+
+    const setClearOnCopy = async (on) => {
+      await clearPage.locator(".tool--settings").click();
+      await clearPage.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+      const box = clearPage.locator('.settings [data-setting="clearOnCopy"]');
+      const before = await box.isChecked();
+      if (before !== on) await box.click();
+      await clearPage.locator(".tool--settings").click(); // the gear closes its own card
+      await clearPage.locator(".settings").waitFor({ state: "detached", timeout: 5_000 });
+      await clearPage.waitForTimeout(300);
+      return before;
+    };
+
+    // The default path first. It is what everyone who never opens the settings card
+    // gets, and the feature's first requirement is that it does not change.
+    await annotateClearPage(".cta", "Kept by the default path.");
+    const keptReport = await copyFromPanel();
+    check(
+      "the report reaches the clipboard with the setting off",
+      keptReport.includes("Kept by the default path."),
+      keptReport.slice(0, 200),
+    );
+    check(
+      "a copy with the setting off leaves the annotations alone",
+      (await clearMarkers()) === 1 && (await clearBadge()) === "1",
+      `${await clearMarkers()} markers, badge read "${await clearBadge()}"`,
+    );
+    check(
+      "and its toast claims no clear",
+      /^Copied 1 annotation$/.test(await clearToast()),
+      `toast read "${await clearToast()}"`,
+    );
+
+    const wasOff = await setClearOnCopy(true);
+    check("Clear after copying is off until it is asked for", wasOff === false);
+
+    // A click for the action trail, which is supposed to be cleared alongside the
+    // annotations: steps from a bug already filed must not attach to the next report.
+    await clearPage.locator("#stale").click();
+    await clearPage.waitForTimeout(200);
+
+    const clearedReport = await copyFromPanel();
+    check(
+      "a copy that clears still reaches the clipboard",
+      clearedReport.includes("Kept by the default path."),
+      clearedReport.slice(0, 200),
+    );
+    check(
+      "the toast names what was copied, then the clear",
+      /^Copied 1 annotation · cleared$/.test(await clearToast()),
+      `toast read "${await clearToast()}"`,
+    );
+    check(
+      "clearing empties the page",
+      (await clearMarkers()) === 0 && (await clearBadge()) === "0",
+      `${await clearMarkers()} markers, badge read "${await clearBadge()}"`,
+    );
+    check(
+      "the panel falls back to its empty state",
+      (await clearPage.locator(".panel .empty").count()) === 1,
+      `${await clearPage.locator(".panel .entry").count()} entries left`,
+    );
+
+    // In storage, not just in the overlay: an in-memory-only clear would come back on
+    // the next reload, which is the one thing worse than not clearing at all.
+    await clearPage.reload();
+    await clearPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await clearPage.waitForTimeout(400);
+    check(
+      "the clear reaches storage, not just the overlay",
+      (await clearMarkers()) === 0 && (await clearBadge()) === "0",
+      `${await clearMarkers()} markers after reload`,
+    );
+
+    /**
+     * Just the trail, not the whole report. At forensic detail an entry carries its
+     * neighbours, so the *page's* buttons are quoted in it — a regex over the whole
+     * document finds "Stale click" whether or not the trail was cleared.
+     */
+    const trailSection = (report) => {
+      const [, rest = ""] = report.split("## Steps to reproduce");
+      return rest.split(/^## /m)[0];
+    };
+
+    await clearPage.locator("#fresh").click();
+    await clearPage.waitForTimeout(200);
+    await annotateClearPage("#headline", "Second round, nothing before it.");
+    const secondRound = await copyFromPanel();
+    check(
+      "the action trail goes with the annotations",
+      /Clicked button "Stale click"/.test(trailSection(clearedReport)) &&
+        !/Stale click/.test(trailSection(secondRound)) &&
+        /Clicked button "Fresh click"/.test(trailSection(secondRound)),
+      `trail after the clear read "${trailSection(secondRound).trim().replace(/\s+/g, " ").slice(0, 160)}"`,
+    );
+    check(
+      "the next report carries only the new note",
+      secondRound.includes("Second round, nothing before it.") &&
+        !secondRound.includes("Kept by the default path."),
+      secondRound.slice(0, 200),
+    );
+
+    // Download is deliberately not covered by the setting: the checkbox says *copying*,
+    // and a setting that also fires on a button it does not name destroys work by
+    // surprise. See `docs/clear-on-copy/context.md`.
+    await annotateClearPage(".cta", "Kept for the download path.");
+    if (!(await clearPage.locator(".panel").count())) {
+      await clearPage.locator('.tool[aria-label^="Annotations"]').click();
+      await clearPage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    }
+    const reportFile = clearPage
+      .waitForEvent("download", { timeout: 15_000 })
+      .then((d) => d.suggestedFilename())
+      .catch(() => null);
+    await clearPage.locator('.panel .icon-button[title^="Download"]').click();
+    const savedReport = await reportFile;
+    check(
+      "downloading the report does not clear it",
+      typeof savedReport === "string" && savedReport.endsWith(".md") && (await clearMarkers()) === 1,
+      `download was ${savedReport === null ? "never offered" : `"${savedReport}"`}, ${await clearMarkers()} markers left`,
+    );
+
+    // Nor does the popup's session copy, whatever the setting says. It spans every page
+    // in the session, and clearing across pages is not what a per-page checkbox bought.
+    const [clearWorker] = context.serviceWorkers();
+    const clearExtensionId = clearWorker ? new URL(clearWorker.url()).host : null;
+    if (clearExtensionId) {
+      const sessionPopup = await context.newPage();
+      await sessionPopup.goto(`chrome-extension://${clearExtensionId}/popup.html`);
+      await sessionPopup.locator("#copy-session").waitFor({ state: "visible", timeout: 5_000 });
+      await sessionPopup.locator("#copy-session").click();
+      await sessionPopup.waitForTimeout(400);
+      await sessionPopup.close();
+      await clearPage.waitForTimeout(300);
+      check(
+        "the popup's session copy never clears, setting or not",
+        (await clearMarkers()) === 1,
+        `${await clearMarkers()} markers left`,
+      );
+    }
+
+    // Back off, for every block below this one as much as for the assertion.
+    const wasOn = await setClearOnCopy(false);
+    const restoredReport = await copyFromPanel();
+    check(
+      "turning the setting back off restores the default path",
+      wasOn === true &&
+        restoredReport.includes("Kept for the download path.") &&
+        (await clearMarkers()) === 1 &&
+        !/cleared/.test(await clearToast()),
+      `${await clearMarkers()} markers, toast read "${await clearToast()}"`,
+    );
+
+    await clearPage.close();
+
+    // -------------------------------------------------------------------------
     // Export / import — driven through the real popup
     // -------------------------------------------------------------------------
     const [worker] = context.serviceWorkers();
