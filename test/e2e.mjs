@@ -143,6 +143,30 @@ async function main() {
   try {
     await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
 
+    // The MAIN-world inspector is registered by the service worker, not declared in the
+    // manifest, so the extension has a readiness point that a declarative one does not:
+    // `registerContentScripts` only affects navigations that *begin* after it resolves.
+    // Navigate inside that window and the page loads with no MAIN world at all — measured,
+    // and it is not subtle: the first navigation reports no framework while every later one
+    // reports Vue correctly. Seven checks in the Vue block failed exactly this way.
+    //
+    // Waiting here rather than reloading in the Vue block, because the condition is not
+    // Vue's: every framework block, the freeze and the diagnostics all need that world. The
+    // product-level cost of the same window — a page loaded in the moment after install has
+    // no inspector until it is reloaded — is recorded in `docs/domain-rules/changelog.md`.
+    {
+      let [ready] = context.serviceWorkers();
+      if (!ready) ready = await context.waitForEvent("serviceworker", { timeout: 10_000 });
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const registered = await ready
+          .evaluate(() => chrome.scripting.getRegisteredContentScripts())
+          .catch(() => []);
+        if (registered.length || Date.now() > deadline) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+
     // -------------------------------------------------------------------------
     // Vue 3
     // -------------------------------------------------------------------------

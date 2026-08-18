@@ -208,12 +208,27 @@ comma-separated. A line starting with `#` is a comment.
 
 On an excluded site **nothing is injected at all**: no toolbar, no listeners, and no
 diagnostics capture patching the page's `fetch`. That is the point of the setting rather
-than a side effect — a hidden toolbar would still be all of those things. The popup still
-opens, tells you which pattern excluded the tab, and is where you undo it.
+than a side effect — a hidden toolbar would still be all of those things. Chrome is told not
+to load the page script there, rather than the script loading and deciding to keep quiet.
+The popup still opens, tells you which pattern excluded the tab, and is where you undo it.
+
+One caveat for the two widest pattern shapes. `foo.*` and `*.example.com` have no exact
+equivalent in Chrome's own match-pattern syntax, so they cannot be part of what Chrome is
+told; on hosts they exclude, the page script still loads and keeps quiet the way the rest of
+the overlay does. Everything you can see behaves identically — no toolbar, no listeners, no
+diagnostics — and the plain forms (`example.com`, `localhost`, an IP address, `*`) get the
+stronger guarantee. Name a site plainly if that distinction matters to you.
 
 Changes apply the **next time a page loads**, so reload the tab you are looking at. The list
 lives in the popup rather than the toolbar's gear for the obvious reason: on an excluded
 site there is no toolbar to open.
+
+The same "next page load" rule covers one more moment: **right after you install or update
+the extension, reload the tab you want to work on.** Telling Chrome which hosts to load the
+page script on is something the extension does when it starts, and a page already loading in
+that instant gets no framework detection, no freeze and no diagnostics until it is reloaded.
+One reload, once — and it is the same reload an already-open tab has always needed after an
+install.
 
 Dragging a box selects **everything it fully contains**, at the shallowest level
 contained — draw around three cards and you get three cards, not the `<div>`s
