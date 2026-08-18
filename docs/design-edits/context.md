@@ -3,15 +3,28 @@
 ## The rule that shaped everything
 
 **The page is never permanently modified.** Every override is an inline style; the
-snapshot taken when the composer opens holds the `style` attribute's own value for each
-property — almost always `""` — and `revertDesign` puts exactly that back. If the
-attribute ends up empty it is *removed*, because an element that gained a bare
-`style=""` has still been changed, visibly in devtools and to any page code that reads
-the attribute.
+snapshot taken when the composer opens holds the `style` attribute *verbatim* — almost
+always absent — and `revertDesign` puts that attribute back. When there was none it is
+*removed*, not blanked, because an element that gained a bare `style=""` has still been
+changed, visibly in devtools and to any page code that reads the attribute.
 
-The revert runs from `closeComposer`, which means it runs on save, on cancel, on Escape,
-and when the panel opens a different note. There is no path that leaves a preview
-standing. Two e2e checks exist for no other purpose.
+The attribute rather than the properties, and that is not a shortcut. A per-property
+snapshot cannot describe what it found on two counts, both of which destroy styling the
+page had before we arrived:
+
+- `padding`, `margin` and `gap` are **shorthands**. `getPropertyValue("padding")` is `""`
+  unless every longhand is declared inline, while `removeProperty("padding")` deletes all
+  four — so an element carrying `padding-left: 10px` loses it with nothing recorded to put
+  back.
+- `getPropertyValue` does not carry **`!important`**. `color: red !important` would have
+  come back as `color: red` and started losing to the stylesheet rule it used to beat.
+
+The revert runs from `closeComposer` — save, cancel, Escape — and from the top of
+`openComposer`, which is the path where the *panel opens a different note*. That one needs
+its own call rather than falling out of the first: every path that replaces an open
+composer reassigns `composerTargets` before `openComposer` runs, so the element wearing the
+preview is only still reachable because `designTarget` is held next to the snapshot. Three
+e2e checks exist for no other purpose than this section.
 
 That is a deliberate divergence from the tool this was modelled on, which keeps previews
 live on the page. The argument against: the reviewer would then be testing the app
@@ -32,9 +45,23 @@ Colours are the one place the two notations meet: computed style says
 computed side before comparing, or every colour would read as changed the moment the
 picker was opened, and each row would print two notations for one colour.
 
-Colours **with alpha** deliberately fall back to `#000000` rather than being converted:
-`#rrggbb` cannot hold the alpha, and silently dropping it would show a wrong swatch and
-then report a wrong `from`.
+A colour `#rrggbb` cannot hold — any alpha, and the `oklch()` a Tailwind v4 page computes
+to — makes `rgbToHex` return **`null`**, not a fallback colour. A fallback of `#000000` is
+a value the picker can also produce, and that turns a display compromise into two wrong
+answers: `background-color` computes to `rgba(0, 0, 0, 0)` on most elements, so the swatch
+would open on black for an element with no background at all, and picking black would then
+make `from === to` and drop from the report a change the reviewer had watched being applied.
+`null` forces both callers to say what they actually know — `diffDesign` reports the raw
+computed string, which can never equal a `#rrggbb`, and the panel prints it beside the
+swatch so the black is labelled rather than passed off as the element's own.
+
+## An invalid value is not a delta
+
+`setProperty` with a value the parser rejects is a silent no-op, and the controls fire on
+every keystroke — `22px`, select-all, `1` is a state anyone reaches. So `previewDesign`
+clears the property before setting it, which makes the page agree with the field, and
+`diffDesign` drops anything `CSS.supports` refuses. Handing an agent `font-size: 1` as the
+intent is worse than saying nothing.
 
 ## One table, four consumers
 
@@ -58,6 +85,13 @@ unaffected.
 `composerTargets.length === 1 && !draft.selectedText`. A multi-element note and a text
 selection have no single element to preview on, and quietly editing whichever element
 happened to be first would be worse than the controls being absent.
+
+The state has a second consequence, on the *save* path: re-editing a note whose element the
+page has since rebuilt gives no snapshot, so there is nothing to diff and the deltas would
+come out `undefined`. Writing those onto the annotation would delete edits recorded on an
+earlier visit in exchange for fixing a typo in the comment — with no signal, since the
+section is not drawn in that state. `onSubmit` therefore only writes `designChanges` and
+`textChange` when a snapshot exists.
 
 ## Why the layer split is worth keeping
 

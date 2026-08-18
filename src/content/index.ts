@@ -223,6 +223,18 @@ let screenshotPending = false;
  */
 let designSnapshot: DesignSnapshot | null = null;
 
+/**
+ * The element that snapshot came off, paired with it rather than read back out of
+ * `composerTargets`.
+ *
+ * Every path that opens a composer while one is already up — a marker click, a panel row,
+ * a draft arriving from a child frame — reassigns `composerTargets` before it gets there,
+ * so by revert time the list no longer names the element wearing the preview. Holding it
+ * here is what makes "the panel opening another note" a real revert path rather than a
+ * claim, and it means the revert no longer has to re-derive whether there was one target.
+ */
+let designTarget: Element | null = null;
+
 // -----------------------------------------------------------------------------
 // UI
 // -----------------------------------------------------------------------------
@@ -666,7 +678,21 @@ function composerMeta(draft: Draft): ComposerMeta {
   };
 }
 
+/**
+ * Hand the page back whatever the open composer borrowed. Idempotent, and safe to call
+ * when nothing was ever previewed.
+ */
+function revertPreview(): void {
+  if (designTarget && designSnapshot) revertDesign(designTarget, designSnapshot);
+  designTarget = null;
+  designSnapshot = null;
+}
+
 function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null): void {
+  // Before anything else: replacing an open composer is a close, and the element the old
+  // one was previewing on has to be put back while we still know which one it was.
+  revertPreview();
+
   composer?.destroy();
   composerEditing = existing;
   overlay.showHighlights(
@@ -675,15 +701,26 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
   );
 
   // One element, no text selection: anything else has no single thing to preview on.
-  const designTarget =
-    composerTargets.length === 1 && !draft.selectedText ? composerTargets[0] : null;
-  designSnapshot = designTarget ? readDesign(designTarget) : null;
+  const target = composerTargets.length === 1 && !draft.selectedText ? composerTargets[0] : null;
+  designTarget = target;
+  designSnapshot = target ? readDesign(target) : null;
 
   // The draft is replaced wholesale by a retarget, and `onSubmit` has to store the one on
   // screen rather than the one the composer opened with. Module state, not a closure: see
   // the declaration.
   composerDraft = draft;
   retargetFrom = composerTargets[0] ?? null;
+
+  /**
+   * The highlight is drawn from a measurement taken before the preview; a box that no
+   * longer fits the element is worse than no box. Both previews move it, so both call this.
+   */
+  const redrawHighlight = (): void => {
+    overlay.showHighlights(composerTargets.map((el) => el.getBoundingClientRect()), {
+      primary: draft.element,
+      secondary: formatSource(draft.source),
+    });
+  };
 
   const callbacks: ComposerCallbacks = {
     onSubmit: (comment, kind: AnnotationKind, design) => {
@@ -699,8 +736,15 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
       if (existing) {
         existing.comment = comment;
         existing.kind = kind;
-        existing.designChanges = designChanges;
-        existing.textChange = textChange;
+        // Only when there was an element to diff against. Re-editing a note whose element
+        // the page has since rebuilt gives no snapshot, so both of these are `undefined`
+        // — and writing them through would delete the deltas the reviewer recorded
+        // earlier, in exchange for fixing a typo in the comment. The Design section is
+        // not even drawn in that state, so nothing would have warned them.
+        if (designSnapshot) {
+          existing.designChanges = designChanges;
+          existing.textChange = textChange;
+        }
       } else {
         annotations = [
           ...annotations,
@@ -724,15 +768,12 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
     onScreenshot: () => void captureScreenshot(existing ?? composerDraft ?? draft),
     onDesignPreview: (property, value) => {
       if (designTarget) previewDesign(designTarget, property, value);
-      // The highlight is drawn from a measurement taken before the change; a box
-      // that no longer fits the element is worse than no box.
-      overlay.showHighlights(composerTargets.map((el) => el.getBoundingClientRect()), {
-        primary: draft.element,
-        secondary: formatSource(draft.source),
-      });
+      redrawHighlight();
     },
     onTextPreview: (text) => {
       if (designTarget) previewText(designTarget, text);
+      // Rewriting a label resizes the element as surely as changing its padding does.
+      redrawHighlight();
     },
     onDelete: existing
       ? () => {
@@ -943,14 +984,10 @@ function closeComposer(): void {
   // with nowhere to put its result.
   closeShotEditor();
 
-  // Before the targets are dropped, and unconditionally — saving does not keep the
-  // preview either. The report describes a change to make in the codebase; leaving
-  // the page wearing it would have the reviewer testing against a mirage, and the
-  // next reload would silently take it away again.
-  if (designSnapshot && composerTargets.length === 1) {
-    revertDesign(composerTargets[0], designSnapshot);
-  }
-  designSnapshot = null;
+  // Unconditionally — saving does not keep the preview either. The report describes a
+  // change to make in the codebase; leaving the page wearing it would have the reviewer
+  // testing against a mirage, and the next reload would silently take it away again.
+  revertPreview();
 
   composer?.destroy();
   composer = null;

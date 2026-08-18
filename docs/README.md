@@ -219,9 +219,12 @@ reviewer never found out whether their own idea was right. Thirteen properties c
 tried on the real element from inside the composer, and what they settled on reaches the
 report as a `from → to` table. Its `context.md` states the rule the whole feature is built
 around and the one place it diverges from the tool it was modelled on: **the preview is a
-loan**. It is undone whenever the composer closes, saving included, down to removing a
-`style` attribute left empty — a reviewer testing against a change that exists in no
-codebase is worse served than one who saw it for a minute.
+loan**. It is undone whenever the composer closes, saving included, by restoring the
+`style` attribute verbatim — or removing it, when the element never had one — because a
+reviewer testing against a change that exists in no codebase is worse served than one who
+saw it for a minute. Its `changelog.md` ends with the PR review follow-ups, and they are
+worth reading as one lesson: three separate bugs were the same mistake, a snapshot that
+could not describe what it found.
 
 
 ## [`composer-retarget/`](./composer-retarget/) — unreleased

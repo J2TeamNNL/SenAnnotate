@@ -844,7 +844,7 @@ async function main() {
       `style attribute was ${JSON.stringify(await design.locator(".cta").evaluate((el) => el.getAttribute("style")))}`,
     );
 
-    await design.locator('.tool[title^="Annotations"]').click();
+    await design.locator('.tool[aria-label^="Annotations"]').click();
     await design.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await design.locator(".panel .button--primary").click();
     const designReport = await design.evaluate(() => navigator.clipboard.readText());
@@ -874,6 +874,16 @@ async function main() {
       (await design.locator(".design__count").textContent()) === "3",
       `the badge reads "${await design.locator(".design__count").textContent()}" on reopen`,
     );
+    // A badge of 3 over an element rendering none of them is the failure this catches:
+    // the preview only ever happens through the panel's callbacks, so restoring the
+    // controls has to replay them.
+    await design.waitForTimeout(250);
+    check(
+      "and puts them back on the element, not just into the controls",
+      (await design.locator(".cta").evaluate((el) => getComputedStyle(el).fontSize)) === "22px" &&
+        (await design.locator(".cta").textContent()) === "Upgrade now",
+      `the button is ${await design.locator(".cta").evaluate((el) => getComputedStyle(el).fontSize)} reading "${await design.locator(".cta").textContent()}"`,
+    );
     await design.keyboard.press("Escape");
     await design.waitForTimeout(200);
     check(
@@ -884,7 +894,7 @@ async function main() {
 
     // A note about several elements has no single thing to preview on, so the
     // controls are absent rather than editing whichever one happens to be first.
-    await design.locator('.tool[title^="Annotations"]').click();
+    await design.locator('.tool[aria-label^="Annotations"]').click();
     await design.locator("h1").click({ modifiers: ["ControlOrMeta"], timeout: 5_000 });
     await design.locator(".tile").click({ modifiers: ["ControlOrMeta"], timeout: 5_000 });
     await design.keyboard.press("Enter");
@@ -895,6 +905,42 @@ async function main() {
       "design controls appeared for a note covering two elements",
     );
     await design.keyboard.press("Escape");
+
+    // An element that arrived with styling of its own. Read the attribute first, so the
+    // assertion compares against what the page actually authored rather than a copy of it
+    // that can drift from the fixture.
+    const keepStyle = await design.locator(".keep").evaluate((el) => el.getAttribute("style"));
+    await design.locator(".keep").click({ timeout: 5_000 });
+    await design.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await design.locator(".design__toggle").click();
+
+    check(
+      "a colour the swatch cannot hold is named beside it rather than shown as black",
+      (await design
+        .locator('.design__row:has(.design__control[data-design="background-color"]) .design__unset')
+        .textContent()) === "rgba(0, 0, 0, 0)",
+      `the row read "${await design.locator('.design__row:has(.design__control[data-design="background-color"]) .design__unset').textContent()}"`,
+    );
+
+    await design.locator('.design__control[data-design="padding"]').fill("24px");
+    await design.waitForTimeout(250);
+    check(
+      "the preview beats the element's own inline declaration",
+      (await design.locator(".keep").evaluate((el) => getComputedStyle(el).paddingLeft)) === "24px",
+      `padding-left rendered at ${await design.locator(".keep").evaluate((el) => getComputedStyle(el).paddingLeft)}`,
+    );
+
+    await design.keyboard.press("Escape");
+    await design.waitForTimeout(250);
+    // `padding` is a shorthand: clearing it takes an inline `padding-left` with it, and no
+    // per-property snapshot could have seen one to put back. The `!important` is the other
+    // half — `getPropertyValue` does not carry a priority.
+    check(
+      "the revert hands back inline longhands and !important, not just the fields it knows",
+      (await design.locator(".keep").evaluate((el) => el.getAttribute("style"))) === keepStyle,
+      `style came back as ${JSON.stringify(await design.locator(".keep").evaluate((el) => el.getAttribute("style")))}, was ${JSON.stringify(keepStyle)}`,
+    );
+
     await design.close();
 
     // -------------------------------------------------------------------------

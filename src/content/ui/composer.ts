@@ -91,9 +91,11 @@ export class Composer {
   private readonly meta: HTMLElement;
   private readonly callbacks: ComposerCallbacks;
   /**
-   * Where the card was first placed. Kept so a retarget that grows the meta block can be
+   * Where the card was first placed.
+   *
+   * Kept so a retarget that grows the meta block, or opening the Design section, can be
    * re-clamped against the same anchor rather than against a `top` frozen when the card
-   * was shorter.
+   * was shorter — both change the card's height after `position` already ran once.
    */
   private readonly anchor: { left: number; top: number; right: number; bottom: number };
 
@@ -112,6 +114,11 @@ export class Composer {
           {
             onChange: (property, value) => callbacks.onDesignPreview?.(property, value),
             onTextChange: (text) => callbacks.onTextPreview?.(text),
+            // The section is ~216px of rows that appear after the card was placed, and
+            // `max-height` caps how much it grows rather than stopping it: a composer
+            // anchored low on a short viewport would put its own footer — Save included —
+            // below the fold, inside a `pointer-events: none` layer with nothing to scroll.
+            onToggle: () => this.position(this.anchor),
           },
           { changes: data.design.changes, text: data.design.text },
         )
@@ -218,6 +225,16 @@ export class Composer {
         if (keyboard.isComposing) return;
 
         if (keyboard.key === "Escape") {
+          // A native `<select>` and the colour picker both dismiss their own popup with
+          // Escape, and that keydown bubbles to here. Treating it as "cancel the note"
+          // would throw away the typed comment and revert every preview because someone
+          // shut a dropdown, so the control that owns the key keeps it.
+          const origin = event.composedPath()[0];
+          const ownsEscape =
+            origin instanceof HTMLSelectElement ||
+            (origin instanceof HTMLInputElement && origin.type === "color");
+          if (ownsEscape) return;
+
           keyboard.preventDefault();
           keyboard.stopPropagation();
           this.callbacks.onCancel();
@@ -268,6 +285,11 @@ export class Composer {
     }
 
     takeFocus(this.textarea);
+
+    // After `position`, so the card is placed before the element starts changing size
+    // underneath it. No-op on a fresh note; on a reopened one it re-applies the edits the
+    // controls were just seeded with.
+    this.design?.replay();
   }
 
   /** Put the caret back after something else — the markup editor — borrowed focus. */

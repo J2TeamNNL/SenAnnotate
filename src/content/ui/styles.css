@@ -734,9 +734,10 @@ button {
 .design__body {
   display: none;
   /*
-   * The list is longer than the card is tall on a short viewport, and the composer
-   * is positioned once, on open. Scrolling inside the section keeps the card the
-   * size it was placed at rather than growing off the bottom of the screen.
+   * The list is longer than the card is tall on a short viewport, so it scrolls inside
+   * the section rather than making the card as tall as thirteen rows. This caps how much
+   * the card grows; it does not stop it growing, which is why the toggle re-runs the
+   * composer's `position` — see the `onToggle` comment in `ui/composer.ts`.
    */
   max-height: 210px;
   overflow-y: auto;
@@ -795,6 +796,22 @@ button {
 .design__control--color {
   flex: 0 0 44px;
   padding: 2px;
+}
+
+/*
+ * The element's real colour, when `#rrggbb` cannot hold it — `rgba(0, 0, 0, 0)`, an
+ * `oklch()`. Without this the swatch's fallback black reads as the element's own colour.
+ * Monospace and truncating: it is a value to read, and it must not push the row wider.
+ */
+.design__unset {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sa-fg-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .button {

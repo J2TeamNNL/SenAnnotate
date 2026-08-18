@@ -19,6 +19,8 @@ export interface DesignPanelCallbacks {
   /** An empty value means "stop overriding this property". */
   onChange(property: string, value: string): void;
   onTextChange(text: string): void;
+  /** The section opened or shut, so the card is a different height than it was placed at. */
+  onToggle(): void;
 }
 
 export class DesignPanel {
@@ -50,6 +52,7 @@ export class DesignPanel {
             const open = this.element.dataset.open === "true";
             this.element.dataset.open = String(!open);
             toggle.setAttribute("aria-expanded", String(!open));
+            this.callbacks.onToggle();
           },
         },
       },
@@ -72,6 +75,25 @@ export class DesignPanel {
   /** The replacement text, or null when it was left alone. */
   currentText(): string | null {
     return this.text !== null && this.text !== this.snapshot.text ? this.text : null;
+  }
+
+  /**
+   * Put the restored values back on the page.
+   *
+   * Reopening a saved note seeds the controls and the badge from `designChanges`, but the
+   * preview only ever happens through these callbacks — so without this the badge says
+   * three properties are pending while the element renders none of them, and nudging one
+   * control would apply that one alone. Reopening has to mean what opening means.
+   *
+   * Kept out of the constructor so the composer is built and placed before the page
+   * starts moving under it.
+   */
+  replay(): void {
+    for (const [property, value] of Object.entries(this.values)) {
+      this.callbacks.onChange(property, value);
+    }
+    const text = this.currentText();
+    if (text !== null) this.callbacks.onTextChange(text);
   }
 
   private build(): void {
@@ -108,16 +130,37 @@ export class DesignPanel {
   private row(field: DesignField): HTMLElement {
     const control =
       field.control === "select" ? this.select(field) : this.input(field);
-    return this.labelled(field.label, control);
+    return this.labelled(field.label, control, this.unshowable(field));
   }
 
-  private labelled(label: string, control: HTMLElement): HTMLElement {
+  private labelled(
+    label: string,
+    control: HTMLElement,
+    note: HTMLElement | null = null,
+  ): HTMLElement {
     return h(
       "div",
       { class: "design__row" },
       h("span", { class: "design__label", text: label }),
       control,
+      note,
     );
+  }
+
+  /**
+   * The element's real colour, printed beside the swatch when the swatch cannot hold it.
+   *
+   * `<input type="color">` has no empty state — it must open on some `#rrggbb` — and
+   * `background-color` computes to `rgba(0, 0, 0, 0)` on most elements, so the picker would
+   * open on black for an element that has no background at all. That is the first thing
+   * read off the control and it would be false. Saying `rgba(0, 0, 0, 0)` next to it costs
+   * one span and is true.
+   */
+  private unshowable(field: DesignField): HTMLElement | null {
+    if (field.control !== "color") return null;
+    const computed = this.snapshot.computed[field.property] ?? "";
+    if (rgbToHex(computed)) return null;
+    return h("span", { class: "design__unset", text: computed || "unset" });
   }
 
   private input(field: DesignField): HTMLElement {
@@ -138,12 +181,15 @@ export class DesignPanel {
       },
     });
 
-    // A colour picker has no empty state to open on, so it opens on the element's
-    // own colour — while `values` stays empty until it is actually moved. Showing
-    // black would be a lie about what the element looks like now.
+    // A colour picker has no empty state to open on, so it opens on the element's own
+    // colour — while `values` stays empty until it is actually moved. When that colour has
+    // no hex form the swatch has to show something anyway; `unshowable` puts the real
+    // value beside it so the black is labelled rather than passed off as the element's.
     if (isColour) {
       input.value =
-        this.values[field.property] || rgbToHex(this.snapshot.computed[field.property] ?? "");
+        this.values[field.property] ||
+        rgbToHex(this.snapshot.computed[field.property] ?? "") ||
+        "#000000";
     } else {
       input.value = this.values[field.property] ?? "";
     }
@@ -180,6 +226,5 @@ export class DesignPanel {
   private updateCount(): void {
     const changed = Object.keys(this.values).length + (this.currentText() === null ? 0 : 1);
     this.count.textContent = changed ? String(changed) : "";
-    this.element.dataset.changed = String(changed > 0);
   }
 }

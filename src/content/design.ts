@@ -10,15 +10,25 @@
 // Two rules shape everything here.
 //
 // **The page is never permanently modified.** Every override is an inline style, and
-// `revert` puts back exactly what was in the `style` attribute before — including
-// nothing, which is the usual case. The overlay's whole contract with the page it is
+// `revertDesign` puts back the whole `style` attribute as it was found — including its
+// absence, which is the usual case. The overlay's whole contract with the page it is
 // standing on is "we do not touch it"; a preview is a loan, not an edit.
+//
+// The attribute is restored *wholesale* rather than property by property, because a
+// per-property snapshot cannot describe what it found. `padding`, `margin` and `gap` are
+// shorthands: `getPropertyValue("padding")` is `""` unless every longhand is declared
+// inline, while `removeProperty("padding")` deletes all four — so an element that arrived
+// with `padding-left: 10px` would have lost it with nothing recorded to put back. Nor does
+// `getPropertyValue` carry `!important`, so `color: red !important` would have come back
+// as `color: red` and started losing to the stylesheet rule it used to beat.
 //
 // **The report gets computed values, not inline ones.** `from` is what the element
 // actually looked like — `16px`, `rgb(37, 99, 235)` — because an agent needs the
 // state it is changing away from, and the inline style is empty on any element that
 // gets its styling from a stylesheet, which is all of them.
 // =============================================================================
+
+import type { DesignChange } from "../shared/types";
 
 export type DesignControl = "text" | "color" | "select";
 
@@ -92,32 +102,31 @@ export const DESIGN_FIELDS: DesignField[] = [
   { property: "height", label: "Height", group: "Size", control: "text", placeholder: "auto" },
 ];
 
-export interface DesignChange {
-  property: string;
-  from: string;
-  to: string;
-}
-
 export interface DesignSnapshot {
-  /** The `style` attribute's own value per property — usually "". */
-  inline: Record<string, string>;
+  /** The `style` attribute verbatim, or `null` when the element carried none. */
+  style: string | null;
   /** What the element actually rendered as, before anything was touched. */
   computed: Record<string, string>;
-  /** The element's text, when it is a single run this can safely replace. */
+  /** The element's text, whitespace-normalised, when it is a run this can replace. */
   text: string | null;
+  /** The same text exactly as the DOM held it, so the revert puts back the source form. */
+  textRaw: string | null;
 }
 
 /**
  * Colours come back from `getComputedStyle` as `rgb(37, 99, 235)`, and
  * `<input type="color">` speaks nothing but `#rrggbb`.
  *
- * A colour with alpha is deliberately not converted: `#rrggbb` cannot hold it, and
- * silently dropping the transparency would put a wrong swatch in front of someone and
- * then report the wrong `from`. Those land on the fallback, which is a legible black.
+ * `null` — not a fallback colour — for anything `#rrggbb` cannot hold: any alpha
+ * (`background-color` computes to `rgba(0, 0, 0, 0)` on most elements), and the
+ * `oklch()` / `color(srgb …)` a Tailwind v4 page computes to. A fallback of `#000000`
+ * would be a value the picker can also produce, so choosing black on a transparent
+ * element would make `from === to` and drop a change the preview had visibly applied.
+ * Callers decide what to do with "cannot be shown"; none of them may guess.
  */
-export function rgbToHex(value: string): string {
+export function rgbToHex(value: string): string | null {
   const parts = value.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-  if (!parts) return "#000000";
+  if (!parts) return null;
 
   const hex = parts
     .slice(1, 4)
@@ -132,29 +141,39 @@ export function rgbToHex(value: string): string {
  * One text node and nothing else. A `<p>` containing a `<strong>` is refused: setting
  * `textContent` on it would delete the element the emphasis lives in, which is not an
  * edit anyone asked for and is not recoverable by putting a string back.
+ *
+ * Two forms come back. `text` is whitespace-collapsed, because source-formatted markup
+ * gives `"\n      Hello\n    "` and both consumers mishandle that: the report prints it
+ * inline as `**Text:** "from" → **"to"**`, where a newline breaks the Markdown, and
+ * setting `.value` on a one-line `<input>` strips CR/LF per spec — so comparing the field
+ * against the raw string records pure whitespace as an edit the moment it is focused.
+ * `raw` is kept so the revert hands the page back its own formatting, not our tidied one.
  */
-export function editableText(element: Element): string | null {
+export function editableText(element: Element): { text: string; raw: string } | null {
   if (element.childNodes.length !== 1) return null;
   const only = element.childNodes[0];
   if (only.nodeType !== Node.TEXT_NODE) return null;
 
-  const text = only.textContent ?? "";
-  return text.trim() ? text : null;
+  const raw = only.textContent ?? "";
+  const text = raw.replace(/\s+/g, " ").trim();
+  return text ? { text, raw } : null;
 }
 
 export function readDesign(element: Element): DesignSnapshot {
   const computedStyle = getComputedStyle(element);
-  const inlineStyle = (element as HTMLElement).style;
 
-  const inline: Record<string, string> = {};
   const computed: Record<string, string> = {};
-
   for (const field of DESIGN_FIELDS) {
-    inline[field.property] = inlineStyle.getPropertyValue(field.property);
     computed[field.property] = computedStyle.getPropertyValue(field.property);
   }
 
-  return { inline, computed, text: editableText(element) };
+  const editable = editableText(element);
+  return {
+    style: element.getAttribute("style"),
+    computed,
+    text: editable?.text ?? null,
+    textRaw: editable?.raw ?? null,
+  };
 }
 
 /**
@@ -167,14 +186,16 @@ export function readDesign(element: Element): DesignSnapshot {
  *
  * An empty value means "stop overriding this one", which is how a control returns to
  * its untouched state without a separate reset button.
+ *
+ * `removeProperty` first, always: `setProperty` with a value the CSS parser rejects is a
+ * silent no-op, so mid-edit text like `1` on the way to `12px` would leave the *previous*
+ * override standing while the field showed the new string. Clearing first makes an
+ * unparseable value show as nothing, so the page always agrees with what was typed.
  */
 export function previewDesign(element: Element, property: string, value: string): void {
   const style = (element as HTMLElement).style;
-  if (!value) {
-    style.removeProperty(property);
-    return;
-  }
-  style.setProperty(property, value, "important");
+  style.removeProperty(property);
+  if (value) style.setProperty(property, value, "important");
 }
 
 export function previewText(element: Element, text: string): void {
@@ -182,23 +203,20 @@ export function previewText(element: Element, text: string): void {
   if (only?.nodeType === Node.TEXT_NODE) only.textContent = text;
 }
 
-/** Put the element back exactly as it was found — including the text. */
+/**
+ * Put the element back exactly as it was found — including the text.
+ *
+ * Restoring the attribute rather than each property is what preserves inline longhands
+ * the shorthand fields would have deleted, declaration order, and `!important`. When the
+ * element had no `style` at all the attribute is *removed*, not blanked: an element that
+ * gained a bare `style=""` has still been modified — visibly in devtools, and to any page
+ * code that tests for the attribute.
+ */
 export function revertDesign(element: Element, snapshot: DesignSnapshot): void {
-  const style = (element as HTMLElement).style;
+  if (snapshot.style === null) element.removeAttribute("style");
+  else element.setAttribute("style", snapshot.style);
 
-  for (const field of DESIGN_FIELDS) {
-    const before = snapshot.inline[field.property];
-    style.removeProperty(field.property);
-    if (before) style.setProperty(field.property, before);
-  }
-
-  if (snapshot.text !== null) previewText(element, snapshot.text);
-
-  // `removeProperty` empties the attribute but leaves it in place, and an element that
-  // gained a bare `style=""` has still been modified — visibly so in devtools, and to
-  // any code the page runs that looks for the attribute. Nothing left behind means
-  // nothing left behind.
-  if (element.getAttribute("style") === "") element.removeAttribute("style");
+  if (snapshot.textRaw !== null) previewText(element, snapshot.textRaw);
 }
 
 /**
@@ -218,12 +236,19 @@ export function diffDesign(
     const to = values[field.property] ?? "";
     if (!to) continue;
 
+    // A value the CSS parser rejects never reached the element — it is a typo caught
+    // mid-edit, not an intent — and handing an invalid declaration to the agent as the
+    // change to make is worse than saying nothing.
+    if (!CSS.supports(field.property, to)) continue;
+
     // Colours are compared and reported in the notation the control speaks. The
     // computed side is `rgb(37, 99, 235)` and the picker only ever produces
     // `#2563eb`, so without this every colour reads as changed and the report puts
-    // two notations for the same colour on one line.
+    // two notations for the same colour on one line. When the computed side has no
+    // hex form the raw string is reported as-is: it can never equal a `#rrggbb`, so
+    // the row survives instead of being dropped as a no-op.
     const raw = snapshot.computed[field.property] ?? "";
-    const from = field.control === "color" ? rgbToHex(raw) : raw;
+    const from = field.control === "color" ? rgbToHex(raw) ?? raw : raw;
     if (from === to) continue;
 
     changes.push({ property: field.property, from, to });

@@ -17,5 +17,13 @@
       <!-- A single text node: the only shape whose text may be replaced. -->
       <button class="cta">Upgrade plan</button>
     </div>
+    <!--
+      Styling the revert has to hand back and cannot have snapshotted per property: a
+      partial inline longhand, which clearing the `padding` shorthand would delete, and an
+      inline `!important`, which `getPropertyValue` does not carry. It also has no
+      background of its own, so `background-color` computes to `rgba(0, 0, 0, 0)` — the
+      colour a `#rrggbb` swatch cannot hold.
+    -->
+    <p class="keep" style="padding-left: 10px; color: red !important">Keep my inline style</p>
   </body>
 </html>
