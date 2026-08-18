@@ -152,7 +152,8 @@ the line and column.
 | Cancel / exit | <kbd>Esc</kbd> — closes the innermost thing first: tooltip, then the open card, then a half-built pick set, then the panel, then inspect mode |
 
 The line under the toolbar always names what the current mode does and which keys
-switch to the others, so nothing above needs memorising.
+switch to the others, so nothing above needs memorising. Every button on the pill names
+itself on hover — and on keyboard focus — so the icons do not have to be learned either.
 
 <kbd>C</kbd> is the one worth knowing about. Clicking is how you annotate, and clicking
 is also what closes the thing you wanted to annotate — a dropdown, a hover menu, a
@@ -214,7 +215,7 @@ dark colour gets light text rather than unreadable dark-on-dark.
 
 **Settings.** The gear on the toolbar opens them, next to the page they describe rather
 than behind the extension icon: detail level, which components get named, props,
-screenshots, diagnostics, pins, freeze-on-inspect, theme and accent. Each row carries a
+screenshots, diagnostics, pins, freeze-on-inspect, clear-after-copy, theme and accent. Each row carries a
 `?` explaining what it does, because a setting whose effect you have to guess is one you
 leave alone. They apply everywhere, so you set them once.
 
@@ -228,6 +229,22 @@ and stays gone until you close the tab; every other tab is untouched. It is for 
 moment a demo or a screen-share needs the page clean without turning the extension off
 everywhere. The card's footer shows which version you are running, so a bug report can
 name it.
+
+**Clear after copy** is off by default. Turned on, the page's notes are emptied once a
+copy has actually reached the clipboard — not merely once you asked for one — so the next
+round starts clean. It drops the action trail and the diagnostics with them, exactly as
+*Clear all* does.
+
+**Modals and dialogs** are annotated like anything else, including the two shapes that
+used to be impossible: a `showModal()` dialog, which Chrome paints in its *top layer*
+above every z-index and makes everything outside it inert, and a library dialog with a
+focus trap — Reka UI, Radix and Headless UI all restore focus when it leaves the dialog,
+which silently swallowed everything typed into the composer until 0.8.1.
+
+One case is left, and it is unavoidable: a dialog that closes when focus leaves it closes
+when the composer opens, because typing requires focus. The annotation is captured before
+the composer appears, so the element, its selector, its component chain and the report are
+complete either way.
 
 ## Triage
 
@@ -505,6 +522,11 @@ environment variable so nothing machine-specific is baked in:
 Each is checked with an actionable error rather than a default guess: a hardcoded path
 works on exactly one machine, and a wrong one fails later and more confusingly than an
 unset variable.
+
+`SENANNOTATE_HEADLESS=1` runs the whole suite **without a window on screen**. Chrome's
+*new* headless does load extensions, run the service worker and answer
+`captureVisibleTab`, so every check passes there — worth using, because the default headed
+window takes the screen and the keyboard focus for the length of the run.
 
 Fixtures under `test/fixtures/` reproduce what `@vitejs/plugin-vue` emits
 (`__name`, `__file`, `data-v-inspector`) so the source-resolution path is
