@@ -47,6 +47,16 @@ Drag-select takes everything a box fully contains, at the shallowest level conta
 
 ![Marquee selection across three cards, counted live under the toolbar](./store/screenshots/marquee.jpg)
 
+The camera on the composer crops the element and opens a markup editor first, so the
+image you attach points at the thing you mean — box, arrow, or a blur that is permanent:
+
+![The markup editor over a cropped screenshot, with a box drawn on it](./store/screenshots/markup.jpg)
+
+Settings live on the toolbar, next to the work: how much detail the report carries,
+whether errors and steps are captured, the accent colour, and a per-tab way out:
+
+![The settings card, showing the report, bug-report, behaviour and appearance groups](./store/screenshots/settings.jpg)
+
 And this is what comes out — the thing you paste into your agent:
 
 ![The generated Markdown report](./store/screenshots/report.jpg)
@@ -136,13 +146,15 @@ the line and column.
 | Open settings | the gear on the toolbar |
 | Hide the overlay on this tab | **Hide until restart** in settings — back on any other tab, or when this one is closed |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button — this also leaves inspect mode and closes the open card |
+| Move the toolbar | drag it anywhere |
 | Copy the report | **Copy report** in the panel |
 | Save the report as a file | **.md** in the panel |
 | Copy every page at once | **Copy session report** in the extension popup |
-| Cancel / exit | <kbd>Esc</kbd> |
+| Cancel / exit | <kbd>Esc</kbd> — closes the innermost thing first: tooltip, then the open card, then a half-built pick set, then the panel, then inspect mode |
 
 The line under the toolbar always names what the current mode does and which keys
-switch to the others, so nothing above needs memorising.
+switch to the others, so nothing above needs memorising. Every button on the pill names
+itself on hover — and on keyboard focus — so the icons do not have to be learned either.
 
 <kbd>C</kbd> is the one worth knowing about. Clicking is how you annotate, and clicking
 is also what closes the thing you wanted to annotate — a dropdown, a hover menu, a
@@ -165,6 +177,15 @@ untouched, because it is a property of the page rather than of the toolbar.
 The collapsed state is a setting rather than a session flag, so a reload does not put
 the pill back over the corner you were looking at. <kbd>H</kbd> works whether or not
 inspect mode is on, unlike the mode keys.
+
+If collapsing is not enough — the corner itself is what you need to look at — **drag
+the toolbar anywhere**. Grab it by any part of the pill, buttons included; a press
+that travels more than a few pixels moves it instead of clicking it.
+
+The position is remembered **per page**, the same way annotations are: move it out of
+the way of the checkout page's order summary and it stays there on that page, while
+every other page keeps the default corner. It is clamped back into view if you later
+open the same page in a narrower window.
 
 Dragging a box selects **everything it fully contains**, at the shallowest level
 contained — draw around three cards and you get three cards, not the `<div>`s
@@ -195,7 +216,7 @@ dark colour gets light text rather than unreadable dark-on-dark.
 
 **Settings.** The gear on the toolbar opens them, next to the page they describe rather
 than behind the extension icon: detail level, which components get named, props,
-screenshots, diagnostics, pins, freeze-on-inspect, theme and accent. Each row carries a
+screenshots, diagnostics, pins, freeze-on-inspect, clear-after-copy, theme and accent. Each row carries a
 `?` explaining what it does, because a setting whose effect you have to guess is one you
 leave alone. They apply everywhere, so you set them once.
 
@@ -209,6 +230,22 @@ and stays gone until you close the tab; every other tab is untouched. It is for 
 moment a demo or a screen-share needs the page clean without turning the extension off
 everywhere. The card's footer shows which version you are running, so a bug report can
 name it.
+
+**Clear after copy** is off by default. Turned on, the page's notes are emptied once a
+copy has actually reached the clipboard — not merely once you asked for one — so the next
+round starts clean. It drops the action trail and the diagnostics with them, exactly as
+*Clear all* does.
+
+**Modals and dialogs** are annotated like anything else, including the two shapes that
+used to be impossible: a `showModal()` dialog, which Chrome paints in its *top layer*
+above every z-index and makes everything outside it inert, and a library dialog with a
+focus trap — Reka UI, Radix and Headless UI all restore focus when it leaves the dialog,
+which silently swallowed everything typed into the composer until 0.8.1.
+
+One case is left, and it is unavoidable: a dialog that closes when focus leaves it closes
+when the composer opens, because typing requires focus. The annotation is captured before
+the composer appears, so the element, its selector, its component chain and the report are
+complete either way.
 
 ## Triage
 
@@ -486,6 +523,11 @@ environment variable so nothing machine-specific is baked in:
 Each is checked with an actionable error rather than a default guess: a hardcoded path
 works on exactly one machine, and a wrong one fails later and more confusingly than an
 unset variable.
+
+`SENANNOTATE_HEADLESS=1` runs the whole suite **without a window on screen**. Chrome's
+*new* headless does load extensions, run the service worker and answer
+`captureVisibleTab`, so every check passes there — worth using, because the default headed
+window takes the screen and the keyboard focus for the length of the run.
 
 Fixtures under `test/fixtures/` reproduce what `@vitejs/plugin-vue` emits
 (`__name`, `__file`, `data-v-inspector`) so the source-resolution path is

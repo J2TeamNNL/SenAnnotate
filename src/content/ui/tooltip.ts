@@ -6,9 +6,11 @@
 // as body copy they made the card twice as tall as its controls; behind a `ⓘ` they
 // cost nothing until asked for.
 //
-// The browser's own `title=` would have been free, and the toolbar buttons still use
-// it — but it waits about a second before appearing and cannot be styled, and a card
-// full of settings is exactly where someone is reading rather than pointing.
+// The browser's own `title=` would have been free — but it waits about a second before
+// appearing, cannot be styled, and on someone else's page it reads as that page's tooltip
+// rather than ours. The settings card is where someone is reading rather than pointing, and
+// the toolbar's buttons are icon-only, so both use this instead. `aria-label` carries the
+// same text for assistive tech.
 //
 // One node, moved and refilled. Nine rows with a tooltip each would otherwise mean nine
 // absolutely-positioned elements sitting in the layer doing nothing.
@@ -23,6 +25,14 @@ const MARGIN = 8;
 let node: HTMLElement | null = null;
 let host: HTMLElement | null = null;
 let current: HTMLElement | null = null;
+/**
+ * Whether the visible tooltip was opened by focus rather than by hover.
+ *
+ * The Escape chain treats the two differently — a hover tooltip is dismissed by moving the
+ * pointer, so swallowing a press aimed at the card underneath would be wrong; a focused one
+ * has no such escape and must answer the key.
+ */
+let shownByFocus = false;
 let sequence = 0;
 
 /**
@@ -56,6 +66,7 @@ function ensureNode(): HTMLElement | null {
 
 function hide(): void {
   if (!node) return;
+  shownByFocus = false;
   node.style.display = "none";
   node.setAttribute("aria-hidden", "true");
   current?.removeAttribute("aria-describedby");
@@ -75,8 +86,14 @@ function place(trigger: HTMLElement): void {
   const anchor = trigger.getBoundingClientRect();
   const box = tip.getBoundingClientRect();
 
-  let top = anchor.top - box.height - GAP;
-  if (top < MARGIN) top = anchor.bottom + GAP;
+  // A toolbar button clears the whole dock rather than just itself: inspect mode puts the
+  // hint line directly above the pill, and a tooltip anchored to the button would land on
+  // top of it. Horizontal centring still follows the button, so it still points at itself.
+  const dock = trigger.closest(".toolbar-dock");
+  const vertical = dock ? dock.getBoundingClientRect() : anchor;
+
+  let top = vertical.top - box.height - GAP;
+  if (top < MARGIN) top = vertical.bottom + GAP;
 
   const left = Math.min(
     Math.max(MARGIN, anchor.left + anchor.width / 2 - box.width / 2),
@@ -87,9 +104,10 @@ function place(trigger: HTMLElement): void {
   tip.style.left = `${Math.round(left)}px`;
 }
 
-function show(trigger: HTMLElement, text: string): void {
+function show(trigger: HTMLElement, text: string, byFocus = false): void {
   const tip = ensureNode();
   if (!tip) return;
+  shownByFocus = byFocus;
 
   tip.textContent = text;
   tip.style.display = "block";
@@ -115,15 +133,32 @@ function show(trigger: HTMLElement, text: string): void {
  * `focus` as well as `pointerenter`, and `trigger` is expected to be a `<button>` — the
  * help on a settings row is not decoration, and a keyboard cannot hover.
  *
+ * `text` may be a function, read at show time: the collapse button's label carries the
+ * annotation count, which changes under it.
+ *
+ * Escape is deliberately *not* handled here. It used to be, and that hid the tooltip before
+ * the orchestrator's Escape chain could see one was open — so a press aimed at the tooltip
+ * closed the settings card underneath it as well. `isFocusTooltipVisible` exists for that
+ * chain to ask first.
  */
-export function attachTooltip(trigger: HTMLElement, text: string): void {
-  listen(trigger, "pointerenter", () => show(trigger, text));
+export function attachTooltip(trigger: HTMLElement, text: string | (() => string)): void {
+  const read = () => (typeof text === "function" ? text() : text);
+  listen(trigger, "pointerenter", () => show(trigger, read()));
   listen(trigger, "pointerleave", () => hide());
-  listen(trigger, "focus", () => show(trigger, text));
+  listen(trigger, "focus", () => show(trigger, read(), true));
   listen(trigger, "blur", () => hide());
-  listen(trigger, "keydown", (event) => {
-    if ((event as KeyboardEvent).key === "Escape") hide();
-  });
+}
+
+/**
+ * Whether a *keyboard* tooltip is on screen — the one Escape has to answer.
+ *
+ * Deliberately false for a hover tooltip. The pointer resting on a toolbar button is enough
+ * to show one, and a press meant for the card underneath must not be spent hiding something
+ * that disappears the moment the mouse moves. Measured as exactly that: with the pointer
+ * still on the gear it had just clicked, Escape stopped closing the settings card.
+ */
+export function isFocusTooltipVisible(): boolean {
+  return shownByFocus && !!node && node.isConnected && node.style.display !== "none";
 }
 
 /** Used when the card holding the triggers goes away underneath an open tooltip. */

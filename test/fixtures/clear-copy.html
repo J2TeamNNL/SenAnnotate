@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SenAnnotate fixture — clear after copying</title>
+    <style>
+      body { margin: 0; padding: 40px; font: 14px/1.5 system-ui, sans-serif; }
+      button { padding: 8px 14px; border: 1px solid #d0d4da; border-radius: 6px; background: #fff; cursor: pointer; }
+      .row { display: flex; gap: 12px; margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <!-- Its own fixture: this block counts markers and reads the toolbar count, and
+         `chrome.storage.local` is shared by every page in the suite's single context —
+         annotations are keyed on origin + pathname, so a page another block has
+         annotated opens with whatever that block left behind.
+
+         The two extra buttons exist for the action trail. Clearing is supposed to take
+         the trail with the annotations, and the only way to see that is to leave a
+         distinctly-named click behind before the clear and check it is gone from the
+         next report. -->
+    <main>
+      <h1 id="headline">Clear after copying</h1>
+      <button class="cta">Annotate me</button>
+      <div class="row">
+        <button id="stale">Stale click</button>
+        <button id="fresh">Fresh click</button>
+      </div>
+    </main>
+  </body>
+</html>

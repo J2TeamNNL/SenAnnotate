@@ -6,6 +6,7 @@
 //
 //   store-icon-128.png     128x128, the mark inset to 96x96 as the guidelines ask
 //   screenshot-1..5.jpg    1280x800, the real extension driven against store/demo.html
+//   screenshot-6..7.jpg    1280x800, README-only — the listing form takes five
 //   promo-small-440.jpg    440x280
 //   promo-marquee-1400.jpg 1400x560
 //
@@ -117,6 +118,17 @@ const centre = (box) => [box.x + box.width / 2, box.y + box.height / 2];
 
 // --- 1. inspect mode, hovering an element -----------------------------------
 //
+// Everything our UI shows on hover — the highlight label, a toolbar button's tooltip —
+// belongs in a screenshot only when that is what the screenshot is about.
+//
+// Parked on one of our *own* card headers, not on empty page canvas: the overlay ignores
+// itself, so the highlight clears. Empty canvas is not empty — it is some container, and
+// hovering it washed the whole viewport in accent tint in the first take.
+const parkPointer = async (target, selector) => {
+  await target.locator(selector).hover();
+  await target.waitForTimeout(400);
+};
+
 // A table cell: wide, mid-canvas, and with empty space above it for the label. Hovering a
 // small element like a delta chip puts the label over neighbouring text.
 const cell = await page.locator(".cell-name").first().boundingBox();
@@ -154,10 +166,12 @@ await page.locator(".composer .button--primary").click();
 await page.locator(".composer").waitFor({ state: "detached", timeout: 10_000 });
 
 // --- 3. the panel: the list, and what was captured automatically -------------
-await page.locator('.tool[title^="Annotations"]').click();
+await page.locator('.tool[aria-label^="Annotations"]').click();
 await page.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
 await page.locator(".capture-summary").waitFor({ state: "visible", timeout: 10_000 });
-await page.waitForTimeout(400);
+// Park the pointer off the toolbar first: a toolbar button names itself on hover now, and
+// the tooltip sat across the panel's Copy report button in the first take.
+await parkPointer(page, ".panel .card__title");
 await shot(page, "screenshot-3-panel.jpg");
 
 // --- 5. the report it produces (captured here, while the panel is open) ------
@@ -166,7 +180,7 @@ const report = await page.evaluate(() => navigator.clipboard.readText());
 if (!report || !report.includes("PrimaryButton")) {
   throw new Error(`The copied report looks wrong, refusing to ship it:\n${report.slice(0, 300)}`);
 }
-await page.locator('.tool[title^="Annotations"]').click();
+await page.locator('.tool[aria-label^="Annotations"]').click();
 
 // --- 4. marquee: selecting several elements at once --------------------------
 await page.keyboard.press("3");
@@ -181,6 +195,47 @@ await page.evaluate(
 );
 await shot(page, "screenshot-4-marquee.jpg");
 await page.mouse.up();
+
+// Releasing commits the selection, and committing is async — an Escape sent straight after
+// lands before the composer exists and cancels nothing, leaving a three-element composer
+// sitting in the corner of every shot below. Measured that way in the first take.
+await page.locator(".composer").waitFor({ state: "visible", timeout: 10_000 });
+await page.keyboard.press("Escape");
+await page.locator(".composer").waitFor({ state: "detached", timeout: 10_000 });
+// The `Copied 2 annotations` toast from the report above lasts 2.2s and would otherwise
+// appear in the two shots that follow, advertising something they are not about.
+await page.waitForTimeout(2400);
+
+// --- 6. the settings card, which lives on the toolbar rather than in the popup ----
+// README-only: the Web Store form takes five screenshots and these are the five above.
+await page.keyboard.press("1");
+await page.locator(".tool--settings").click();
+await page.locator(".settings").waitFor({ state: "visible", timeout: 10_000 });
+await parkPointer(page, ".settings .card__title");
+await shot(page, "screenshot-6-settings.jpg");
+await page.locator(".tool--settings").click();
+
+// --- 7. the markup editor, between capturing a screenshot and saving it -----------
+const target = await page.locator(".cell-name").first().boundingBox();
+await page.mouse.click(...centre(target));
+await page.locator(".composer").waitFor({ state: "visible", timeout: 10_000 });
+await page.locator(".composer__input").fill("This column needs the store name too.");
+await page.locator('.composer .button[title^="Capture"]').click();
+await page.locator(".shot-editor").waitFor({ state: "visible", timeout: 15_000 });
+
+// A drawn box, so the shot shows the editor being used rather than merely open. Drawn
+// across the middle of the canvas: a shape at the edge reads as a rendering artefact.
+const canvas = await page.locator(".shot-editor__canvas").boundingBox();
+if (canvas) {
+  await page.mouse.move(canvas.x + canvas.width * 0.12, canvas.y + canvas.height * 0.3);
+  await page.mouse.down();
+  await page.mouse.move(canvas.x + canvas.width * 0.62, canvas.y + canvas.height * 0.78, { steps: 10 });
+  await page.mouse.up();
+}
+await parkPointer(page, ".shot-editor .card__title");
+await shot(page, "screenshot-7-markup.jpg");
+// Cancel: this run must leave nothing on the disk, and the composer with it.
+await page.locator(".shot-editor .button--ghost").first().click();
 await page.keyboard.press("Escape");
 
 // --- the report screenshot ---------------------------------------------------

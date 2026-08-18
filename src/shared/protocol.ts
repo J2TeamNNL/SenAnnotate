@@ -43,6 +43,12 @@ export const INSPECTOR_ATTR = "data-v-inspector";
  * drift on the next rename.
  */
 export const ANNOTATION_PREFIX = `${NS}:page:`;
+/**
+ * Where the toolbar was dragged to, per page. Keyed like the annotations and stored
+ * beside them in `local` rather than in `sync`: it is a fact about one screen's
+ * layout, not a preference, and syncing it would move the pill on every machine.
+ */
+export const DOCK_PREFIX = `${NS}:dock:`;
 export const SETTINGS_KEY = `${NS}:settings`;
 
 /**

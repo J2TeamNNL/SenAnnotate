@@ -19,7 +19,7 @@
 // =============================================================================
 
 import { DEFAULT_ACCENT, accentTheme } from "../../shared/accent";
-import { h, icon, listen } from "./dom";
+import { h, icon, listen, takeFocus } from "./dom";
 
 type Tool = "box" | "arrow" | "blur";
 
@@ -174,7 +174,7 @@ export class ShotEditor {
     );
 
     layer.append(this.element);
-    this.element.focus();
+    takeFocus(this.element);
     this.repaint();
     this.installPointer();
 

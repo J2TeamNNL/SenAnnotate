@@ -221,6 +221,46 @@ four buttons now walk the DOM from an open composer. Its `context.md` explains w
 DevTools bindings this came from could not be copied, and why the keys stop working
 once the note has text.
 
+## [`draggable-toolbar/`](./draggable-toolbar/) — unreleased
+
+Collapsing stops helping when the bottom-right corner is the thing being reviewed, so
+the pill can now be dragged anywhere. Its `context.md` is the one to read before
+touching pointer handling again: it sets out why adding a drag did **not** reopen
+`modal-click-leak/` or `modal-focus-leak/`, and which of those guarantees hold by
+design and which hold by accident.
+
+## [`modal-trap-refocus/`](./modal-trap-refocus/) — unreleased
+
+The third act of the modal-focus story, and the one that contradicts the second: inside a
+Reka UI / Radix / Headless UI dialog the composer took no typing at all, because those traps
+restore focus from a `focusout` that fires on the *page's* element and never travels through
+our host. `modal-focus-leak/` had called that case unfixable, having assumed such a page can
+only close rather than re-focus. Its `context.md` quotes the library source; the `changelog.md`
+explains the `relatedTarget === null` seam the fix uses, and why reparenting the host into the
+dialog — which would cover more — was deliberately not done.
+
+## [`escape-closes-cards/`](./escape-closes-cards/) — unreleased
+
+<kbd>Esc</kbd> now closes the settings card and the annotations panel, innermost layer first.
+Its `context.md` has the full order and the measurement behind the odd-looking rule that a
+*hovered* tooltip does not answer Escape while a focused one does.
+
+## [`toolbar-legibility/`](./toolbar-legibility/) — unreleased
+
+Toolbar buttons name themselves on hover through the overlay's own tooltip instead of `title=`,
+and the mode hint stopped running off the right edge of the screen. Its `context.md` records
+why the name moved to `aria-label` (37 e2e locators matched on `title`, and an attribute that
+vanishes under the pointer is a flaky suite) and why the hint stays one line.
+
+## [`settings-card-follows-dock/`](./settings-card-follows-dock/) — unreleased
+
+`draggable-toolbar/` let the pill go anywhere and left its settings card in the corner it
+came from. The card now anchors to the dock's measured box and tracks it through a drag;
+the annotations panel deliberately does not. Its `context.md` is worth reading for two
+things: why a card this tall cannot use the composer's "prefer, flip, clamp" placement, and
+why the default corner is left entirely to CSS. The `changelog.md` records the e2e trap —
+a vertical drag gesture whose first step leaves the pill never starts one.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,

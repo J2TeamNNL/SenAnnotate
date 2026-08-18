@@ -37,6 +37,17 @@ const PLAYWRIGHT_HOST = process.env.SENANNOTATE_PLAYWRIGHT_DIR || null;
 const VUE_SOURCE = process.env.SENANNOTATE_VUE_GLOBAL || null;
 const VUE_VENDORED = join(FIXTURES, "vendor/vue.global.js");
 
+// `SENANNOTATE_HEADLESS=1` runs the suite without a window on screen. `channel: "chromium"`
+// is required with it: Playwright's bundled build only reaches Chrome's new headless — the
+// one that supports extensions — through that channel. Default stays headed, because that is
+// the configuration the extension actually ships into.
+// Deliberately duplicated in `upgrade.mjs` and `verify-harness.mjs` rather than shared:
+// importing this file runs the whole suite, and the verify scripts are kept unentangled
+// from it on purpose (see that file's header).
+const HEADLESS_LAUNCH = process.env.SENANNOTATE_HEADLESS
+  ? { headless: true, channel: "chromium" }
+  : { headless: false };
+
 async function ensureVueFixture() {
   // Copied in on first run and kept (gitignored), so the variable is only needed once.
   if (existsSync(VUE_VENDORED)) return;
@@ -119,10 +130,13 @@ async function main() {
   const base = `http://127.0.0.1:${port}`;
   const profile = mkdtempSync(join(tmpdir(), "senannotate-e2e-"));
 
-  // Extensions require a persistent context, and a headed one: the old headless
-  // shell does not load them.
+  // Extensions require a persistent context. Headed is the default because it is the
+  // configuration users run in; `SENANNOTATE_HEADLESS=1` swaps in Chrome's *new* headless,
+  // which — unlike the old headless shell this comment used to rule out — does load
+  // extensions, run the service worker and answer `captureVisibleTab`. Worth having: the
+  // headed window steals the screen and the keyboard focus of whoever started the suite.
   const context = await chromium.launchPersistentContext(profile, {
-    headless: false,
+    ...HEADLESS_LAUNCH,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
 
@@ -201,7 +215,7 @@ async function main() {
     check("the toolbar count updates", (await page.locator(".count").textContent()) === "1");
 
     // Copy the report.
-    await page.locator('.tool[title^="Annotations"]').click();
+    await page.locator('.tool[aria-label^="Annotations"]').click();
     await page.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await page.locator(".panel .button--primary").click();
 
@@ -240,7 +254,7 @@ async function main() {
     // permanently and could never be cleared again. page.evaluate runs in the MAIN
     // world, which is exactly where the wrappers live.
 
-    await page.locator('.tool[title^="Freeze"]').click();
+    await page.locator('.tool[aria-label^="Freeze"]').click();
     await page.evaluate(() => {
       const state = { kept: 0, cancelledTimeout: 0, cancelledInterval: 0 };
       window.__freezeTest = state;
@@ -254,7 +268,7 @@ async function main() {
       window.clearInterval(interval);
     });
     await page.waitForTimeout(400); // both timers come due while still frozen
-    await page.locator('.tool[title^="Freeze"]').click(); // unfreeze → replay
+    await page.locator('.tool[aria-label^="Freeze"]').click(); // unfreeze → replay
     await page.waitForTimeout(400);
 
     const freezeState = await page.evaluate(() => window.__freezeTest);
@@ -292,11 +306,11 @@ async function main() {
     await forensic.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
     await forensic.waitForTimeout(800);
 
-    await forensic.locator('.tool[title^="Annotations"]').click();
+    await forensic.locator('.tool[aria-label^="Annotations"]').click();
     await forensic.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
     await forensic.locator(".panel select").selectOption("forensic");
     await forensic.waitForTimeout(400);
-    await forensic.locator('.tool[title^="Annotations"]').click();
+    await forensic.locator('.tool[aria-label^="Annotations"]').click();
     await forensic.waitForTimeout(300);
 
     await forensic.locator(".tool--brand").click();
@@ -306,7 +320,7 @@ async function main() {
     await forensic.locator(".composer .button--primary").click();
     await forensic.locator(".composer").waitFor({ state: "detached", timeout: 10_000 });
 
-    await forensic.locator('.tool[title^="Annotations"]').click();
+    await forensic.locator('.tool[aria-label^="Annotations"]').click();
     await forensic.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
     await forensic.locator(".panel .button--primary").click();
     const forensicReport = await forensic.evaluate(() => navigator.clipboard.readText());
@@ -451,14 +465,14 @@ async function main() {
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
-    await marquee.locator('.tool[title^="Select text"]').click();
+    await marquee.locator('.tool[aria-label^="Select text"]').click();
     check(
       "the hint follows the mode",
       ((await hint.textContent())?.trim() ?? "") === "Select text · 1 point · 3 area",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
-    await marquee.locator('.tool[title^="Drag"]').click();
+    await marquee.locator('.tool[aria-label^="Drag"]').click();
     check(
       "the hint says the drag mode is a drag",
       ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text",
@@ -587,7 +601,7 @@ async function main() {
     // have to be told apart by movement. The threshold is MIN_MARQUEE_SIZE, reused
     // rather than reinvented: it is already the size below which a box selects
     // nothing, so one number cannot disagree with the other.
-    await marquee.locator('.tool[title^="Click an element"]').click();
+    await marquee.locator('.tool[aria-label^="Click an element"]').click();
     check(
       "the point hint advertises the modifier drag",
       ((await hint.textContent())?.trim() ?? "") ===
@@ -615,7 +629,7 @@ async function main() {
     );
     check(
       "the modifier drag leaves the mode alone",
-      (await marquee.locator('.tool[title^="Click an element"]').getAttribute("aria-pressed")) ===
+      (await marquee.locator('.tool[aria-label^="Click an element"]').getAttribute("aria-pressed")) ===
         "true",
     );
     await marquee.keyboard.press("Escape");
@@ -721,7 +735,7 @@ async function main() {
     await pick.locator(".composer .button--primary").click();
     await pick.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await pick.locator('.tool[title^="Annotations"]').click();
+    await pick.locator('.tool[aria-label^="Annotations"]').click();
     await pick.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     check(
       "three picked elements make one note, not three",
@@ -736,7 +750,7 @@ async function main() {
       /\+2 more/.test(pickReport) && /These three all use the wrong grey/.test(pickReport),
       pickReport.slice(0, 240),
     );
-    await pick.locator('.tool[title^="Annotations"]').click();
+    await pick.locator('.tool[aria-label^="Annotations"]').click();
 
     // Escape drops the set without leaving inspect mode — the hint going back to the
     // mode line is how you can tell the difference.
@@ -830,13 +844,13 @@ async function main() {
     );
     await modal.keyboard.press("f");
 
-    await modal.locator('.tool[title^="Annotations"]').click();
+    await modal.locator('.tool[aria-label^="Annotations"]').click();
     check(
       "opening the panel does not dismiss the page's modal",
       await modalOpen(),
       `closed by: ${await closeLog()}`,
     );
-    await modal.locator('.tool[title^="Annotations"]').click();
+    await modal.locator('.tool[aria-label^="Annotations"]').click();
 
     await modal.keyboard.press("h");
     check(
@@ -859,7 +873,7 @@ async function main() {
     await modal.locator(".composer .button--primary").click();
     await modal.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await modal.locator('.tool[title^="Annotations"]').click();
+    await modal.locator('.tool[aria-label^="Annotations"]').click();
     await modal.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await modal.locator(".panel .button--primary").click();
     const modalReport = await modal.evaluate(() => navigator.clipboard.readText());
@@ -975,7 +989,7 @@ async function main() {
       `count badge read "${await native.locator(".count").textContent()}"`,
     );
 
-    await native.locator('.tool[title^="Annotations"]').click();
+    await native.locator('.tool[aria-label^="Annotations"]').click();
     await native.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await native.locator(".panel .button--primary").click();
     const nativeReport = await native.evaluate(() => navigator.clipboard.readText());
@@ -1026,13 +1040,13 @@ async function main() {
     );
     await focusClose.keyboard.press("f");
 
-    await focusClose.locator('.tool[title^="Annotations"]').click();
+    await focusClose.locator('.tool[aria-label^="Annotations"]').click();
     check(
       "opening the panel takes no focus off the page's dialog",
       await closeOpen(),
       `focus log: ${await focusLog(focusClose)}`,
     );
-    await focusClose.locator('.tool[title^="Annotations"]').click();
+    await focusClose.locator('.tool[aria-label^="Annotations"]').click();
 
     // The composer autofocuses its textarea, and the dialog's own `focusout` fires on the
     // dialog rather than through our host — so this variant does close here, and cannot be
@@ -1044,7 +1058,7 @@ async function main() {
     await focusClose.locator(".composer .button--primary").click();
     await focusClose.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await focusClose.locator('.tool[title^="Annotations"]').click();
+    await focusClose.locator('.tool[aria-label^="Annotations"]').click();
     await focusClose.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await focusClose.locator(".panel .button--primary").click();
     const closeReport = await focusClose.evaluate(() => navigator.clipboard.readText());
@@ -1087,6 +1101,48 @@ async function main() {
       `textarea holds "${typed}" · focus log: ${await focusLog(focusTrap)}`,
     );
     await focusTrap.keyboard.press("Escape");
+
+    // Variant C — the same trap keyed on `focusout` instead, which is what Reka UI, Radix
+    // and Headless UI actually ship. That event fires on the *page's* focused element, so
+    // it never travels through our host and the propagation guard cannot reach it: measured,
+    // the trap pulled focus back to the dialog before the first keystroke and the note went
+    // nowhere, while everything on screen looked correct. `takeFocus` blurs first so the
+    // trap sees the `relatedTarget === null` it is required to ignore.
+    // `docs/modal-trap-refocus/`.
+    const focusOutTrap = await context.newPage();
+    await focusOutTrap.goto(`${base}/modal-focus.html`);
+    await focusOutTrap.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const outTrapOpen = () =>
+      focusOutTrap.locator("#backdrop-trap").evaluate((el) => el.classList.contains("open"));
+
+    await focusOutTrap.locator("#open-trap").click();
+    check("the focusout-trap modal opens", await outTrapOpen());
+
+    await focusOutTrap.locator(".tool--brand").click();
+    check(
+      "a toolbar click does not trip a focusout-keyed trap",
+      (await focusLog(focusOutTrap)) === "",
+      `focus log: ${await focusLog(focusOutTrap)}`,
+    );
+
+    await focusOutTrap.locator(".trap-body").click();
+    await focusOutTrap.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    check("the focusout-trap modal survives being annotated", await outTrapOpen());
+
+    // No `.click()` on the textarea first, and no `fill()`: the composer autofocuses, and
+    // the bug is entirely in what happens between that autofocus and the first keystroke.
+    await focusOutTrap.keyboard.type("Typed inside a focusout trap.", { delay: 20 });
+    const outTyped = await focusOutTrap.locator(".composer__input").inputValue();
+    check(
+      "a note typed inside a focusout-keyed trap reaches the composer",
+      outTyped === "Typed inside a focusout trap.",
+      `textarea holds "${outTyped}" · focus log: ${await focusLog(focusOutTrap)}`,
+    );
+
+    await focusOutTrap.locator(".composer .button--primary").click();
+    await focusOutTrap.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    check("the focusout-trap modal is still open after the note is saved", await outTrapOpen());
 
     // -------------------------------------------------------------------------
     // The hover label stays inside the viewport
@@ -1171,7 +1227,7 @@ async function main() {
     await hover.locator(".composer .button--primary").click();
     await hoverComposer.waitFor({ state: "detached", timeout: 5_000 });
 
-    await hover.locator('.tool[title^="Annotations"]').click();
+    await hover.locator('.tool[aria-label^="Annotations"]').click();
     await hover.locator(".panel .button--primary").click();
     const hoverReport = await hover.evaluate(() => navigator.clipboard.readText());
     check(
@@ -1256,7 +1312,7 @@ async function main() {
     await shooter.locator(".composer__input").fill("The corner radius is wrong here.");
     await shooter.locator(".composer .button--primary").click();
     await shooter.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
-    await shooter.locator('.tool[title^="Annotations"]').click();
+    await shooter.locator('.tool[aria-label^="Annotations"]').click();
     await shooter.locator(".panel .button--primary").click();
     const shotReport = await shooter.evaluate(() => navigator.clipboard.readText());
 
@@ -1294,7 +1350,7 @@ async function main() {
     await buggy.locator(".composer .button--primary").click();
     await buggy.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await buggy.locator('.tool[title^="Annotations"]').click();
+    await buggy.locator('.tool[aria-label^="Annotations"]').click();
     await buggy.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
 
     const summary = buggy.locator(".capture-summary");
@@ -1384,7 +1440,7 @@ async function main() {
     await privacy.locator(".composer .button--primary").click();
     await privacy.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await privacy.locator('.tool[title^="Annotations"]').click();
+    await privacy.locator('.tool[aria-label^="Annotations"]').click();
     await privacy.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await privacy.locator(".panel .button--primary").click();
     const propsReport = await privacy.evaluate(() => navigator.clipboard.readText());
@@ -1504,7 +1560,7 @@ async function main() {
     await plain.locator(".composer .button--primary").click();
     await plain.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await plain.locator('.tool[title^="Annotations"]').click();
+    await plain.locator('.tool[aria-label^="Annotations"]').click();
     await plain.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await plain.locator(".panel .button--primary").click();
     const plainReport = await plain.evaluate(() => navigator.clipboard.readText());
@@ -1544,11 +1600,11 @@ async function main() {
       await page.waitForTimeout(2_000); // outwait boot()'s late-hydration retry
 
       if ((await page.locator(".marker").count()) > 0) {
-        await page.locator('.tool[title^="Annotations"]').click();
+        await page.locator('.tool[aria-label^="Annotations"]').click();
         await page.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
         await page.locator('.panel .icon-button[title^="Clear all"]').click();
         await page.waitForTimeout(300);
-        await page.locator('.tool[title^="Annotations"]').click();
+        await page.locator('.tool[aria-label^="Annotations"]').click();
         await page.waitForTimeout(300);
       }
 
@@ -1565,7 +1621,7 @@ async function main() {
       await page.locator(".composer .button--primary").click();
       await page.locator(".composer").waitFor({ state: "detached", timeout: 10_000 });
 
-      await page.locator('.tool[title^="Annotations"]').click();
+      await page.locator('.tool[aria-label^="Annotations"]').click();
       await page.locator(".panel").waitFor({ state: "visible", timeout: 10_000 });
       await page.locator(".panel .button--primary").click();
       const report = await page.evaluate(() => navigator.clipboard.readText());
@@ -1670,7 +1726,7 @@ async function main() {
 
     const card = settingsPageUnderTest.locator(".settings");
     const gear = settingsPageUnderTest.locator(".tool--settings");
-    const annotationsButton = settingsPageUnderTest.locator('.tool[title^="Annotations"]');
+    const annotationsButton = settingsPageUnderTest.locator('.tool[aria-label^="Annotations"]');
 
     await gear.click();
     await card.waitFor({ state: "visible", timeout: 5_000 });
@@ -1733,6 +1789,16 @@ async function main() {
       `${await settingsPageUnderTest.locator(".panel").count()} panels`,
     );
 
+    // Escape closes the card, the same key that closes the composer. It must not fall
+    // through to the rest of the Escape chain either — inspect mode is off here, and
+    // turning it *on* or dropping a pick set would both be surprising.
+    await settingsPageUnderTest.keyboard.press("Escape");
+    await settingsPageUnderTest.waitForTimeout(250);
+    check("Escape closes the settings card", (await card.count()) === 0, `${await card.count()} cards`);
+
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
+
     // The help is the only explanation a setting gets, so it has to be reachable by
     // keyboard as well as by pointer — hence a button rather than a span.
     const tooltip = settingsPageUnderTest.locator(".tooltip");
@@ -1751,6 +1817,43 @@ async function main() {
     await settingsPageUnderTest.keyboard.press("Escape");
     await settingsPageUnderTest.waitForTimeout(250);
     check("Escape dismisses the tooltip", !(await tooltip.isVisible()));
+    // …and only the tooltip. Escape now closes the cards too, so the innermost-first order
+    // is what keeps one press from taking the settings card with the tooltip on top of it.
+    check("dismissing a tooltip does not close the card under it", await card.isVisible());
+
+    // The toolbar's buttons are icon-only, so the name is the affordance. It used to be a
+    // `title=`, which arrives a second late and in the page's own styling.
+    await settingsPageUnderTest.locator(".tool--settings").hover();
+    await settingsPageUnderTest.waitForTimeout(250);
+    check(
+      "hovering a toolbar button names it",
+      (await tooltip.isVisible()) && (await tooltip.textContent()) === "Settings",
+      `tooltip reads "${await tooltip.textContent()}"`,
+    );
+
+    // Anchored to the dock rather than to the button, or inspect mode's hint line — which
+    // sits directly above the pill — would be underneath it.
+    await settingsPageUnderTest.locator(".tool--brand").click(); // inspect on → hint shows
+    await settingsPageUnderTest.locator('.tool[aria-label^="Freeze"]').hover();
+    check("a toolbar tooltip clears the hint line", (await clearsTheHint(".tooltip")) === true);
+    await settingsPageUnderTest.locator(".tool--brand").click(); // inspect back off
+    await settingsPageUnderTest.mouse.move(10, 400);
+    await settingsPageUnderTest.waitForTimeout(250);
+
+    // Escape closes the annotations panel too, the same way it closes the settings card.
+    await annotationsButton.click();
+    await settingsPageUnderTest.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await settingsPageUnderTest.keyboard.press("Escape");
+    await settingsPageUnderTest.waitForTimeout(300);
+    check(
+      "Escape closes the annotations panel",
+      (await settingsPageUnderTest.locator(".panel").count()) === 0,
+      `${await settingsPageUnderTest.locator(".panel").count()} panels`,
+    );
+
+    // Leave the card open: the block below expects the gear's next click to close it.
+    await gear.click();
+    await card.waitFor({ state: "visible", timeout: 5_000 });
 
     // A toggle has to change the page, not just the checkbox.
     await gear.click();
@@ -1876,14 +1979,14 @@ async function main() {
     await collapseHint.waitFor({ state: "visible", timeout: 5_000 });
 
     // Open too, so the collapse has something to close.
-    await collapsed.locator('.tool[title^="Annotations"]').click();
+    await collapsed.locator('.tool[aria-label^="Annotations"]').click();
     await collapsed.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
 
     // The panel fades out before it is removed, so for a moment after a close there is
     // a node on screen that nothing holds a reference to. Reopening inside that window
     // must not leave two — one fading, one live.
-    await collapsed.locator('.tool[title^="Annotations"]').click();
-    await collapsed.locator('.tool[title^="Annotations"]').click();
+    await collapsed.locator('.tool[aria-label^="Annotations"]').click();
+    await collapsed.locator('.tool[aria-label^="Annotations"]').click();
     check(
       "closing and reopening inside the exit animation leaves one panel",
       (await collapsed.locator(".panel").count()) === 1,
@@ -2120,6 +2223,316 @@ async function main() {
     await retarget.close();
 
     // -------------------------------------------------------------------------
+    // Drag — the toolbar moves, and every button still clicks
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, for the reason `drag.html` states: dock positions are keyed on
+    // origin + pathname in shared storage, so a dragged toolbar would move for every
+    // later block on the same page and every boundingBox after it would measure the
+    // wrong thing.
+    //
+    // This block collapses the toolbar, which is `toolbarCollapsed` in
+    // chrome.storage.sync — the same profile-wide state the Collapse block above is
+    // careful to restore. It ends expanded, with inspect mode off, for that reason.
+    const drag = await context.newPage();
+    await drag.setViewportSize({ width: 1280, height: 900 });
+    await drag.goto(`${base}/drag.html`);
+    await drag.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await drag.waitForTimeout(600); // settings and the stored position load async
+
+    const dragDock = drag.locator(".toolbar-dock");
+    const dragPill = drag.locator(".toolbar");
+    const dragBrand = drag.locator(".tool--brand");
+
+    check(
+      "a page with no stored position keeps the CSS corner",
+      (await dragDock.getAttribute("data-floating")) === null,
+      `data-floating read "${await dragDock.getAttribute("data-floating")}"`,
+    );
+
+    // The whole risk of making the pill its own drag handle: a threshold that fires too
+    // eagerly breaks every toolbar button at once. Asserted before anything is dragged.
+    await dragBrand.click();
+    check(
+      "a plain click on the toolbar still toggles inspect mode",
+      (await dragDock.getAttribute("data-inspecting")) === "true",
+      `data-inspecting read "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+    await dragBrand.click();
+    check(
+      "and clicking it again turns inspect mode back off",
+      (await dragDock.getAttribute("data-inspecting")) === "false",
+      `data-inspecting read "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+
+    // A drag started *on a button* has to move the dock and leave the button alone —
+    // the two meanings every pixel of the pill now carries.
+    const dockBefore = await dragDock.boundingBox();
+    const brandBox = await dragBrand.boundingBox();
+    const grabAt = { x: brandBox.x + brandBox.width / 2, y: brandBox.y + brandBox.height / 2 };
+    await drag.mouse.move(grabAt.x, grabAt.y);
+    await drag.mouse.down();
+    await drag.mouse.move(grabAt.x - 320, grabAt.y - 260, { steps: 12 });
+    await drag.mouse.up();
+    await drag.waitForTimeout(250);
+
+    const dockDragged = await dragDock.boundingBox();
+    check(
+      "a drag from a button moves the dock",
+      Math.abs(dockDragged.x - dockBefore.x) > 200 && Math.abs(dockDragged.y - dockBefore.y) > 150,
+      `dock moved from ${Math.round(dockBefore.x)},${Math.round(dockBefore.y)} to ${Math.round(dockDragged.x)},${Math.round(dockDragged.y)}`,
+    );
+    check(
+      "the drag did not press the button it started on",
+      (await dragDock.getAttribute("data-inspecting")) === "false",
+      `data-inspecting read "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+    check("a dragged dock is marked floating", (await dragDock.getAttribute("data-floating")) === "true");
+
+    // Capture is only taken once the threshold is crossed, so a press released just off
+    // the pill's edge never reaches `end()`. What must not happen next is the pill
+    // following a cursor with no button held.
+    const edgeBox = await dragPill.boundingBox();
+    await drag.mouse.move(edgeBox.x + 1, edgeBox.y + 1);
+    await drag.mouse.down();
+    // One hop, straight off the pill: `.toolbar` never sees a move past the threshold,
+    // and never sees the release either.
+    await drag.mouse.move(edgeBox.x - 9, edgeBox.y - 9);
+    await drag.mouse.up();
+    const beforeHover = await dragDock.boundingBox();
+    await drag.mouse.move(edgeBox.x + 40, edgeBox.y + 12);
+    await drag.mouse.move(edgeBox.x + 120, edgeBox.y + 22);
+    await drag.waitForTimeout(200);
+    const afterHover = await dragDock.boundingBox();
+    check(
+      "hovering after a press that ended off the pill does not drag it",
+      Math.abs(afterHover.x - beforeHover.x) < 2 && Math.abs(afterHover.y - beforeHover.y) < 2,
+      `dock drifted to ${Math.round(afterHover.x)},${Math.round(afterHover.y)} from ${Math.round(beforeHover.x)},${Math.round(beforeHover.y)}`,
+    );
+
+    // Persisted on drop, and re-clamped rather than trusted on load.
+    await drag.reload();
+    await drag.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await drag.waitForTimeout(700);
+    const dockRestored = await dragDock.boundingBox();
+    check(
+      "the dragged position survives a reload",
+      Math.abs(dockRestored.x - dockDragged.x) < 4 && Math.abs(dockRestored.y - dockDragged.y) < 4,
+      `restored at ${Math.round(dockRestored.x)},${Math.round(dockRestored.y)}, dropped at ${Math.round(dockDragged.x)},${Math.round(dockDragged.y)}`,
+    );
+
+    // The settings card belongs to the pill, so it has to travel with it. Geometry read
+    // from the shadow root rather than Playwright's boundingBox: what matters is the
+    // relationship between two rects in the same document, plus whether the card is
+    // placed by inline styles at all.
+    const dockAndCard = () =>
+      drag.evaluate(() => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        const dock = root.querySelector(".toolbar-dock");
+        const card = root.querySelector(".settings");
+        if (!dock || !card) return null;
+        const d = dock.getBoundingClientRect();
+        const c = card.getBoundingClientRect();
+        return {
+          dock: { left: d.left, top: d.top, right: d.right, bottom: d.bottom },
+          card: { left: c.left, top: c.top, right: c.right, bottom: c.bottom },
+          inlineLeft: card.style.left,
+          inlineTop: card.style.top,
+        };
+      });
+
+    await drag.locator(".tool--settings").click();
+    await drag.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await drag.waitForTimeout(300);
+    const anchored = await dockAndCard();
+    check(
+      "the settings card opens against the dragged pill, right edges aligned",
+      anchored !== null &&
+        Math.abs(anchored.card.right - anchored.dock.right) <= 1 &&
+        Math.abs(anchored.dock.top - anchored.card.bottom - 8) <= 1,
+      anchored === null
+        ? "no card or no dock"
+        : `card right ${Math.round(anchored.card.right)} vs dock right ${Math.round(anchored.dock.right)}, gap ${Math.round(anchored.dock.top - anchored.card.bottom)}`,
+    );
+
+    // Mid-drag, before the release: `onMove` fires on drop, so a card wired to that would
+    // sit still while the pill slid out from under it and then teleport.
+    const pillNow = await dragPill.boundingBox();
+    await drag.mouse.move(pillNow.x + pillNow.width / 2, pillNow.y + pillNow.height / 2);
+    await drag.mouse.down();
+    await drag.mouse.move(pillNow.x + pillNow.width / 2 + 180, pillNow.y + pillNow.height / 2 + 90, {
+      steps: 10,
+    });
+    await drag.waitForTimeout(150);
+    const midDrag = await dockAndCard();
+    await drag.mouse.up();
+    await drag.waitForTimeout(250);
+    check(
+      "and follows it during the drag, not only on the drop",
+      midDrag !== null &&
+        Math.abs(midDrag.card.right - midDrag.dock.right) <= 1 &&
+        Math.abs(midDrag.dock.top - midDrag.card.bottom - 8) <= 1,
+      midDrag === null
+        ? "no card or no dock"
+        : `card right ${Math.round(midDrag.card.right)} vs dock right ${Math.round(midDrag.dock.right)}, gap ${Math.round(midDrag.dock.top - midDrag.card.bottom)}`,
+    );
+
+    // No room above: the card has to go under the pill rather than off the top of the
+    // screen. This is the case CSS cannot decide, because it turns on the card's height.
+    const pillHigh = await dragPill.boundingBox();
+    await drag.mouse.move(pillHigh.x + pillHigh.width / 2, pillHigh.y + pillHigh.height / 2);
+    await drag.mouse.down();
+    // A nudge along the pill before the long move. Pointer capture is only taken once the
+    // threshold is crossed, so a gesture whose first interpolated step is already off the
+    // pill — 52px up, from a pill 44px tall — delivers no `pointermove` to it at all and
+    // never starts a drag. Measured: this is why the same code dragged fine sideways.
+    await drag.mouse.move(pillHigh.x + pillHigh.width / 2 - 16, pillHigh.y + pillHigh.height / 2);
+    await drag.mouse.move(600, 40, { steps: 12 });
+    await drag.mouse.up();
+    await drag.waitForTimeout(300);
+    const flipped = await dockAndCard();
+    check(
+      "a pill near the top of the viewport gets its card underneath",
+      flipped !== null && flipped.card.top >= flipped.dock.bottom + 7 && flipped.card.bottom <= 900,
+      flipped === null
+        ? "no card or no dock"
+        : `card top ${Math.round(flipped.card.top)}, dock bottom ${Math.round(flipped.dock.bottom)}, card bottom ${Math.round(flipped.card.bottom)}`,
+    );
+
+    // The panel is the other half of the request: it is a page-level list, pinned top and
+    // bottom, and it stays where it is however far the pill has been dragged.
+    await drag.locator(".tool--settings").click(); // close the card first
+    await drag.locator(".settings").waitFor({ state: "detached", timeout: 5_000 });
+    await drag.locator('.tool[aria-label^="Annotations"]').click();
+    await drag.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await drag.waitForTimeout(300);
+    const panelGeometry = await drag.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const panelBox = root.querySelector(".panel").getBoundingClientRect();
+      return { right: panelBox.right, top: panelBox.top, width: window.innerWidth };
+    });
+    check(
+      "the annotations panel does not follow the pill",
+      Math.abs(panelGeometry.width - panelGeometry.right - 20) <= 1 &&
+        Math.abs(panelGeometry.top - 20) <= 1,
+      `panel right edge ${Math.round(panelGeometry.width - panelGeometry.right)}px from the viewport edge, top ${Math.round(panelGeometry.top)}`,
+    );
+    await drag.locator('.tool[aria-label^="Annotations"]').click();
+    await drag.waitForTimeout(250);
+
+    // Per page, not per user — the whole argument for `local` over `sync`. Read-only on
+    // a fixture another block owns, so nothing is left behind on it.
+    const untouched = await context.newPage();
+    await untouched.goto(`${base}/pick.html`);
+    await untouched.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await untouched.waitForTimeout(600);
+    check(
+      "another page opens at the default corner",
+      (await untouched.locator(".toolbar-dock").getAttribute("data-floating")) === null,
+      `data-floating read "${await untouched.locator(".toolbar-dock").getAttribute("data-floating")}"`,
+    );
+
+    // And with no drag anywhere in the picture the card is placed by the stylesheet, not
+    // by us: the default corner is the configuration the extension ships in, and the one
+    // the settings block measures the hint-line clearance against.
+    await untouched.locator(".tool--settings").click();
+    await untouched.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await untouched.waitForTimeout(250);
+    const cornerCard = await untouched.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const card = root.querySelector(".settings");
+      const box = card.getBoundingClientRect();
+      return {
+        inlineLeft: card.style.left,
+        inlineTop: card.style.top,
+        anchored: card.dataset.anchored ?? "",
+        fromRight: window.innerWidth - box.right,
+      };
+    });
+    check(
+      "a card on a never-dragged page is left to CSS",
+      cornerCard.inlineLeft === "" &&
+        cornerCard.inlineTop === "" &&
+        cornerCard.anchored === "" &&
+        Math.abs(cornerCard.fromRight - 20) <= 1,
+      `inline left "${cornerCard.inlineLeft}", top "${cornerCard.inlineTop}", anchored "${cornerCard.anchored}", ${Math.round(cornerCard.fromRight)}px from the right edge`,
+    );
+    await untouched.close();
+
+    // A window narrower than the pill makes the clamp's upper bound negative. Applied in
+    // the wrong order it wins, and the pill is pushed off the left edge — out of reach,
+    // in the one path that exists to bring it back.
+    await drag.setViewportSize({ width: 320, height: 700 });
+    await drag.waitForTimeout(400);
+    const dockNarrow = await dragDock.boundingBox();
+    check(
+      "a window narrower than the pill still leaves it against the left edge",
+      dockNarrow.x >= 0,
+      `dock at x=${Math.round(dockNarrow.x)} in a 320px window`,
+    );
+    await drag.setViewportSize({ width: 1280, height: 900 });
+    await drag.waitForTimeout(400);
+
+    // The dock changes size for reasons `resize` cannot see. Collapse, drop the handle at
+    // the right edge, expand: the dock is left-anchored, so without a re-clamp the full
+    // pill grows out of the viewport and every button but collapse is off-screen.
+    await drag.keyboard.press("h");
+    await drag.waitForTimeout(400);
+    const handleAtEdge = await drag.locator(".tool--collapse").boundingBox();
+    await drag.mouse.move(
+      handleAtEdge.x + handleAtEdge.width / 2,
+      handleAtEdge.y + handleAtEdge.height / 2,
+    );
+    await drag.mouse.down();
+    await drag.mouse.move(1250, 420, { steps: 10 });
+    await drag.mouse.up();
+    await drag.waitForTimeout(300);
+    await drag.keyboard.press("h"); // expand again
+    await drag.waitForTimeout(600); // the pill animates its width over 160ms
+    const dockExpanded = await dragDock.boundingBox();
+    check(
+      "expanding a handle dropped at the right edge brings the whole pill back on screen",
+      dockExpanded.x + dockExpanded.width <= 1280,
+      `right edge at ${Math.round(dockExpanded.x + dockExpanded.width)} of 1280`,
+    );
+
+    // Dragging the pill in `area` mode must not also draw a selection: the marquee's
+    // document handler returns early on `isOurUi`, and a shadow event retargets to the
+    // host, which carries that attribute. True today, and easy to break.
+    await dragBrand.click();
+    await drag.keyboard.press("3");
+    await drag.waitForTimeout(200);
+    const pillInArea = await dragPill.boundingBox();
+    await drag.mouse.move(
+      pillInArea.x + pillInArea.width / 2,
+      pillInArea.y + pillInArea.height / 2,
+    );
+    await drag.mouse.down();
+    await drag.mouse.move(
+      pillInArea.x + pillInArea.width / 2 - 220,
+      pillInArea.y + pillInArea.height / 2 + 160,
+      { steps: 10 },
+    );
+    check(
+      "dragging the toolbar in area mode draws no marquee",
+      !(await drag.locator(".marquee").isVisible()),
+    );
+    await drag.mouse.up();
+    await drag.waitForTimeout(200);
+
+    // Left expanded with inspect mode off: `toolbarCollapsed` is profile-wide.
+    await drag.keyboard.press("1");
+    await dragBrand.click();
+    await drag.waitForTimeout(200);
+    check(
+      "the drag block leaves the toolbar expanded and inspect mode off",
+      (await dragBrand.isVisible()) &&
+        (await dragDock.getAttribute("data-inspecting")) === "false",
+      `brand visible ${await dragBrand.isVisible()}, data-inspecting "${await dragDock.getAttribute("data-inspecting")}"`,
+    );
+    await drag.close();
+
+    // -------------------------------------------------------------------------
     // Triage — type, status, and what each does to the report
     // -------------------------------------------------------------------------
     // Its own fixture: annotations are keyed on origin + pathname and storage is
@@ -2145,7 +2558,7 @@ async function main() {
     await triage.locator(".composer .button--primary").click();
     await triage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await triage.locator('.tool[title^="Annotations"]').click();
+    await triage.locator('.tool[aria-label^="Annotations"]').click();
     await triage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await triage.locator(".panel .button--primary").click();
     const triageReport = await triage.evaluate(() => navigator.clipboard.readText());
@@ -2271,7 +2684,7 @@ async function main() {
     await framed.locator(".composer .button--primary").click();
     await framedComposer.waitFor({ state: "detached", timeout: 5_000 });
 
-    await framed.locator('.tool[title^="Annotations"]').click();
+    await framed.locator('.tool[aria-label^="Annotations"]').click();
     await framed.locator(".panel .button--primary").click();
     const frameReport = await framed.evaluate(() => navigator.clipboard.readText());
 
@@ -2478,6 +2891,243 @@ async function main() {
     }
 
     // -------------------------------------------------------------------------
+    // Clear after copying — the one automatic way annotations are destroyed
+    // -------------------------------------------------------------------------
+    // Its own fixture, for the usual reason: this block counts markers and reads the
+    // toolbar count, and storage is shared by every page in this context.
+    //
+    // The block ends with the setting back off. It lives in `storage.sync`, so leaving
+    // it on would make every copy in the blocks below wipe the page it just copied.
+    //
+    // One criterion cannot be reached from here, and it is the one that matters most:
+    // a *failed* copy must never clear. Both clipboard routes have to refuse inside the
+    // ISOLATED world, and neither `navigator.clipboard` nor `document.execCommand` can be
+    // patched from the page — each world gets its own. Reaching it needs a sabotaged
+    // second bundle, the same kind of reason `upgrade.mjs` is not in this file. The gate
+    // is `copyReport`'s `if (!copied) { toast("Copy failed"); return; }`, and it was
+    // verified by hand against a bundle with both routes stubbed out.
+    const clearPage = await context.newPage();
+    await clearPage.goto(`${base}/clear-copy.html`);
+    await clearPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const clearMarkers = () => clearPage.locator(".marker").count();
+    const clearToast = async () => ((await clearPage.locator(".toast").last().textContent()) ?? "").trim();
+    const clearBadge = async () => ((await clearPage.locator(".count").textContent()) ?? "").trim();
+
+    const annotateClearPage = async (selector, comment) => {
+      await clearPage.locator(".tool--brand").click(); // inspect on
+      await clearPage.locator(selector).click();
+      await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await clearPage.locator(".composer__input").fill(comment);
+      await clearPage.locator(".composer .button--primary").click();
+      await clearPage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+      await clearPage.locator(".tool--brand").click(); // inspect off
+    };
+
+    /** Copy from the panel, and hand back whatever landed on the clipboard. */
+    const copyFromPanel = async () => {
+      if (!(await clearPage.locator(".panel").count())) {
+        await clearPage.locator('.tool[aria-label^="Annotations"]').click();
+        await clearPage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+      }
+      // The panel is rebuilt on every render and a settings change queues one, so a click
+      // that lands inside that window hits a button already detached from the DOM.
+      await clearPage.waitForTimeout(600);
+      await clearPage.locator(".panel .button--primary").click();
+      await clearPage.waitForTimeout(400);
+      return clearPage.evaluate(() => navigator.clipboard.readText());
+    };
+
+    const setClearOnCopy = async (on) => {
+      await clearPage.locator(".tool--settings").click();
+      await clearPage.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+      const box = clearPage.locator('.settings [data-setting="clearOnCopy"]');
+      const before = await box.isChecked();
+      if (before !== on) await box.click();
+      await clearPage.locator(".tool--settings").click(); // the gear closes its own card
+      await clearPage.locator(".settings").waitFor({ state: "detached", timeout: 5_000 });
+      await clearPage.waitForTimeout(300);
+      return before;
+    };
+
+    // The default path first. It is what everyone who never opens the settings card
+    // gets, and the feature's first requirement is that it does not change.
+    await annotateClearPage(".cta", "Kept by the default path.");
+    const keptReport = await copyFromPanel();
+    check(
+      "the report reaches the clipboard with the setting off",
+      keptReport.includes("Kept by the default path."),
+      keptReport.slice(0, 200),
+    );
+    check(
+      "a copy with the setting off leaves the annotations alone",
+      (await clearMarkers()) === 1 && (await clearBadge()) === "1",
+      `${await clearMarkers()} markers, badge read "${await clearBadge()}"`,
+    );
+    check(
+      "and its toast claims no clear",
+      /^Copied 1 annotation$/.test(await clearToast()),
+      `toast read "${await clearToast()}"`,
+    );
+
+    const wasOff = await setClearOnCopy(true);
+    check("Clear after copying is off until it is asked for", wasOff === false);
+
+    // A click for the action trail, which is supposed to be cleared alongside the
+    // annotations: steps from a bug already filed must not attach to the next report.
+    await clearPage.locator("#stale").click();
+    await clearPage.waitForTimeout(200);
+
+    const clearedReport = await copyFromPanel();
+    check(
+      "a copy that clears still reaches the clipboard",
+      clearedReport.includes("Kept by the default path."),
+      clearedReport.slice(0, 200),
+    );
+    check(
+      "the toast names what was copied, then the clear",
+      /^Copied 1 annotation · cleared$/.test(await clearToast()),
+      `toast read "${await clearToast()}"`,
+    );
+    check(
+      "clearing empties the page",
+      (await clearMarkers()) === 0 && (await clearBadge()) === "0",
+      `${await clearMarkers()} markers, badge read "${await clearBadge()}"`,
+    );
+    check(
+      "the panel falls back to its empty state",
+      (await clearPage.locator(".panel .empty").count()) === 1,
+      `${await clearPage.locator(".panel .entry").count()} entries left`,
+    );
+
+    // In storage, not just in the overlay: an in-memory-only clear would come back on
+    // the next reload, which is the one thing worse than not clearing at all.
+    await clearPage.reload();
+    await clearPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await clearPage.waitForTimeout(400);
+    check(
+      "the clear reaches storage, not just the overlay",
+      (await clearMarkers()) === 0 && (await clearBadge()) === "0",
+      `${await clearMarkers()} markers after reload`,
+    );
+
+    /**
+     * Just the trail, not the whole report. At forensic detail an entry carries its
+     * neighbours, so the *page's* buttons are quoted in it — a regex over the whole
+     * document finds "Stale click" whether or not the trail was cleared.
+     */
+    const trailSection = (report) => {
+      const [, rest = ""] = report.split("## Steps to reproduce");
+      return rest.split(/^## /m)[0];
+    };
+
+    await clearPage.locator("#fresh").click();
+    await clearPage.waitForTimeout(200);
+    await annotateClearPage("#headline", "Second round, nothing before it.");
+    const secondRound = await copyFromPanel();
+    check(
+      "the action trail goes with the annotations",
+      /Clicked button "Stale click"/.test(trailSection(clearedReport)) &&
+        !/Stale click/.test(trailSection(secondRound)) &&
+        /Clicked button "Fresh click"/.test(trailSection(secondRound)),
+      `trail after the clear read "${trailSection(secondRound).trim().replace(/\s+/g, " ").slice(0, 160)}"`,
+    );
+    check(
+      "the next report carries only the new note",
+      secondRound.includes("Second round, nothing before it.") &&
+        !secondRound.includes("Kept by the default path."),
+      secondRound.slice(0, 200),
+    );
+
+    // A draft in the composer is work the copy never took, so the clear must leave it
+    // alone. An *editor* is the opposite case: the annotation it was editing has just
+    // gone, so it has nothing to save back to and goes with it.
+    await annotateClearPage(".cta", "Cleared while a draft was open.");
+    await clearPage.locator(".tool--brand").click(); // inspect on, to open a draft
+    await clearPage.locator("#stale").click();
+    await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await clearPage.locator(".composer__input").fill("A draft nobody has saved yet.");
+    await clearPage.locator(".tool--brand").click(); // inspect off — the draft stays up
+    await copyFromPanel();
+    check(
+      "an unsaved draft survives the clear",
+      (await clearPage.locator(".composer").count()) === 1 &&
+        (await clearPage.locator(".composer__input").inputValue()) === "A draft nobody has saved yet." &&
+        (await clearMarkers()) === 0,
+      `${await clearPage.locator(".composer").count()} composers, ${await clearMarkers()} markers`,
+    );
+
+    await clearPage.locator(".composer .button--primary").click();
+    await clearPage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    check(
+      "and it still files, onto the page the copy emptied",
+      (await clearMarkers()) === 1 && (await clearBadge()) === "1",
+      `${await clearMarkers()} markers, badge read "${await clearBadge()}"`,
+    );
+
+    await clearPage.locator(".panel .entry__comment").click();
+    await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await copyFromPanel();
+    check(
+      "an editor whose annotation the clear removed closes with it",
+      (await clearPage.locator(".composer").count()) === 0 && (await clearMarkers()) === 0,
+      `${await clearPage.locator(".composer").count()} composers, ${await clearMarkers()} markers`,
+    );
+
+    // Download is deliberately not covered by the setting: the checkbox says *copying*,
+    // and a setting that also fires on a button it does not name destroys work by
+    // surprise. See `docs/clear-on-copy/context.md`.
+    await annotateClearPage(".cta", "Kept for the download path.");
+    if (!(await clearPage.locator(".panel").count())) {
+      await clearPage.locator('.tool[aria-label^="Annotations"]').click();
+      await clearPage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    }
+    const reportFile = clearPage
+      .waitForEvent("download", { timeout: 15_000 })
+      .then((d) => d.suggestedFilename())
+      .catch(() => null);
+    await clearPage.locator('.panel .icon-button[title^="Download"]').click();
+    const savedReport = await reportFile;
+    check(
+      "downloading the report does not clear it",
+      typeof savedReport === "string" && savedReport.endsWith(".md") && (await clearMarkers()) === 1,
+      `download was ${savedReport === null ? "never offered" : `"${savedReport}"`}, ${await clearMarkers()} markers left`,
+    );
+
+    // Nor does the popup's session copy, whatever the setting says. It spans every page
+    // in the session, and clearing across pages is not what a per-page checkbox bought.
+    const [clearWorker] = context.serviceWorkers();
+    const clearExtensionId = clearWorker ? new URL(clearWorker.url()).host : null;
+    if (clearExtensionId) {
+      const sessionPopup = await context.newPage();
+      await sessionPopup.goto(`chrome-extension://${clearExtensionId}/popup.html`);
+      await sessionPopup.locator("#copy-session").waitFor({ state: "visible", timeout: 5_000 });
+      await sessionPopup.locator("#copy-session").click();
+      await sessionPopup.waitForTimeout(400);
+      await sessionPopup.close();
+      await clearPage.waitForTimeout(300);
+      check(
+        "the popup's session copy never clears, setting or not",
+        (await clearMarkers()) === 1,
+        `${await clearMarkers()} markers left`,
+      );
+    }
+
+    // Back off, for every block below this one as much as for the assertion.
+    const wasOn = await setClearOnCopy(false);
+    const restoredReport = await copyFromPanel();
+    check(
+      "turning the setting back off restores the default path",
+      wasOn === true &&
+        restoredReport.includes("Kept for the download path.") &&
+        (await clearMarkers()) === 1 &&
+        !/cleared/.test(await clearToast()),
+      `${await clearMarkers()} markers, toast read "${await clearToast()}"`,
+    );
+
+    await clearPage.close();
+
+    // -------------------------------------------------------------------------
     // Export / import — driven through the real popup
     // -------------------------------------------------------------------------
     const [worker] = context.serviceWorkers();
@@ -2587,7 +3237,7 @@ async function main() {
 
         await triage.reload();
         await triage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
-        await triage.locator('.tool[title^="Annotations"]').click();
+        await triage.locator('.tool[aria-label^="Annotations"]').click();
         await triage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
         check(
           "the imported notes are back on the page they came from",

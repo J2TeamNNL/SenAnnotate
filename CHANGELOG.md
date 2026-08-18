@@ -10,7 +10,51 @@ matching the tag being released and refuses to publish without one.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.0] — unreleased
+## [0.8.2] — unreleased
+
+[Compare with v0.8.1](https://github.com/thangnm93/SenAnnotate/compare/v0.8.1...v0.8.2)
+
+### Added
+
+- the settings card follows the pill wherever it is dragged (a2fcb4c)
+
+### Fixed
+
+- keep an unsaved draft when a copy clears the page (7d25e18)
+- clear only the annotations the copy actually took (c673311)
+
+### Documentation
+
+- scrub the local playwright path out of the checked-in docs (d443657)
+- say why the popup's Copy session does not clear either (93d2968)
+- record clear-after-copy, modal support, toolbar tooltips and the headless flag (1aa644a)
+
+### Internal
+
+- pin clear-after-copy — the default path, the clear, the trail and what must not (1da1d1a)
+
+## [0.8.1] — 2026-08-18
+
+[Compare with v0.8.0](https://github.com/thangnm93/SenAnnotate/compare/v0.8.0...v0.8.1)
+
+### Added
+
+- Esc closes the open card, and the toolbar names its buttons on hover (59d4771)
+- drag the toolbar anywhere, remembered per page (c46fb25)
+- clear annotations after a successful copy (d49805e)
+
+### Fixed
+
+- keep the composer typable inside a Reka UI or Radix focus trap (08ea641)
+- keep the annotations panel off the toolbar's hint line (3ae4bf9)
+
+### Internal
+
+- add item in gitignore (88795ad)
+- run the suite windowless under SENANNOTATE_HEADLESS=1 (66099e0)
+- sync the lockfile version with package.json (924da83)
+
+## [0.8.0] — 2026-08-15
 
 [Compare with v0.7.0](https://github.com/thangnm93/SenAnnotate/compare/v0.7.0...v0.8.0)
 

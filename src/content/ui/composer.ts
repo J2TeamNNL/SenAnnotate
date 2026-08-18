@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { ANNOTATION_KINDS, type AnnotationKind } from "../../shared/types";
-import { h, icon, listen } from "./dom";
+import { h, icon, listen, takeFocus } from "./dom";
 
 /**
  * The rows the composer *shows* — everything a retarget replaces, and nothing else.
@@ -219,12 +219,12 @@ export class Composer {
       this.teardown.push(listen(this.element, type, (event) => event.stopPropagation()));
     }
 
-    this.textarea.focus();
+    takeFocus(this.textarea);
   }
 
   /** Put the caret back after something else — the markup editor — borrowed focus. */
   focus(): void {
-    this.textarea.focus();
+    takeFocus(this.textarea);
   }
 
   private selectKind(kind: AnnotationKind): void {
@@ -233,13 +233,13 @@ export class Composer {
       button.setAttribute("aria-pressed", String(candidate === kind));
     }
     // Picking a type is not finishing the note; put the caret back where it was.
-    this.textarea.focus();
+    takeFocus(this.textarea);
   }
 
   private submit(): void {
     const comment = this.textarea.value.trim();
     if (!comment) {
-      this.textarea.focus();
+      takeFocus(this.textarea);
       return;
     }
     this.callbacks.onSubmit(comment, this.kind);
