@@ -2786,6 +2786,41 @@ async function main() {
       secondRound.slice(0, 200),
     );
 
+    // A draft in the composer is work the copy never took, so the clear must leave it
+    // alone. An *editor* is the opposite case: the annotation it was editing has just
+    // gone, so it has nothing to save back to and goes with it.
+    await annotateClearPage(".cta", "Cleared while a draft was open.");
+    await clearPage.locator(".tool--brand").click(); // inspect on, to open a draft
+    await clearPage.locator("#stale").click();
+    await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await clearPage.locator(".composer__input").fill("A draft nobody has saved yet.");
+    await clearPage.locator(".tool--brand").click(); // inspect off — the draft stays up
+    await copyFromPanel();
+    check(
+      "an unsaved draft survives the clear",
+      (await clearPage.locator(".composer").count()) === 1 &&
+        (await clearPage.locator(".composer__input").inputValue()) === "A draft nobody has saved yet." &&
+        (await clearMarkers()) === 0,
+      `${await clearPage.locator(".composer").count()} composers, ${await clearMarkers()} markers`,
+    );
+
+    await clearPage.locator(".composer .button--primary").click();
+    await clearPage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    check(
+      "and it still files, onto the page the copy emptied",
+      (await clearMarkers()) === 1 && (await clearBadge()) === "1",
+      `${await clearMarkers()} markers, badge read "${await clearBadge()}"`,
+    );
+
+    await clearPage.locator(".panel .entry__comment").click();
+    await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await copyFromPanel();
+    check(
+      "an editor whose annotation the clear removed closes with it",
+      (await clearPage.locator(".composer").count()) === 0 && (await clearMarkers()) === 0,
+      `${await clearPage.locator(".composer").count()} composers, ${await clearMarkers()} markers`,
+    );
+
     // Download is deliberately not covered by the setting: the checkbox says *copying*,
     // and a setting that also fires on a button it does not name destroys work by
     // surprise. See `docs/clear-on-copy/context.md`.

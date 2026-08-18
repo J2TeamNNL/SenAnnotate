@@ -175,11 +175,32 @@ the suite does cover is the regression risk this change carries — that scoping
 leaves something behind — via "clearing empties the page" and "the clear reaches storage".
 249/249 after the change.
 
-### Still open: an unsaved draft dies with the clear
+### Found while writing it: an unsaved draft dies with the clear — closed below
 
 `wipeAnnotations()` calls `closeComposer()` unconditionally, and an open composer holding
 an *unsaved* draft is work the copy never took either. It is reachable without any race:
 open a composer, type, then hit **Copy report** in the panel with the setting on, and the
-draft is gone. Left alone here deliberately — it is a different bug from the one this
-entry fixes, and closing it needs the composer to record which annotation (if any) it is
-editing, so it can close for a removed one and stay for a new draft.
+draft is gone. Left alone in that commit — a different bug from the one it fixes — and
+closed in the next entry.
+
+## 2026-08-18 — an unsaved draft is not the copy's to destroy
+
+The item left open above. `wipeAnnotations()` closed the composer unconditionally, so a
+draft being typed died with the clear — reachable with no race at all: open a composer,
+type, hit **Copy report** with the setting on.
+
+The composer now records what it is editing (`composerEditing`, `null` for a new draft) and
+the clear reads it: an editor whose annotation just went closes with it, an unsaved draft
+stays. By id rather than identity, because an import merge replaces the objects in the list.
+
+Removing the unconditional `closeComposer()` also removed something it was doing on the
+side — hiding the overlay highlights — which the panel's hover preview depends on: the row
+the pointer is over is about to be removed, and a removed element never sends `mouseleave`,
+so its box would have been left on the page. The clear now hides the highlights whenever no
+composer is left to own them.
+
+Three checks added to the clear-after-copy block, and this time the window is wide enough to
+drive: the draft survives with its text intact, it still files onto the page the copy
+emptied, and an editor whose annotation was removed is gone. Measured both ways against a
+dist built from the previous commit — the draft was destroyed there, kept here — so the
+checks would catch the regression rather than merely describe it. 252/252.

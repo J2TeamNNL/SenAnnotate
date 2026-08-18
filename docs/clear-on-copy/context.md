@@ -40,6 +40,20 @@ toast comes from the same snapshot. Two things fall out of that, and both are th
   to a new annotation runs through the composer's `onSubmit`, which *replaces*
   `annotations` rather than mutating it, so holding the array is a real snapshot.
 
+The composer follows the same rule, and needed one piece of state to do it:
+`composerEditing`, the annotation an open composer is editing, or `null` for a new draft.
+An **editor** whose annotation the clear just removed has nothing to save back to, so it
+closes with it. A composer holding an **unsaved draft** stays — that draft was never in
+the report, and a clear that scopes itself to what it took cannot then take the one thing
+it did not. The comparison is by id, not identity: a merge from the popup's import
+replaces the objects in the list.
+
+Closing the composer used to be unconditional, which quietly did one useful thing besides:
+it hid the overlay highlights. The panel's hover preview is why that matters — the row the
+pointer is over is about to be removed, and a removed element never sends the `mouseleave`
+that would take its box off the page. So the highlights are still hidden whenever no
+composer is left to own them.
+
 The diagnostics and the action trail are cleared regardless of what survives. They
 describe the report that was handed over, and the reason for dropping them — steps from
 a bug already filed must not attach to the next one — does not change because something

@@ -111,6 +111,15 @@ let panelOpen = false;
 
 let hoveredElement: Element | null = null;
 let composer: Composer | null = null;
+/**
+ * The annotation the open composer is editing, or `null` when it holds a new draft.
+ *
+ * Read by `wipeAnnotations`, which is the only reason it is out here rather than in
+ * `openComposer`'s closure: a clear has to tell an editor whose subject it just deleted —
+ * that one has nothing to save back to — from a draft nobody has saved yet, which is work
+ * the clear never copied and must not take with it.
+ */
+let composerEditing: Annotation | null = null;
 /** Open only while a screenshot is being marked up, always on top of a composer. */
 let shotEditor: ShotEditor | null = null;
 /** Drag anchor, in document coordinates so a mid-drag scroll cannot move it. */
@@ -570,6 +579,7 @@ function openEditor(annotation: Annotation): void {
 
 function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null): void {
   composer?.destroy();
+  composerEditing = existing;
   overlay.showHighlights(
     existing ? viewportBoxes(existing) : composerTargets.map((el) => el.getBoundingClientRect()),
     { primary: draft.element, secondary: formatSource(draft.source) },
@@ -633,6 +643,7 @@ function closeComposer(): void {
   closeShotEditor();
   composer?.destroy();
   composer = null;
+  composerEditing = null;
   composerTargets = [];
   overlay.hideHighlights();
 }
@@ -858,7 +869,21 @@ async function deliverScreenshot(
  */
 function wipeAnnotations(only?: ReadonlySet<string>): void {
   annotations = only ? annotations.filter((item) => !only.has(item.id)) : [];
-  closeComposer();
+
+  // An editor whose annotation just went has nowhere to save back to, so it goes with it.
+  // A composer holding an unsaved draft stays: it is work nothing here has copied, and a
+  // clear that scopes itself to what it took cannot then take the one thing it did not.
+  // Compared by id rather than identity, because a merge from the popup's import replaces
+  // the objects in the list.
+  if (composerEditing && !annotations.some((item) => item.id === composerEditing?.id)) {
+    closeComposer();
+  }
+
+  // The highlights are the clear's business whenever no composer is left to own them.
+  // The panel's hover preview is the case that matters: the row the pointer is over is
+  // about to be removed, and a removed element never sends the `mouseleave` that would
+  // otherwise take its box off the page.
+  if (!composer) overlay.hideHighlights();
   clearActions();
   diagnosticsCache = null;
   void clearDiagnostics();
