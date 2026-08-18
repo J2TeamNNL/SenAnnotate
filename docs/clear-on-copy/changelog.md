@@ -204,3 +204,24 @@ drive: the draft survives with its text intact, it still files onto the page the
 emptied, and an editor whose annotation was removed is gone. Measured both ways against a
 dist built from the previous commit — the draft was destroyed there, kept here — so the
 checks would catch the regression rather than merely describe it. 252/252.
+
+## 2026-08-18 — the popup's Copy session, written down
+
+The last item the audit left open. `context.md` argued the download exclusion at length
+and never mentioned the other copy that does not clear, so the omission read like an
+oversight rather than a decision.
+
+It is now a section of its own, and the argument turned out to be stronger than the
+download's — that one is about the label, this one about what the popup can honestly do:
+
+- a session report is not one page, and everything else here is scoped to
+  `origin + pathname`; a per-page checkbox cannot quietly buy a session-wide delete
+- the popup cannot tell the open tabs. `onSettingsChanged` watches `sync` for the settings
+  key alone, and annotations are read once at boot from `local`, so a popup-side wipe would
+  leave open tabs drawing markers for annotations that no longer exist. Import gets away
+  with it because it only adds
+- taking a session report twice during one walkthrough is normal; clearing on the first
+  would make the second a partial
+
+No code changed. The behaviour was already pinned by "the popup's session copy never
+clears, setting or not" in the clear-after-copy block.

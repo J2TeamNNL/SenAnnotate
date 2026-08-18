@@ -71,6 +71,37 @@ and a setting that also fires on a button it does not name is a setting that des
 work by surprise. If download should clear too, the label has to change first — and
 that is a decision about wording, not a detail to slip in behind one.
 
+## Nor the popup's Copy session
+
+The popup's **Copy session** — `generateSessionOutput`, every annotated page in one
+document — is the other copy this setting does not follow, and the reason is not the same
+as the download's. That one is about the label. This one could not honestly clear even if
+the label asked it to.
+
+Three separate problems, any one of which is enough:
+
+- **It is not one page.** Clearing after it would mean wiping every page in the session,
+  and everything else here is scoped to `origin + pathname`. A per-page checkbox in a
+  per-page toolbar cannot quietly buy a session-wide delete — that belongs to a control
+  that says so, in the popup, where the session lives.
+- **The popup cannot tell the open tabs.** `onSettingsChanged` is the only
+  `storage.onChanged` listener in the content script and it watches `sync` for the settings
+  key alone; annotations are read once, at boot, from `local`. A wipe written by the popup
+  would leave every tab that was already open drawing markers for annotations that no
+  longer exist, until each is reloaded. Import gets away with this because it *adds* — the
+  page catches up on the next load and nothing on screen was a lie in the meantime.
+- **The report is a different artefact.** A session report is what you paste at the end of
+  a walkthrough, and it is normal to take it more than once — after three pages, then again
+  after five. Clearing on the first would silently make the second a partial.
+
+So the honest reading of the checkbox is the narrow one: it names the panel's *Copy report*
+and does what it says. `test/e2e.mjs` pins this, in the same block, with the setting on —
+the session copy must leave the annotations where they are.
+
+If clearing a whole session is ever wanted, it needs its own control next to the button
+that produces it, and a way to tell the open tabs — not this checkbox reaching further
+than its own page.
+
 ## There is no copy shortcut
 
 This feature originally carried one — `C`, on the grounds that copying was the only
