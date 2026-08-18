@@ -81,25 +81,57 @@ const MENU_TOGGLE = "senannotate:toggle";
  * created fails with a duplicate-id error, and the entries left behind are the *old*
  * version's — pointing at a handler that may no longer exist.
  */
+/**
+ * Where the entries may appear: on page content, never on the extension's own icon.
+ *
+ * `"all"` is documented as *every* context except `launcher`, which includes `action` — the
+ * right-click menu of our own toolbar button. Invoked from there no right-click on a page
+ * happened at all, so the content script's record still holds whatever was right-clicked
+ * minutes ago and the composer opens on it: the "annotates whatever was recorded last,
+ * silently" failure this feature is built to avoid, reached through a menu nobody expected
+ * these items in. Listing the contexts is the fix.
+ */
+const MENU_CONTEXTS: chrome.contextMenus.ContextType[] = [
+  "page",
+  "frame",
+  "link",
+  "image",
+  "video",
+  "audio",
+  "editable",
+  "selection",
+];
+
+/**
+ * Pages an entry may appear on: the ones a content script actually runs on.
+ *
+ * Without this the entries are offered on `chrome://` pages, the Web Store and PDFs, where
+ * `chrome.tabs.sendMessage` below rejects straight into the empty `catch` — the user picks
+ * an item and nothing happens, with nothing said. Not offering the item is the honest
+ * version of that.
+ */
+const MENU_URL_PATTERNS = ["http://*/*", "https://*/*", "file://*/*"];
+
 function createMenus(): void {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_ANNOTATE,
       title: "Annotate this element",
-      // `page` and `frame` are not listed: the element under the pointer is what this
-      // annotates, and every context below is a click on something.
-      contexts: ["all"],
+      contexts: MENU_CONTEXTS,
+      documentUrlPatterns: MENU_URL_PATTERNS,
     });
     chrome.contextMenus.create({
       id: MENU_ANNOTATE_SELECTION,
       // Chrome substitutes the selected text for `%s`, truncated for the menu.
       title: 'Annotate the text "%s"',
       contexts: ["selection"],
+      documentUrlPatterns: MENU_URL_PATTERNS,
     });
     chrome.contextMenus.create({
       id: MENU_TOGGLE,
       title: "Toggle inspect mode",
-      contexts: ["all"],
+      contexts: MENU_CONTEXTS,
+      documentUrlPatterns: MENU_URL_PATTERNS,
     });
   });
 }
@@ -112,12 +144,28 @@ chrome.runtime.onInstalled.addListener(createMenus);
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (tab?.id === undefined) return;
 
+  // Match the id explicitly. Treating "not the toggle" as "annotate" would wire any entry
+  // added later — or left behind by a test — to the composer.
+  if (
+    info.menuItemId !== MENU_ANNOTATE &&
+    info.menuItemId !== MENU_ANNOTATE_SELECTION &&
+    info.menuItemId !== MENU_TOGGLE
+  ) {
+    return;
+  }
+
   const message: RuntimeMessage =
     info.menuItemId === MENU_TOGGLE
       ? { kind: "toggle-inspect" }
       : {
           kind: "annotate-context",
           selection: info.menuItemId === MENU_ANNOTATE_SELECTION,
+          // Chrome's own reading of the selection, which the content script cannot always
+          // reproduce: text selected inside an `<input>` or `<textarea>` is not part of the
+          // document selection, so `window.getSelection()` returns "" for it — while Chrome
+          // populates `selectionText` and therefore *offers* the item. Passing it is what
+          // stops the quote being silently dropped from the annotation the user asked for.
+          selectionText: info.selectionText,
           // A click inside an iframe reports a non-zero frameId. The composer belongs to
           // the top frame, so the message still goes there and this flag lets it say so
           // rather than annotate whatever the top frame last saw — which would be the
@@ -125,16 +173,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           inFrame: (info.frameId ?? 0) !== 0,
         };
 
-  if (message.kind !== "toggle-inspect" && message.kind !== "annotate-context") return;
-
   try {
     // Always frame 0: the toolbar, the composer and the annotation store are the top
     // frame's, and no other frame can answer for them.
     await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
   } catch {
-    // No content script here — a chrome:// page, the Web Store, a PDF, or a site the
-    // user's own domain rules excluded. Nothing to do and nothing to report: the menu
-    // item is the only affordance and it has already closed.
+    // `documentUrlPatterns` keeps the entries off the pages with no content script at all,
+    // so what is left here is the narrow case it cannot express: a tab where
+    // `installTopFrame()` bailed out early because the user hid the toolbar for the
+    // session. Nothing to report — the menu has already closed, and there is no UI of ours
+    // on that page to report it in.
   }
 });
 

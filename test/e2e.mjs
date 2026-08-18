@@ -4295,23 +4295,43 @@ async function main() {
       const ctxDock = ctx.locator(".toolbar-dock");
       const ctxMeta = ctx.locator(".composer__meta");
 
+      /**
+       * Asserted through the duplicate-id error, which is the only observable the API has.
+       *
+       * `chrome.contextMenus` cannot be queried, so an entry's existence is only visible in
+       * the failure to create it again. Creating a *probe* id instead would assert nothing
+       * about the code that ships — `createMenus` could be deleted outright and the check
+       * would still pass — and it would leave a live entry behind wired to the annotate
+       * path. Re-creating the three real ids names the entries under test, proves
+       * `createMenus` ran, and adds nothing to the menu: a rejected create creates nothing,
+       * and the branch that succeeded (i.e. the entry was missing) removes what it made
+       * before failing the check.
+       */
+      const menuIds = ["senannotate:annotate", "senannotate:annotate-selection", "senannotate:toggle"];
+      const menuState = await worker.evaluate(
+        (ids) =>
+          Promise.all(
+            ids.map(
+              (id) =>
+                new Promise((resolve) => {
+                  try {
+                    chrome.contextMenus.create({ id, title: id, contexts: ["page"] }, () => {
+                      const error = chrome.runtime.lastError?.message ?? "";
+                      if (error) return resolve(`${id}: ${error}`);
+                      chrome.contextMenus.remove(id, () => resolve(`${id}: was not created`));
+                    });
+                  } catch (error) {
+                    resolve(`${id}: ${String(error)}`);
+                  }
+                }),
+            ),
+          ),
+        menuIds,
+      );
       check(
-        "the worker created its menu entries without throwing",
-        await worker.evaluate(
-          () =>
-            new Promise((resolve) => {
-              chrome.contextMenus.removeAll(() => {
-                try {
-                  chrome.contextMenus.create({ id: "probe", title: "probe", contexts: ["all"] }, () =>
-                    resolve(!chrome.runtime.lastError),
-                  );
-                } catch {
-                  resolve(false);
-                }
-              });
-            }),
-        ),
-        "chrome.contextMenus was not usable from the service worker",
+        "the worker created all three of its menu entries",
+        menuState.every((line) => /duplicate/i.test(line)),
+        menuState.join(" | "),
       );
 
       /**
@@ -4323,20 +4343,30 @@ async function main() {
        * it cost a debugging session. The fixture cancels the default so Chrome's own menu
        * never opens, which is what keeps this safe in a headed run.
        */
-      const rightClickAnnotate = async (selector, { selection = false, inFrame = false } = {}) => {
+      const rightClickAnnotate = async (
+        selector,
+        { selection = false, selectionText = undefined, inFrame = false } = {},
+      ) => {
         await ctx.locator(selector).click({ button: "right" });
         await ctx.waitForTimeout(200);
         await worker.evaluate(
-          async ([pageUrl, wantsSelection, wantsFrame]) => {
+          async ([pageUrl, wantsSelection, text, wantsFrame]) => {
             const [tab] = await chrome.tabs.query({ url: pageUrl });
             if (tab?.id === undefined) return;
             await chrome.tabs.sendMessage(
               tab.id,
-              { kind: "annotate-context", selection: wantsSelection, inFrame: wantsFrame },
+              {
+                kind: "annotate-context",
+                selection: wantsSelection,
+                // Chrome fills `selectionText` from `OnClickData`; the content script never
+                // re-derives it, which is what makes a selection inside a field work.
+                selectionText: text,
+                inFrame: wantsFrame,
+              },
               { frameId: 0 },
             );
           },
-          [`${base}/context-menu.html`, selection, inFrame],
+          [`${base}/context-menu.html`, selection, selectionText, inFrame],
         );
         await ctx.waitForTimeout(600);
       };
@@ -4393,11 +4423,71 @@ async function main() {
       // The selection item carries the text, which is what makes it different from the
       // element one rather than a duplicate of it.
       await ctx.locator("#ctxtext").selectText();
-      await rightClickAnnotate("#ctxtext", { selection: true });
+      await rightClickAnnotate("#ctxtext", {
+        selection: true,
+        selectionText: await ctx.evaluate(() => window.getSelection()?.toString() ?? ""),
+      });
       await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
       check(
         "the selection item carries the selected text into the composer",
         ((await ctxMeta.textContent()) ?? "").includes("worth quoting"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // A quote is about the element its *range* spans, not the node the pointer landed on:
+      // select across `foo <b>bar</b> baz` and right-click over the bold word, and the
+      // report has to name the paragraph — the same element text mode would have picked.
+      // Otherwise the same selection describes two different elements depending only on
+      // which entry point was used.
+      await ctx.locator("#ctxmixed").selectText();
+      await rightClickAnnotate("#ctxbold", {
+        selection: true,
+        selectionText: await ctx.evaluate(() => window.getSelection()?.toString() ?? ""),
+      });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item annotates the element the selection spans, not the pointer's",
+        // The Element row names the paragraph and not the `b` the pointer was over.
+        // Matched on the tag rather than `p.ctxmixed`: an element with text of its own is
+        // labelled by that text, so the `tag.class` fallback never appears here.
+        /Elementp\b/.test((await ctxMeta.textContent()) ?? "") &&
+          !((await ctxMeta.textContent()) ?? "").includes('b "bar"'),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // The quote is Chrome's `selectionText`, not the page's own reading of the selection.
+      //
+      // Which one is used only shows up where they differ, so this sends a `selectionText`
+      // that is *not* what the document selection says while a different element is
+      // selected: the composer has to show Chrome's copy. The case in the wild is a
+      // selection inside an `<input>` or `<textarea>` — not part of the document selection
+      // on every engine, while Chrome populates `selectionText` and therefore offers the
+      // item — and re-deriving in the page drops the quote from the annotation the user
+      // explicitly asked for. (This Chromium build does surface a field's selection to
+      // `getSelection()`, so that alone would prove nothing here.)
+      await ctx.locator("#ctxtext").selectText();
+      await rightClickAnnotate("#ctxinput", { selection: true, selectionText: "Typed into a field" });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the quote comes from the menu click, not from the page's own selection",
+        ((await ctxMeta.textContent()) ?? "").includes("Typed into a field") &&
+          !((await ctxMeta.textContent()) ?? "").includes("worth quoting"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // And the field case itself still carries its quote.
+      await ctx.locator("#ctxinput").selectText();
+      await rightClickAnnotate("#ctxinput", { selection: true, selectionText: "Typed into a field" });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item still quotes text selected inside a field",
+        ((await ctxMeta.textContent()) ?? "").includes("Typed into a field"),
         `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
       );
       await ctx.keyboard.press("Escape");

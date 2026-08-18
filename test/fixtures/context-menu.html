@@ -5,7 +5,8 @@
     <title>Context menu fixture</title>
     <style>
       body { margin: 0; font: 14px/1.4 system-ui, sans-serif; padding: 24px; }
-      .ctxcard, .ctxprose, .ctxeater { padding: 18px; border: 1px solid #d4d4d8; margin-bottom: 16px; }
+      .ctxcard, .ctxprose, .ctxmixed, .ctxeater { padding: 18px; border: 1px solid #d4d4d8; margin-bottom: 16px; }
+      .ctxinput { display: block; margin-bottom: 16px; padding: 8px; }
       .ctxbutton { padding: 10px 16px; border: 1px solid #2563eb; background: #eff6ff; }
     </style>
   </head>
@@ -36,6 +37,18 @@
       <button class="ctxbutton" id="ctxbutton"><span id="ctxlabel">Place order</span></button>
     </div>
     <p class="ctxprose" id="ctxtext">Some prose worth quoting in a note about the wording.</p>
+    <!--
+      A selection that spans more than the node under the pointer. Right-clicking the bold
+      word with the whole sentence selected must report the paragraph, the way text mode
+      does — the common ancestor of the range, not the deepest element hit.
+    -->
+    <p class="ctxmixed" id="ctxmixed">foo <b id="ctxbold">bar</b> baz</p>
+    <!--
+      Text selected in here is *not* part of the document selection, so the page reads "" for
+      it while Chrome still offers *Annotate the text "…"*. The case that decides whether the
+      quote is carried on the message or re-derived in the page.
+    -->
+    <input class="ctxinput" id="ctxinput" value="Typed into a field" size="30" />
     <div class="ctxeater" id="ctxmenu-eater">A card with its own right-click menu.</div>
 
     <script>

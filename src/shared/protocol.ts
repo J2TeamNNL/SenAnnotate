@@ -155,11 +155,16 @@ export type RuntimeMessage =
    * `selection` distinguishes the two menu items: the element one annotates what was
    * right-clicked, the selection one annotates the highlighted text.
    *
+   * `selectionText` is Chrome's own reading of that text, and the reason it travels rather
+   * than being re-derived: a selection inside an `<input>` or `<textarea>` is not part of
+   * the document selection, so `window.getSelection()` in the page returns "" for it while
+   * Chrome still offers the item. Undefined when the element item was used.
+   *
    * `inFrame` is true when the click happened inside an iframe. The composer is a
    * top-frame thing, so that case is reported rather than half-handled — see
    * `docs/context-menu/context.md`.
    */
-  | { kind: "annotate-context"; selection: boolean; inFrame: boolean };
+  | { kind: "annotate-context"; selection: boolean; selectionText?: string; inFrame: boolean };
 
 export type RuntimeResponse =
   | { ok: true; dataUrl?: string; count?: number; active?: boolean }

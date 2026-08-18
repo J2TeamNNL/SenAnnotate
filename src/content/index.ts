@@ -215,7 +215,8 @@ let retargetToken = 0;
 let screenshotPending = false;
 
 /**
- * What the last right-click was over, and any selection it had.
+ * What the last right-click was over: the element under the pointer, and the element the
+ * selection was about if there was one.
  *
  * `chrome.contextMenus` tells an extension the frame, the page URL and the selected text,
  * and nothing whatsoever about the element under the pointer. `contextmenu` fires before
@@ -223,10 +224,22 @@ let screenshotPending = false;
  * the user right-clicked — which is the entire gesture.
  *
  * Not cleared after use: reopening the menu on the same element and picking the item twice
- * should work, and the `isConnected` check at use time is what catches a stale record.
+ * should work, and the liveness check at use time is what catches a stale record.
+ *
+ * `WeakRef` rather than the node, because "not cleared after use" would otherwise mean
+ * right-clicking a large container the app then removes retains the whole detached subtree
+ * for the life of the page. `setActive(false)` clears both alongside `hoveredElement`, so
+ * leaving inspect mode drops them too. Only the *element* is kept; the selected text comes
+ * from Chrome with the menu click and is never held here.
  */
-let rightClicked: Element | null = null;
-let rightClickedText: string | null = null;
+let rightClicked: WeakRef<Element> | null = null;
+let rightClickedSelection: WeakRef<Element> | null = null;
+
+/** A recorded element if it is still in the document, else null. */
+function liveTarget(ref: WeakRef<Element> | null): Element | null {
+  const element = ref?.deref();
+  return element?.isConnected ? element : null;
+}
 
 // -----------------------------------------------------------------------------
 // UI
@@ -551,6 +564,8 @@ function setActive(next: boolean): void {
     measureOverlay.hideAll();
     hoveredElement = null;
     hoverLabel = null;
+    rightClicked = null;
+    rightClickedSelection = null;
     document.body.style.removeProperty("cursor");
   } else {
     document.body.style.setProperty("cursor", "crosshair", "important");
@@ -952,6 +967,7 @@ function frameAnchor(draft: Draft): DOMRect {
  */
 async function annotateRightClicked(request: {
   selection: boolean;
+  selectionText?: string;
   inFrame: boolean;
 }): Promise<void> {
   // The composer, the annotations and the markers are the top frame's, and this frame has
@@ -963,11 +979,25 @@ async function annotateRightClicked(request: {
     return;
   }
 
-  if (!rightClicked?.isConnected) {
+  // For the selection item the subject is the selection, so the element is the one its
+  // range is about — falling back to the pointer's element, which is what a selection
+  // inside an `<input>` gives us (no document range exists for it at all).
+  const target = request.selection
+    ? (liveTarget(rightClickedSelection) ?? liveTarget(rightClicked))
+    : liveTarget(rightClicked);
+
+  if (!target) {
     // A right-click on a page that then re-rendered, or on something `eligible` refused —
     // our own overlay, a `<script>`, the `<html>` element.
     ui.toast("Nothing to annotate there", "error");
     return;
+  }
+
+  // A half-built pick set is the one piece of state on this screen the user assembled by
+  // hand — Escape protects it ahead of leaving inspect mode for that reason — so say that
+  // it went rather than letting the hint blank itself and take the only trace with it.
+  if (picked.length) {
+    ui.toast(`Discarded ${picked.length} picked element${picked.length === 1 ? "" : "s"}`);
   }
 
   // A right-click is a fresh subject. Anything half-finished belongs to the previous one.
@@ -975,8 +1005,8 @@ async function annotateRightClicked(request: {
   clearPicked();
   resetMarquee();
 
-  const selectedText = request.selection ? (rightClickedText ?? undefined) : undefined;
-  await beginAnnotation([rightClicked], selectedText);
+  const selectedText = request.selection ? (request.selectionText?.trim() || undefined) : undefined;
+  await beginAnnotation([target], selectedText);
 }
 
 async function beginAnnotation(
@@ -1577,6 +1607,24 @@ function eligible(element: Element): boolean {
   return isAnnotatable(element) && !isOurUi(element) && !isLiveChildFrame(element);
 }
 
+/**
+ * The element a text selection is *about* — the common ancestor of its range, not whichever
+ * node the pointer happened to be over.
+ *
+ * Shared by both routes to a quote so they cannot disagree. Select `foo bar baz` across
+ * `<p>foo <b>bar</b> baz</p>` and the annotation is about the `p`, whether it arrived by
+ * mouseup in text mode or by right-clicking over `bar` and picking the selection item;
+ * reporting `b` for one and `p` for the other would make the report depend on the entry
+ * point rather than on what was selected.
+ */
+function selectionElement(selection: Selection | null): Element | null {
+  if (!selection || selection.rangeCount === 0) return null;
+  const container = selection.getRangeAt(0).commonAncestorContainer;
+  const element =
+    container.nodeType === Node.ELEMENT_NODE ? (container as Element) : container.parentElement;
+  return element && eligible(element) ? element : null;
+}
+
 
 
 // --- marquee -----------------------------------------------------------------
@@ -1956,22 +2004,37 @@ function installTopFrame(): void {
   // Recorded whether or not inspect mode is on, which is the whole point: the menu item is
   // an entry point for someone who has armed nothing, the way DevTools' *Inspect* is.
   //
-  // Capture phase, because a page that calls `stopPropagation` on `contextmenu` — every app
-  // with a custom right-click menu does — would otherwise take the element with it. Passive
-  // and never cancelled: the page's own menu, or Chrome's, still opens. We are only
-  // watching.
+  // Capture phase on `window`, because a page that calls `stopPropagation` on `contextmenu`
+  // — every app with a custom right-click menu does — would otherwise take the element with
+  // it, and the failure is not "nothing happens": the record keeps the *previous* element
+  // and the menu item annotates that, silently. `window` and not `document` because capture
+  // runs `window → document → … → target`, so a page listening on `window` still gets there
+  // first. Passive and never cancelled: the page's own menu, or Chrome's, still opens. We
+  // are only watching.
   listen(
-    document,
+    window,
     "contextmenu",
     (event) => {
-      // `elementFromPoint` rather than `event.target`, for the same reason the click handler
-      // uses it: it is the one lookup that sees through our own `pointer-events: none`
-      // overlay to what the user was actually pointing at.
-      const target = document.elementFromPoint(event.clientX, event.clientY);
-      rightClicked = target && eligible(target) ? target : null;
-      // Read now, not when the menu item fires: opening a context menu can collapse the
-      // selection on some platforms, and by then it would be gone.
-      rightClickedText = window.getSelection()?.toString().trim() || null;
+      // `elementFromPoint` first, for the same reason the click handler uses it: it is the
+      // one lookup that sees through our own `pointer-events: none` overlay to what the
+      // user was actually pointing at.
+      //
+      // `event.target` when it misses or lands outside that element's subtree, which is the
+      // keyboard-invoked menu (Menu key, Shift+F10): Chrome synthesises coordinates for
+      // those, and with nothing focused they sit near the top-left of the viewport — so the
+      // hit test returns a real, eligible element that has nothing to do with where the
+      // user was. Without the fallback that is not the safe "Nothing to annotate there"
+      // path, it is the wrong element annotated silently.
+      const hit = document.elementFromPoint(event.clientX, event.clientY);
+      const fired = event.target instanceof Element ? event.target : null;
+      const agrees = !fired || hit === fired || (hit?.contains(fired) ?? false);
+      const target = agrees ? hit : fired;
+      rightClicked = target && eligible(target) ? new WeakRef(target) : null;
+      // Recorded now rather than resolved when the menu item fires: opening a context menu
+      // can collapse the selection on some platforms, and by then the range would be gone.
+      // Only the element is kept — the text itself comes back from Chrome on the message.
+      const forSelection = selectionElement(window.getSelection());
+      rightClickedSelection = forSelection ? new WeakRef(forSelection) : null;
     },
     { capture: true, passive: true },
   );
@@ -2122,13 +2185,8 @@ function installTopFrame(): void {
       const text = selection?.toString().trim();
       if (!selection || !text) return;
 
-      const container = selection.getRangeAt(0).commonAncestorContainer;
-      const element =
-        container.nodeType === Node.ELEMENT_NODE
-          ? (container as Element)
-          : container.parentElement;
-
-      if (!element || !eligible(element)) return;
+      const element = selectionElement(selection);
+      if (!element) return;
       void beginAnnotation([element], text);
     }, 0);
   });
