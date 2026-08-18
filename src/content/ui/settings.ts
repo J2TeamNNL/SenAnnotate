@@ -36,6 +36,20 @@ export interface SettingsCallbacks {
 
 type Option = { value: string; label: string };
 
+/**
+ * Anchored placement, in the units the stylesheet already uses.
+ *
+ * `GAP` is 8 because that is the gap the default corner has always had — the dock sits
+ * `bottom: 20px` and is 44px tall, the card `bottom: 72px` — so a pill that has been
+ * dragged looks exactly like one that has not. `EDGE` matches the composer's.
+ */
+const GAP = 8;
+const EDGE = 12;
+/** Fallback for `offsetWidth` on a card that has not been laid out yet; `.settings` in CSS. */
+const CARD_WIDTH = 380;
+/** Floor for the anchored `max-height`, so a pill in a tiny viewport cannot squeeze it shut. */
+const MIN_HEIGHT = 160;
+
 export class SettingsCard {
   readonly element: HTMLElement;
 
@@ -283,6 +297,62 @@ export class SettingsCard {
     for (const [value, button] of this.swatches) {
       button.setAttribute("aria-pressed", String(value === settings.accentColor));
     }
+  }
+
+  /**
+   * Place the card against the toolbar's dock, or hand it back to the stylesheet.
+   *
+   * `null` — the pill is in its CSS corner — removes everything this method writes. The
+   * default placement is written in `styles.css` (`bottom: 72px`, the `104px` inspect
+   * variant, the `max-height`) and measured there by the suite; re-deriving it here would
+   * be a second copy that can only drift in the state nobody re-checks.
+   *
+   * With a box: right edges aligned with the dock, above it by `GAP`, flipped underneath
+   * when the card does not fit above, and clamped to the viewport on both axes. Same
+   * "prefer, flip, clamp" shape as `Composer.position()` — two cards placing themselves
+   * by different rules is how an interface starts to feel arbitrary.
+   */
+  anchorTo(box: DOMRect | null): void {
+    if (!box) {
+      delete this.element.dataset.anchored;
+      this.element.style.removeProperty("left");
+      this.element.style.removeProperty("top");
+      this.element.style.removeProperty("max-height");
+      return;
+    }
+
+    // Before measuring: the flag releases the `bottom`/`right` the stylesheet sets, and a
+    // card still held by both edges reports a height it is about to lose.
+    this.element.dataset.anchored = "true";
+
+    // This card is nearly as tall as the viewport — the stylesheet caps it at
+    // `100vh - 92px` and its body scrolls. So "prefer above, flip below" is not enough on
+    // its own: with the pill anywhere near the middle *neither* side fits, and a card
+    // placed by its own height would detach from the pill and clamp to the bottom of the
+    // screen. It takes the roomier side and is capped to fit there, which is what keeps
+    // the pill and its card visibly one thing.
+    const roomAbove = box.top - GAP - EDGE;
+    const roomBelow = window.innerHeight - box.bottom - GAP - EDGE;
+    const goesAbove = roomAbove >= roomBelow;
+
+    // A floor, for the pathological case of a pill filling a very short viewport: a
+    // `max-height` of nothing would leave the header alone on screen with no way back.
+    this.element.style.maxHeight = `${Math.max(MIN_HEIGHT, goesAbove ? roomAbove : roomBelow)}px`;
+
+    const width = this.element.offsetWidth || CARD_WIDTH;
+    const height = this.element.offsetHeight;
+
+    const left = Math.max(EDGE, Math.min(box.right - width, window.innerWidth - width - EDGE));
+    const top = Math.max(
+      EDGE,
+      Math.min(
+        goesAbove ? box.top - GAP - height : box.bottom + GAP,
+        window.innerHeight - height - EDGE,
+      ),
+    );
+
+    this.element.style.left = `${left}px`;
+    this.element.style.top = `${top}px`;
   }
 
   destroy(): void {
