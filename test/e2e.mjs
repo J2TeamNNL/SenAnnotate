@@ -409,7 +409,9 @@ async function main() {
       tracerText.includes("app/components/BaseButton.vue:42:7"),
       tracerText.slice(0, 200),
     );
-    await tracer.locator(".composer .icon-button").click();
+    // Scoped to the header: the retarget controls are `.icon-button`s too, and an
+    // unqualified `.composer .icon-button` matches five of them.
+    await tracer.locator(".composer .card__header .icon-button").click();
 
     // An uninstrumented child must inherit its nearest recorded ancestor.
     await tracer.locator(".badge").click();
@@ -2144,7 +2146,7 @@ async function main() {
     );
 
     // …but the buttons still do, which is why they exist.
-    await retarget.locator('.retarget__button[title^="Select the parent"]').click();
+    await retarget.locator('.retarget__button[aria-label^="Select the parent"]').click();
     await retarget.waitForTimeout(400);
     check(
       "the ↑ button retargets even with text in the note",
@@ -2161,7 +2163,7 @@ async function main() {
     // that was clicked. Invisible anywhere but the report.
     await retarget.locator(".composer .button--primary").click();
     await retarget.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
-    await retarget.locator('.tool[title^="Annotations"]').click();
+    await retarget.locator('.tool[aria-label^="Annotations"]').click();
     await retarget.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await retarget.locator(".panel .button--primary").click();
     const retargetReport = await retarget.evaluate(() => navigator.clipboard.readText());
@@ -2170,7 +2172,7 @@ async function main() {
       retargetReport.includes("div.ordercard") && !retargetReport.includes("`span`"),
       retargetReport.slice(0, 400),
     );
-    await retarget.locator('.tool[title^="Annotations"]').click();
+    await retarget.locator('.tool[aria-label^="Annotations"]').click();
 
     // A retarget started in one composer must not resolve into another. Escape closes the
     // first mid-flight; the click opens a second on an unrelated element.
@@ -2192,16 +2194,36 @@ async function main() {
 
     // A retarget that adds meta rows grows the card downward from a `top` clamped when it
     // was shorter, so the footer — Save, camera, delete — ends up below the viewport.
-    await retarget.locator("#low-label").click();
+    //
+    // It has to be the plain-host → Vue-component step for that to be reachable at all:
+    // every element on a page with no framework renders exactly one row, the card never
+    // changes height, and the check below would pass with `setData`'s `position()` call
+    // deleted. `#fold-host` is the plain wrapper (one row) and the component inside it
+    // carries Source, Component and Props (four) — hence the row count assertion first,
+    // which is what proves the height actually moved.
+    await retarget.locator("#fold-host").click({ position: { x: 4, y: 4 } });
     await retargetMeta.waitFor({ state: "visible", timeout: 5_000 });
-    await retarget.keyboard.press("ArrowUp");
+    const foldRows = retarget.locator(".composer__meta .meta-row");
+    const foldRowsBefore = await foldRows.count();
+    await retarget.keyboard.press("ArrowDown");
     await retarget.waitForTimeout(400);
+    const foldRowsAfter = await foldRows.count();
+    check(
+      "stepping into a component adds the rows a plain element has none of",
+      foldRowsBefore === 1 && foldRowsAfter > foldRowsBefore,
+      `${foldRowsBefore} row(s) before, ${foldRowsAfter} after — meta read "${((await retargetMeta.textContent()) ?? "").trim()}"`,
+    );
+
     const retargetBox = await retarget.locator(".composer").boundingBox();
-    const retargetViewportHeight = retarget.viewportSize().height;
+    const retargetViewport = retarget.viewportSize();
     check(
       "a retarget near the fold keeps the composer's footer on screen",
-      retargetBox.y + retargetBox.height <= retargetViewportHeight,
-      `composer bottom at ${Math.round(retargetBox.y + retargetBox.height)} of ${retargetViewportHeight}`,
+      !!retargetBox &&
+        !!retargetViewport &&
+        retargetBox.y + retargetBox.height <= retargetViewport.height,
+      retargetBox && retargetViewport
+        ? `composer bottom at ${Math.round(retargetBox.y + retargetBox.height)} of ${retargetViewport.height}`
+        : "composer or viewport could not be measured",
     );
     await retarget.keyboard.press("Escape");
     await retarget.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });

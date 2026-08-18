@@ -185,12 +185,26 @@ let composerDraft: Draft | null = null;
  * The element the *last requested* retarget was stepping from, which is not the same as
  * `composerTargets[0]` while a step is in flight.
  *
- * Holding an arrow key repeats at ~30Hz and every step is a bridge round trip, so
- * stepping from the last *confirmed* element makes presses 2..n all compute the same
- * neighbour and `retargetToken` then discards all but the last — the key reads as broken
- * on any page where the RPC hits its 500ms timeout.
+ * Every step is a bridge round trip of up to 500ms, and four arrow presses land well
+ * inside one on a page whose MAIN world is slow. Stepping from the last *confirmed*
+ * element would make presses 2..n all compute the same neighbour, with `retargetToken`
+ * then discarding all but the last — four presses would move one level.
  */
 let retargetFrom: Element | null = null;
+/** Guards against a burst of arrow presses landing out of order. */
+let retargetToken = 0;
+/**
+ * Set for as long as a screenshot flow owns the open composer's draft.
+ *
+ * A retarget replaces `composerDraft` wholesale, and both halves of that flow await
+ * across the swap: `captureScreenshot` measures the box and asks the worker for the tab
+ * before the markup editor exists, and `deliverScreenshot` runs *after* `closeShotEditor`
+ * has already nulled `shotEditor` and handed focus back to the note. In either window the
+ * `shotEditor` test alone reads as "no screenshot", the arrows are live, and the filename
+ * is then written into an orphan draft no annotation references — the PNG reaches
+ * Downloads and the report has no screenshot at all.
+ */
+let screenshotPending = false;
 
 // -----------------------------------------------------------------------------
 // UI
@@ -685,33 +699,53 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
 }
 
 /**
+ * Whether an arrow press may land on this element.
+ *
+ * `eligible` plus a rendered area, and the area is the part the pointer path never had
+ * to think about: `elementFromPoint` cannot return a `display: none` popover, a `hidden`
+ * span or a collapsed accordion panel, so every stage downstream of a click has always
+ * been handed something with a box. The arrows can reach all of them, and a zero-sized
+ * target breaks three things at once — `showHighlights` draws a box with no size so the
+ * highlight silently vanishes, `captureScreenshot` refuses with "Nothing to capture", and
+ * the stored `x`/`y` collapse to 0 so the panel's marker parks in the top-left corner.
+ * `marquee.ts` refuses zero-sized candidates for the same reason.
+ *
+ * Skipping them rather than stopping on them is what keeps the walk useful: a collapsed
+ * sibling between two cards is stepped over, exactly like a `<script>`.
+ */
+function retargetCandidate(element: Element): boolean {
+  if (!eligible(element)) return false;
+  const box = element.getBoundingClientRect();
+  return box.width > 0 && box.height > 0;
+}
+
+/**
  * The element one step from `from` in `direction`, skipping anything not worth
  * annotating.
  *
  * Sibling steps *loop* over `nextElementSibling`/`previousElementSibling` until
- * `eligible` says yes, rather than filtering the whole child list: a `<script>`, a
- * comment wrapper or one of our own nodes between two cards must not read as a dead end,
- * but building the filtered array to find that out costs an allocation plus an
- * `eligible` call — and `eligible` walks ancestors through `isOurUi` — for every sibling
- * on the page. In a 2,000-row table, at ~30Hz key repeat, that is the difference between
- * O(k) and 60,000 ancestor walks a second. `marquee.ts` avoids the same call for the same
- * reason.
+ * `retargetCandidate` says yes, rather than filtering the whole child list: a `<script>`,
+ * a comment wrapper or one of our own nodes between two cards must not read as a dead end,
+ * but building the filtered array to find that out costs an allocation plus a measurement
+ * plus an `eligible` call — and `eligible` walks ancestors through `isOurUi` — for every
+ * sibling on the page. In a 2,000-row table that is the difference between O(k) and O(n)
+ * per press. `marquee.ts` avoids the same call for the same reason.
  *
- * `document.body` is the ceiling: everything above it describes the whole page, which no
- * annotation means.
+ * `document.body` is the ceiling, and it enforces itself: `NOT_ANNOTATABLE`
+ * (`identify.ts`) holds `BODY` and `HTML`, so the parent walk runs out of eligible nodes
+ * rather than being stopped here. Changing where the ceiling sits means changing that set.
  */
 function stepFrom(from: Element, direction: RetargetDirection): Element | null {
   if (direction === "parent") {
     for (let node = from.parentElement; node; node = node.parentElement) {
-      if (node === document.body || node === document.documentElement) return null;
-      if (eligible(node)) return node;
+      if (retargetCandidate(node)) return node;
     }
     return null;
   }
 
   if (direction === "child") {
     for (let node = from.firstElementChild; node; node = node.nextElementSibling) {
-      if (eligible(node)) return node;
+      if (retargetCandidate(node)) return node;
     }
     return null;
   }
@@ -722,13 +756,10 @@ function stepFrom(from: Element, direction: RetargetDirection): Element | null {
     node;
     node = forward ? node.nextElementSibling : node.previousElementSibling
   ) {
-    if (eligible(node)) return node;
+    if (retargetCandidate(node)) return node;
   }
   return null;
 }
-
-/** Guards against a burst of arrow presses landing out of order. */
-let retargetToken = 0;
 
 /**
  * Move the open composer onto a neighbouring element.
@@ -741,13 +772,20 @@ async function retargetComposer(direction: RetargetDirection): Promise<void> {
   const owner = composer;
   if (!owner) return;
 
+  // `setActive(false)` deliberately leaves an open composer alone — it only hides the
+  // overlay — so switching Inspect off while the card is up keeps both the buttons and
+  // the keys live. Without this the walk would paint a highlight back onto a page the
+  // user has just told us to stop inspecting. `queueSync` refuses on the same test.
+  if (!active) return;
+
   // A screenshot is a crop of one element's box. Retargeting after one would either lose
   // it — `deliverScreenshot` writes into whichever draft object it was handed, and a
   // retarget replaces that object — or keep a picture of the wrong element in the report.
   // Both are "the composer shows one thing and stores another", which is the failure this
   // whole feature exists to avoid, so it is refused instead. The markup editor is on top
-  // of the composer and about to write into the same draft, so it counts too.
-  if (composerDraft?.screenshot || shotEditor) {
+  // of the composer and about to write into the same draft, and `screenshotPending` covers
+  // the two windows on either side of it where there is no editor to see.
+  if (composerDraft?.screenshot || shotEditor || screenshotPending) {
     ui.toast("Retake the screenshot after choosing the element", "error");
     return;
   }
@@ -773,11 +811,18 @@ async function retargetComposer(direction: RetargetDirection): Promise<void> {
     return;
   }
 
-  // Set before the await, so a held arrow key steps a level per press instead of
+  // Set before the await, so a burst of presses steps a level each instead of
   // recomputing the same neighbour n times and discarding all but one.
   retargetFrom = next;
 
   const token = ++retargetToken;
+
+  // Move the highlight now, from the synchronous `identifyElement`, and let the bridge
+  // answer enrich the label a round trip later — the same order `updateHover` uses, and
+  // for a stronger reason: a keypress has one expected response, so up to 500ms of the
+  // old element still being highlighted reads as the key having missed.
+  overlay.showHighlights([next.getBoundingClientRect()], { primary: identifyElement(next).name });
+
   const draft = await captureDraft([next], { settings });
 
   // `composer === owner` and not merely `composer`: the token alone cannot tell a
@@ -834,6 +879,11 @@ function closeComposer(): void {
   composerTargets = [];
   composerDraft = null;
   retargetFrom = null;
+  // The draft the picture was for is gone, so nothing can be stranded any more. It has to
+  // be released *here* rather than left to whoever set it: closing takes the markup editor
+  // down through `closeShotEditor` directly, so its `onCancel` never runs and the flag
+  // would outlive this composer and kill the next one's arrows.
+  screenshotPending = false;
   // Bumped so an in-flight `captureDraft` — up to 500ms on a page whose MAIN world never
   // answers the bridge — cannot resolve into whatever composer is open by then. The
   // `composer === owner` test covers the same window from the other side; this closes the
@@ -954,39 +1004,50 @@ function downloadReport(): void {
 }
 
 async function captureScreenshot(target: Draft | Annotation): Promise<void> {
-  const element = composerTargets[0];
-  const box = element ? element.getBoundingClientRect() : viewportBoxes(target)[0];
-  if (!box || box.width === 0 || box.height === 0) {
-    ui.toast("Nothing to capture", "error");
-    return;
-  }
-
-  // captureVisibleTab photographs whatever is on screen, our overlay included —
-  // so it has to step out of the shot first.
-  ui.host.style.setProperty("display", "none", "important");
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-  let response: RuntimeResponse | null = null;
+  // Claimed before the first await: from here until the markup editor exists, `target`
+  // is the object the picture is going to be written into, and a retarget would replace
+  // it underneath us. Handed over to the editor on success, released on every failure —
+  // see `screenshotPending`.
+  screenshotPending = true;
+  let handedOver = false;
   try {
-    response = await sendRuntime({ kind: "capture" });
+    const element = composerTargets[0];
+    const box = element ? element.getBoundingClientRect() : viewportBoxes(target)[0];
+    if (!box || box.width === 0 || box.height === 0) {
+      ui.toast("Nothing to capture", "error");
+      return;
+    }
+
+    // captureVisibleTab photographs whatever is on screen, our overlay included —
+    // so it has to step out of the shot first.
+    ui.host.style.setProperty("display", "none", "important");
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    let response: RuntimeResponse | null = null;
+    try {
+      response = await sendRuntime({ kind: "capture" });
+    } finally {
+      ui.host.style.removeProperty("display");
+    }
+
+    if (!response?.ok || !response.dataUrl) {
+      ui.toast("Screenshot failed", "error");
+      return;
+    }
+
+    const canvas = await cropToCanvas(response.dataUrl, box);
+    if (!canvas) {
+      ui.toast("Screenshot failed", "error");
+      return;
+    }
+
+    // Nothing is written to disk until the editor is saved — a cancelled markup is a
+    // cancelled screenshot, not an unwanted file in Downloads.
+    openShotEditor(canvas, target);
+    handedOver = true;
   } finally {
-    ui.host.style.removeProperty("display");
+    if (!handedOver) screenshotPending = false;
   }
-
-  if (!response?.ok || !response.dataUrl) {
-    ui.toast("Screenshot failed", "error");
-    return;
-  }
-
-  const canvas = await cropToCanvas(response.dataUrl, box);
-  if (!canvas) {
-    ui.toast("Screenshot failed", "error");
-    return;
-  }
-
-  // Nothing is written to disk until the editor is saved — a cancelled markup is a
-  // cancelled screenshot, not an unwanted file in Downloads.
-  openShotEditor(canvas, target);
 }
 
 function openShotEditor(canvas: HTMLCanvasElement, target: Draft | Annotation): void {
@@ -995,7 +1056,14 @@ function openShotEditor(canvas: HTMLCanvasElement, target: Draft | Annotation): 
     ui.cardLayer,
     canvas,
     {
-      onCancel: () => closeShotEditor(),
+      // Cancelling ends the flow here, so the draft is nobody's subject any more and the
+      // arrows may move again. `closeShotEditor` cannot do this itself: `onSave` calls it
+      // *before* handing the canvas on, and clearing there would reopen the window
+      // `deliverScreenshot` runs in.
+      onCancel: () => {
+        closeShotEditor();
+        screenshotPending = false;
+      },
       onSave: (edited) => {
         closeShotEditor();
         void deliverScreenshot(edited, target);
@@ -1025,25 +1093,32 @@ async function deliverScreenshot(
   canvas: HTMLCanvasElement,
   target: Draft | Annotation,
 ): Promise<void> {
-  const blob = await canvasToBlob(canvas);
-  if (!blob) {
-    ui.toast("Could not save screenshot", "error");
-    return;
+  // The last stretch that still owns `target`, and the one with no editor on screen to
+  // stand for it: `closeShotEditor` has already handed focus back to the note, so an
+  // arrow press arrives here while `canvasToBlob` is still encoding.
+  try {
+    const blob = await canvasToBlob(canvas);
+    if (!blob) {
+      ui.toast("Could not save screenshot", "error");
+      return;
+    }
+
+    const filename = `senannotate-${Date.now()}.png`;
+    if (!downloadBlob(blob, filename)) {
+      ui.toast("Could not save screenshot", "error");
+      return;
+    }
+
+    target.screenshot = filename;
+    target.screenshotPath = downloadPath(filename);
+    target.screenshotData =
+      settings.screenshotDelivery === "embed" ? (encodeForEmbed(canvas) ?? undefined) : undefined;
+
+    ui.toast("Screenshot saved to Downloads");
+    void persist();
+  } finally {
+    screenshotPending = false;
   }
-
-  const filename = `senannotate-${Date.now()}.png`;
-  if (!downloadBlob(blob, filename)) {
-    ui.toast("Could not save screenshot", "error");
-    return;
-  }
-
-  target.screenshot = filename;
-  target.screenshotPath = downloadPath(filename);
-  target.screenshotData =
-    settings.screenshotDelivery === "embed" ? (encodeForEmbed(canvas) ?? undefined) : undefined;
-
-  ui.toast("Screenshot saved to Downloads");
-  void persist();
 }
 
 /**

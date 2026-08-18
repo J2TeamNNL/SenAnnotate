@@ -642,22 +642,21 @@ button {
   background: var(--sa-bg-sunken);
 }
 
+/*
+ * `.icon-button` carries the box, the colour and the hover; this only narrows it. Sharing
+ * the rule is what keeps the hover tint and any future focus ring identical to the
+ * footer's buttons instead of drifting apart by a percent at a time.
+ *
+ * Smaller than the 26px default because these sit inside an 11.5px text row — but not as
+ * small as they could be: with the arrow keys off once the note has text, they are the
+ * only way to retarget from then on, so they stay a real target.
+ */
 .retarget__button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 19px;
-  height: 19px;
-  border-radius: 6px;
-  color: var(--sa-fg-muted);
+  width: 22px;
+  height: 22px;
   font-size: 11px;
   line-height: 1;
   transition: background 0.13s ease, color 0.13s ease;
-}
-
-.retarget__button:hover {
-  background: color-mix(in srgb, var(--sa-fg) 10%, transparent);
-  color: var(--sa-fg);
 }
 
 .composer__input {

@@ -168,3 +168,124 @@ single check runs — worth knowing before adding a block.
 The composer does not move to follow the new element, deliberately — `context.md` has
 the reasoning. If it turns out to read as a bug rather than as a choice, the fix is a
 `position()` call in `retargetComposer` and nothing else.
+
+## Review follow-ups (PR #5)
+
+Twelve review comments on the PR, plus the merge with `main` at 0.8.2. Eleven were fixed;
+one was rejected as factually wrong about what the code does, and one was fixed for the
+reason given rather than the one claimed.
+
+### The merge
+
+`main` had moved on by four features. Three conflicts, all structural rather than
+semantic: `composerMeta` was extracted from the head of `openComposer`, which is where
+`modal-trap-refocus/` had added `composerEditing = existing` — that line now sits in the
+rebuilt `openComposer`. The other two were two new blocks appended at the same place
+(`docs/README.md`, and the `Retarget`/`Drag` e2e blocks); both sides were kept.
+
+The merge also renamed what the suite matches on: `toolbar-legibility/` moved every
+toolbar button's name from `title=` to `aria-label`, and the two `.tool[title^="…"]`
+locators this branch added were written against the older base. A line-wise merge leaves
+them syntactically fine and semantically dead — the locator matches nothing and `.click()`
+blocks for Playwright's full 30s before failing, taking the report assertion with it.
+
+### Losing a screenshot to a retarget
+
+The `composerDraft?.screenshot || shotEditor` guard had two open windows, and a retarget
+through either one silently discarded the picture:
+
+- `captureScreenshot` awaits the tab capture and the crop *before* the markup editor
+  exists. Until then `shotEditor` is `null` and nothing has a `screenshot` field yet.
+- `deliverScreenshot` runs *after* `onSave` has called `closeShotEditor()` — which also
+  hands focus back to the note, so an arrow press lands there immediately — and awaits
+  `canvasToBlob` before writing the filename.
+
+In both, `retargetComposer` swaps `composerDraft` for a fresh object and the filename is
+written into an orphan. The PNG reaches Downloads, the toast says it was saved, and the
+report has no screenshot at all.
+
+Closed with `screenshotPending`, claimed synchronously at the top of `captureScreenshot`
+and released at every point the flow actually ends: the three failure returns (via a
+`finally` that only fires when the editor was not opened), the editor's `onCancel`, the
+`finally` in `deliverScreenshot`, and `closeComposer`. That last one is not belt-and-braces:
+closing a composer takes the editor down through `closeShotEditor` directly, so `onCancel`
+never runs and the flag would outlive the composer and kill the *next* one's arrows.
+
+### The other nine
+
+- **Arrows died on a single space.** The keydown test was `value.length > 0` while
+  `submit()` trims. A reflex tap on the space bar is invisible on screen, and it killed
+  the keys for the rest of that composer's life while `submit` still called the note empty
+  and refused to save. Both now trim.
+- **Key repeat.** Holding an arrow fired a bridge round trip, a full `renderMeta` rebuild
+  and a synchronous layout at the OS repeat rate, and at the top of the tree re-created the
+  "Nothing there" toast ~30 times a second — `root.ts` removes the previous node first, so
+  the entrance animation restarted into a strobe. `keyboard.repeat` presses are now
+  swallowed (still `preventDefault`, so the page cannot scroll) rather than stepped. One
+  press, one level. The `retargetFrom` docstring, which justified itself with the ~30Hz
+  hold, now argues from a burst of distinct presses — which is the case that survives.
+- **Zero-sized targets.** `stepFrom` filtered on `eligible`, which has no box test, so an
+  arrow could land on a `display: none` popover or a collapsed panel — a class of target
+  the pointer path can never produce. The highlight would vanish, the camera would refuse,
+  and the stored marker would park in the top-left corner. `retargetCandidate` adds the
+  size test `marquee.ts:77` already makes, and *skips* rather than stops, so a collapsed
+  sibling between two cards no longer reads as a dead end.
+- **Retargeting with Inspect off.** `setActive(false)` deliberately leaves an open composer
+  alone, so the buttons and keys stayed live and painted a highlight back onto a page the
+  user had just told us to stop inspecting. `if (!active) return`, matching `queueSync`.
+- **The keys felt slow.** Every press waited the full bridge round trip — up to 500ms —
+  before the highlight moved. It now paints immediately from the synchronous
+  `identifyElement`, and the existing token guard enriches the label when the inspector
+  answers: the order `updateHover` already uses, for a stronger reason here, since a
+  keypress has one expected response.
+- **`retargetToken` sat between two function bodies**, away from `composerDraft` and
+  `retargetFrom` in the State section — so "what is live while a composer is open" had to
+  be reassembled by grep and `closeComposer` cleared state from two places. Moved up.
+- **The `document.body` ceiling was enforced in the wrong place.** `NOT_ANNOTATABLE`
+  already holds `BODY` and `HTML`, so the explicit check in the parent walk was unreachable
+  as a distinct case — but the docstring sold it as the mechanism, sending the next reader
+  to a line where changing it would have no effect. Removed; the docstring now names the
+  set.
+- **`.retarget__button` was `.icon-button` with two numbers changed** — and a hover mix
+  that had drifted to 10% against the shared rule's 9%. It now *is* an `.icon-button`, with
+  a four-line override for size and glyph metrics. Size went 19px → 22px: with the keys off
+  once the note has text, these are the only route to retargeting.
+- **`.composer .icon-button` stopped being unambiguous** once the retarget buttons joined
+  that class — the tracer block's close-button click would have hit a Playwright
+  strict-mode violation against five matches. Scoped to `.card__header`.
+- **`this.textarea.focus()` in the button handler** was the only call left in the class not
+  going through `takeFocus`, which is what `modal-trap-refocus/` exists for — a Reka UI /
+  Radix trap watching `focusin` on `document` wins the race against a bare `.focus()`. The
+  comment justifying it was also wrong: `root.ts` cancels `mousedown` outside text fields,
+  so focus never went to the button. The call is the *recovery* path, and the comment now
+  says so.
+
+### The assertion that could not fail
+
+`retarget.html` was plain HTML, so `formatSource` was `null` and there was no component
+data for either `#low-label` or its parent: one meta row before the `ArrowUp` and one
+after, identical card height, and the near-the-fold check passed with `setData`'s
+`position()` call deleted. The regression is real but needs a parent with component data
+and a child without.
+
+The fixture now mounts a small Vue island at the fold — the same
+`@vitejs/plugin-vue`-shaped component object `vue3-app.html` uses — and the step is
+*downward*, from the plain host (one row) into the component (Element, Source, Component,
+Props). A row-count assertion runs first, so the height is proven to have moved before the
+footer is measured. `boundingBox()` and `viewportSize()` are nullable in Playwright's
+types and were dereferenced straight away; both are now checked.
+
+That makes this fixture depend on `test/fixtures/vendor/vue.global.js` — already a
+dependency of the suite, and the reason `SENANNOTATE_VUE_GLOBAL` exists for fresh
+checkouts.
+
+### Left open
+
+The retarget buttons still carry a raw `title=`, which `ui/tooltip.ts` argues against for
+icon-only buttons. Migrating them to `attachTooltip` is a bigger change than it looks:
+`renderMeta` destroys and rebuilds these buttons on every retarget, so a tooltip open over
+one when it is replaced would be stranded and would need a `hideTooltip()` call in
+`renderMeta`, and the Escape chain in `escape-closes-cards/` would have a new layer to
+answer for. Deferred deliberately — the composer's kind chips use `title=` too, so the
+card is at least internally consistent, and the `aria-label` that carries the same text is
+what the suite matches on either way.

@@ -202,11 +202,26 @@ export class Composer {
         // is no sentence yet, and it is also exactly when retargeting is wanted:
         // you clicked, you can see the wrong element highlighted, you fix it, then
         // you write. Once there is text, the buttons remain.
-        if (!this.callbacks.onRetarget || this.textarea.value.length > 0) return;
+        //
+        // Trimmed, because `submit` is: a reflex tap on the space bar is invisible on
+        // screen and would otherwise kill the keys for the rest of this composer's life
+        // while `submit` still called the note empty and refused to save.
+        if (!this.callbacks.onRetarget || this.textarea.value.trim().length > 0) return;
         if (keyboard.metaKey || keyboard.ctrlKey || keyboard.altKey || keyboard.shiftKey) return;
 
         const control = RETARGET_CONTROLS.find((entry) => entry.key === keyboard.key);
         if (!control) return;
+
+        // Auto-repeat is not a series of decisions. Each step is a bridge round trip and a
+        // rebuilt meta block, so a held key would fire ~30 of both a second and walk the
+        // tree far past what anyone was reading — and at the top, where the walk runs out,
+        // it would re-create the "Nothing there" toast on every frame, restarting its
+        // entrance animation into a strobe. One press, one level; the key still scrolls
+        // nothing, because the press is swallowed either way.
+        if (keyboard.repeat) {
+          keyboard.preventDefault();
+          return;
+        }
 
         // Without this the page scrolls under the composer on every press.
         keyboard.preventDefault();
@@ -285,16 +300,18 @@ export class Composer {
       { class: "retarget" },
       ...RETARGET_CONTROLS.map(({ direction, glyph, title }) =>
         h("button", {
-          class: "retarget__button",
+          class: "icon-button retarget__button",
           title,
           text: glyph,
           attrs: { "aria-label": title },
           on: {
             click: () => {
               this.callbacks.onRetarget?.(direction);
-              // Focus went to the button on click; typing should still land in the
-              // note, and the next arrow press should still be handled here.
-              this.textarea.focus();
+              // Not because the button took focus — `root.ts` cancels `mousedown` outside
+              // text fields precisely so it cannot. This is the recovery path: a page's
+              // focus trap may have pulled focus out from under the note, and `takeFocus`
+              // is the one call that wins that race (`docs/modal-trap-refocus/`).
+              takeFocus(this.textarea);
             },
           },
         }),
