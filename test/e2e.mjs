@@ -2193,6 +2193,105 @@ async function main() {
       `restored at ${Math.round(dockRestored.x)},${Math.round(dockRestored.y)}, dropped at ${Math.round(dockDragged.x)},${Math.round(dockDragged.y)}`,
     );
 
+    // The settings card belongs to the pill, so it has to travel with it. Geometry read
+    // from the shadow root rather than Playwright's boundingBox: what matters is the
+    // relationship between two rects in the same document, plus whether the card is
+    // placed by inline styles at all.
+    const dockAndCard = () =>
+      drag.evaluate(() => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        const dock = root.querySelector(".toolbar-dock");
+        const card = root.querySelector(".settings");
+        if (!dock || !card) return null;
+        const d = dock.getBoundingClientRect();
+        const c = card.getBoundingClientRect();
+        return {
+          dock: { left: d.left, top: d.top, right: d.right, bottom: d.bottom },
+          card: { left: c.left, top: c.top, right: c.right, bottom: c.bottom },
+          inlineLeft: card.style.left,
+          inlineTop: card.style.top,
+        };
+      });
+
+    await drag.locator(".tool--settings").click();
+    await drag.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await drag.waitForTimeout(300);
+    const anchored = await dockAndCard();
+    check(
+      "the settings card opens against the dragged pill, right edges aligned",
+      anchored !== null &&
+        Math.abs(anchored.card.right - anchored.dock.right) <= 1 &&
+        Math.abs(anchored.dock.top - anchored.card.bottom - 8) <= 1,
+      anchored === null
+        ? "no card or no dock"
+        : `card right ${Math.round(anchored.card.right)} vs dock right ${Math.round(anchored.dock.right)}, gap ${Math.round(anchored.dock.top - anchored.card.bottom)}`,
+    );
+
+    // Mid-drag, before the release: `onMove` fires on drop, so a card wired to that would
+    // sit still while the pill slid out from under it and then teleport.
+    const pillNow = await dragPill.boundingBox();
+    await drag.mouse.move(pillNow.x + pillNow.width / 2, pillNow.y + pillNow.height / 2);
+    await drag.mouse.down();
+    await drag.mouse.move(pillNow.x + pillNow.width / 2 + 180, pillNow.y + pillNow.height / 2 + 90, {
+      steps: 10,
+    });
+    await drag.waitForTimeout(150);
+    const midDrag = await dockAndCard();
+    await drag.mouse.up();
+    await drag.waitForTimeout(250);
+    check(
+      "and follows it during the drag, not only on the drop",
+      midDrag !== null &&
+        Math.abs(midDrag.card.right - midDrag.dock.right) <= 1 &&
+        Math.abs(midDrag.dock.top - midDrag.card.bottom - 8) <= 1,
+      midDrag === null
+        ? "no card or no dock"
+        : `card right ${Math.round(midDrag.card.right)} vs dock right ${Math.round(midDrag.dock.right)}, gap ${Math.round(midDrag.dock.top - midDrag.card.bottom)}`,
+    );
+
+    // No room above: the card has to go under the pill rather than off the top of the
+    // screen. This is the case CSS cannot decide, because it turns on the card's height.
+    const pillHigh = await dragPill.boundingBox();
+    await drag.mouse.move(pillHigh.x + pillHigh.width / 2, pillHigh.y + pillHigh.height / 2);
+    await drag.mouse.down();
+    // A nudge along the pill before the long move. Pointer capture is only taken once the
+    // threshold is crossed, so a gesture whose first interpolated step is already off the
+    // pill — 52px up, from a pill 44px tall — delivers no `pointermove` to it at all and
+    // never starts a drag. Measured: this is why the same code dragged fine sideways.
+    await drag.mouse.move(pillHigh.x + pillHigh.width / 2 - 16, pillHigh.y + pillHigh.height / 2);
+    await drag.mouse.move(600, 40, { steps: 12 });
+    await drag.mouse.up();
+    await drag.waitForTimeout(300);
+    const flipped = await dockAndCard();
+    check(
+      "a pill near the top of the viewport gets its card underneath",
+      flipped !== null && flipped.card.top >= flipped.dock.bottom + 7 && flipped.card.bottom <= 900,
+      flipped === null
+        ? "no card or no dock"
+        : `card top ${Math.round(flipped.card.top)}, dock bottom ${Math.round(flipped.dock.bottom)}, card bottom ${Math.round(flipped.card.bottom)}`,
+    );
+
+    // The panel is the other half of the request: it is a page-level list, pinned top and
+    // bottom, and it stays where it is however far the pill has been dragged.
+    await drag.locator(".tool--settings").click(); // close the card first
+    await drag.locator(".settings").waitFor({ state: "detached", timeout: 5_000 });
+    await drag.locator('.tool[aria-label^="Annotations"]').click();
+    await drag.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await drag.waitForTimeout(300);
+    const panelGeometry = await drag.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const panelBox = root.querySelector(".panel").getBoundingClientRect();
+      return { right: panelBox.right, top: panelBox.top, width: window.innerWidth };
+    });
+    check(
+      "the annotations panel does not follow the pill",
+      Math.abs(panelGeometry.width - panelGeometry.right - 20) <= 1 &&
+        Math.abs(panelGeometry.top - 20) <= 1,
+      `panel right edge ${Math.round(panelGeometry.width - panelGeometry.right)}px from the viewport edge, top ${Math.round(panelGeometry.top)}`,
+    );
+    await drag.locator('.tool[aria-label^="Annotations"]').click();
+    await drag.waitForTimeout(250);
+
     // Per page, not per user — the whole argument for `local` over `sync`. Read-only on
     // a fixture another block owns, so nothing is left behind on it.
     const untouched = await context.newPage();
@@ -2203,6 +2302,32 @@ async function main() {
       "another page opens at the default corner",
       (await untouched.locator(".toolbar-dock").getAttribute("data-floating")) === null,
       `data-floating read "${await untouched.locator(".toolbar-dock").getAttribute("data-floating")}"`,
+    );
+
+    // And with no drag anywhere in the picture the card is placed by the stylesheet, not
+    // by us: the default corner is the configuration the extension ships in, and the one
+    // the settings block measures the hint-line clearance against.
+    await untouched.locator(".tool--settings").click();
+    await untouched.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await untouched.waitForTimeout(250);
+    const cornerCard = await untouched.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const card = root.querySelector(".settings");
+      const box = card.getBoundingClientRect();
+      return {
+        inlineLeft: card.style.left,
+        inlineTop: card.style.top,
+        anchored: card.dataset.anchored ?? "",
+        fromRight: window.innerWidth - box.right,
+      };
+    });
+    check(
+      "a card on a never-dragged page is left to CSS",
+      cornerCard.inlineLeft === "" &&
+        cornerCard.inlineTop === "" &&
+        cornerCard.anchored === "" &&
+        Math.abs(cornerCard.fromRight - 20) <= 1,
+      `inline left "${cornerCard.inlineLeft}", top "${cornerCard.inlineTop}", anchored "${cornerCard.anchored}", ${Math.round(cornerCard.fromRight)}px from the right edge`,
     );
     await untouched.close();
 
@@ -2784,6 +2909,41 @@ async function main() {
       secondRound.includes("Second round, nothing before it.") &&
         !secondRound.includes("Kept by the default path."),
       secondRound.slice(0, 200),
+    );
+
+    // A draft in the composer is work the copy never took, so the clear must leave it
+    // alone. An *editor* is the opposite case: the annotation it was editing has just
+    // gone, so it has nothing to save back to and goes with it.
+    await annotateClearPage(".cta", "Cleared while a draft was open.");
+    await clearPage.locator(".tool--brand").click(); // inspect on, to open a draft
+    await clearPage.locator("#stale").click();
+    await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await clearPage.locator(".composer__input").fill("A draft nobody has saved yet.");
+    await clearPage.locator(".tool--brand").click(); // inspect off — the draft stays up
+    await copyFromPanel();
+    check(
+      "an unsaved draft survives the clear",
+      (await clearPage.locator(".composer").count()) === 1 &&
+        (await clearPage.locator(".composer__input").inputValue()) === "A draft nobody has saved yet." &&
+        (await clearMarkers()) === 0,
+      `${await clearPage.locator(".composer").count()} composers, ${await clearMarkers()} markers`,
+    );
+
+    await clearPage.locator(".composer .button--primary").click();
+    await clearPage.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    check(
+      "and it still files, onto the page the copy emptied",
+      (await clearMarkers()) === 1 && (await clearBadge()) === "1",
+      `${await clearMarkers()} markers, badge read "${await clearBadge()}"`,
+    );
+
+    await clearPage.locator(".panel .entry__comment").click();
+    await clearPage.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await copyFromPanel();
+    check(
+      "an editor whose annotation the clear removed closes with it",
+      (await clearPage.locator(".composer").count()) === 0 && (await clearMarkers()) === 0,
+      `${await clearPage.locator(".composer").count()} composers, ${await clearMarkers()} markers`,
     );
 
     // Download is deliberately not covered by the setting: the checkbox says *copying*,

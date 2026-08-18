@@ -244,6 +244,15 @@ and the mode hint stopped running off the right edge of the screen. Its `context
 why the name moved to `aria-label` (37 e2e locators matched on `title`, and an attribute that
 vanishes under the pointer is a flaky suite) and why the hint stays one line.
 
+## [`settings-card-follows-dock/`](./settings-card-follows-dock/) — unreleased
+
+`draggable-toolbar/` let the pill go anywhere and left its settings card in the corner it
+came from. The card now anchors to the dock's measured box and tracks it through a drag;
+the annotations panel deliberately does not. Its `context.md` is worth reading for two
+things: why a card this tall cannot use the composer's "prefer, flip, clamp" placement, and
+why the default corner is left entirely to CSS. The `changelog.md` records the e2e trap —
+a vertical drag gesture whose first step leaves the pill never starts one.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,

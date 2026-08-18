@@ -1155,6 +1155,22 @@ kbd {
   bottom: 20px;
 }
 
+/*
+ * Anchored to the dock's measured box by `SettingsCard.anchorTo`, which writes `left` and
+ * `top`. `bottom` and `right` have to be released explicitly or the card stretches between
+ * the two pairs — the same trap `.toolbar-dock[data-floating="true"]` above documents, and
+ * here it reads as a card that grows when the pill is dragged.
+ *
+ * Written to out-specify the two rules above it rather than to stand alone: both are
+ * `.toolbar-dock[…] ~ .settings`, three class-column points to this selector's four.
+ * The hint-line clearance is not replaced by anything, because the anchored card does not
+ * need it — the hint is a child of the dock, so it is inside the box being measured.
+ */
+.toolbar-dock[data-floating="true"] ~ .settings[data-anchored="true"] {
+  bottom: auto;
+  right: auto;
+}
+
 .settings[data-leaving="true"] {
   animation: vt-fall 0.14s ease forwards;
   pointer-events: none;
