@@ -67,7 +67,7 @@ this was a fresh checkout with no `node_modules`.
 
 **`npm test` was not run.** The suite needs `SENANNOTATE_PLAYWRIGHT_DIR` pointing at a
 directory whose `node_modules` contains playwright, and the path recorded in
-`CLAUDE.md` (`/Users/thangnm/Documents/Works/storefront_playwright_test`) does not
+`CLAUDE.md` (`<path to playwright>`) does not
 exist on this machine — it belongs to a different user account. There is no playwright
 in the global npm prefix and no sibling checkout carrying one. The browsers themselves
 are present in `~/Library/Caches/ms-playwright`, so only the node module and a

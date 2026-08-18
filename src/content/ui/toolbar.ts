@@ -27,6 +27,15 @@ export interface ToolbarCallbacks {
   onToggleCollapse(): void;
   /** Fired once, on drop — not per frame. The drag itself needs no persistence. */
   onMove(position: { x: number; y: number }): void;
+  /**
+   * The dock has moved or resized — every frame of a drag, a resize re-clamp, a
+   * collapse. Carries nothing: a listener that needs the geometry asks `dockBox()`
+   * for it, so this cannot go stale between the two.
+   *
+   * Separate from `onMove` because that one persists and therefore only fires on drop.
+   * A card anchored to the pill has to keep up with the pointer, not with storage.
+   */
+  onDockShift?(): void;
 }
 
 /**
@@ -103,7 +112,12 @@ export class Toolbar {
   private readonly resizeObserver: ResizeObserver;
   private modeHint = MODE_HINTS.point;
 
-  constructor(layer: HTMLElement, callbacks: ToolbarCallbacks) {
+  // Kept rather than only closed over: `paintPosition` fires `onDockShift` from outside
+  // the constructor, and it is the one callback the drag itself does not own.
+  constructor(
+    layer: HTMLElement,
+    private readonly callbacks: ToolbarCallbacks,
+  ) {
     this.brandLabel = h("span", { class: "tool__label", text: "Inspect" });
     this.brandButton = h(
       "button",
@@ -406,6 +420,25 @@ export class Toolbar {
     // as the pointer crosses `HINT_FLIP_TOP` mid-drag would jerk the pill ~30px under a
     // stationary cursor and jerk it back on the way out.
     this.element.dataset.hintBelow = String(!this.hintVisible && top < HINT_FLIP_TOP);
+
+    this.callbacks.onDockShift?.();
+  }
+
+  /**
+   * The dock's box, for anything that positions itself against the pill — or `null`
+   * while the pill sits in its CSS corner.
+   *
+   * `null` rather than the corner's measured rect on purpose: the caller is then free to
+   * leave the default placement to the stylesheet, which is where it is written and where
+   * it is tested. Read from the DOM every time rather than cached, because a resize moves
+   * the dock without going through this class at all.
+   *
+   * The box includes the hint line when one is showing — it is a child of the dock — so a
+   * card placed off this box clears the hint without having to predict its height.
+   */
+  dockBox(): DOMRect | null {
+    if (this.element.dataset.floating !== "true") return null;
+    return this.element.getBoundingClientRect();
   }
 
   /**
@@ -423,6 +456,9 @@ export class Toolbar {
       delete this.element.dataset.hintBelow;
       this.element.style.removeProperty("left");
       this.element.style.removeProperty("top");
+      // Back to the CSS corner is a move like any other: whatever was anchored to the
+      // dock has to hear about it, and `dockBox()` will now answer `null`.
+      this.callbacks.onDockShift?.();
       return;
     }
     this.paintPosition();

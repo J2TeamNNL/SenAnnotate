@@ -101,7 +101,7 @@ clipped by the box edge and stays unselected, and the hint reads
 Verified locally: `npm run typecheck`, `npm run build`, and `npm test` at **83/83
 checks**, up from 74 before this work. The suite needs `SENANNOTATE_PLAYWRIGHT_DIR` and
 `SENANNOTATE_VUE_GLOBAL` and does not run in CI, so this is the only gate the new
-assertions get. Playwright resolved from `storefront_playwright_test` (1.60.0) — the copy
+assertions get. Playwright resolved from `<path to playwright>` (1.60.0) — the copy
 in `storefront_v5` (1.59.1) has no browser binaries installed.
 
 Two success criteria carry no automated assertion, by choice:

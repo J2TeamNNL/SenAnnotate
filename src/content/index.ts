@@ -223,6 +223,11 @@ function createTopUi(): void {
       dockPosition = position;
       void saveDockPosition(position);
     },
+    // Every frame of the drag, and every other reason the dock moves: a resize
+    // re-clamping a stored position, the `ResizeObserver` after a collapse. The settings
+    // card belongs to the pill and has to keep up with the pointer, not with storage —
+    // which is why this is not `onMove`.
+    onDockShift: () => settingsCard?.anchorTo(toolbar.dockBox()),
   });
 }
 
@@ -390,6 +395,9 @@ function toggleSettings(force?: boolean): void {
       chrome.runtime.getManifest().version,
     );
     settingsCard.render(settings);
+    // After `render`, not before: the flip to underneath the pill turns on the card's own
+    // height, and a card whose rows have not been filled in yet measures short.
+    settingsCard.anchorTo(toolbar.dockBox());
   } else {
     settingsCard?.destroy();
     settingsCard = null;

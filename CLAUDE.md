@@ -26,7 +26,7 @@ npm run pack         # → senannotate-<version>.zip (dist/ + TESTER-GUIDE.md)
 records no default (see the header of `test/e2e.mjs` for the reasoning):
 
 ```bash
-SENANNOTATE_PLAYWRIGHT_DIR=/Users/thangnm/Documents/Works/storefront_playwright_test npm test
+SENANNOTATE_PLAYWRIGHT_DIR=<path to playwright> npm test
 ```
 
 Add `SENANNOTATE_HEADLESS=1` to run it **without a window on screen** — Chrome's *new* headless
