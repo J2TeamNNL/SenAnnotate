@@ -29,14 +29,20 @@ records no default (see the header of `test/e2e.mjs` for the reasoning):
 SENANNOTATE_PLAYWRIGHT_DIR=/Users/thangnm/Documents/Works/storefront_playwright_test npm test
 ```
 
+Add `SENANNOTATE_HEADLESS=1` to run it **without a window on screen** — Chrome's *new* headless
+does load extensions, run the service worker and answer `captureVisibleTab`, so all 220-odd
+checks pass there. Prefer it when someone is using the machine: the default headed window
+takes the screen and the keyboard focus for the whole run. It needs `channel: "chromium"`
+alongside `headless: true`; the three launch sites set that themselves.
+
 `SENANNOTATE_VUE_GLOBAL` is only needed on a fresh checkout —
 `test/fixtures/vendor/vue.global.js` is gitignored but cached once copied.
 `SENANNOTATE_PNPM_STORE` is only for `test/build-prod-fixtures.mjs`.
 
-**There is no single-test filter.** `test/e2e.mjs` is one sequential `main()` driving ~180
+**There is no single-test filter.** `test/e2e.mjs` is one sequential `main()` driving ~220
 `check()` assertions across a shared browser context; to iterate on one area, comment out the
-page blocks above it. The suite launches **headed** Chromium — extensions need a persistent,
-headed context.
+page blocks above it. Extensions need a persistent context, which is why the launch is
+`launchPersistentContext` and not `launch`.
 
 `test/upgrade.mjs` is the one check that cannot live in that suite: it needs **two** launches
 over one profile directory, with the version in `dist/manifest.json` bumped between them, to

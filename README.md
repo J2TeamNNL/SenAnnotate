@@ -47,6 +47,16 @@ Drag-select takes everything a box fully contains, at the shallowest level conta
 
 ![Marquee selection across three cards, counted live under the toolbar](./store/screenshots/marquee.jpg)
 
+The camera on the composer crops the element and opens a markup editor first, so the
+image you attach points at the thing you mean — box, arrow, or a blur that is permanent:
+
+![The markup editor over a cropped screenshot, with a box drawn on it](./store/screenshots/markup.jpg)
+
+Settings live on the toolbar, next to the work: how much detail the report carries,
+whether errors and steps are captured, the accent colour, and a per-tab way out:
+
+![The settings card, showing the report, bug-report, behaviour and appearance groups](./store/screenshots/settings.jpg)
+
 And this is what comes out — the thing you paste into your agent:
 
 ![The generated Markdown report](./store/screenshots/report.jpg)
@@ -139,7 +149,7 @@ the line and column.
 | Copy the report | **Copy report** in the panel |
 | Save the report as a file | **.md** in the panel |
 | Copy every page at once | **Copy session report** in the extension popup |
-| Cancel / exit | <kbd>Esc</kbd> |
+| Cancel / exit | <kbd>Esc</kbd> — closes the innermost thing first: tooltip, then the open card, then a half-built pick set, then the panel, then inspect mode |
 
 The line under the toolbar always names what the current mode does and which keys
 switch to the others, so nothing above needs memorising.

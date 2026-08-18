@@ -80,7 +80,7 @@ import { Overlay } from "./ui/overlay";
 import { Panel } from "./ui/panel";
 import { SettingsCard } from "./ui/settings";
 import { createUiRoot, type UiRoot } from "./ui/root";
-import { installTooltips } from "./ui/tooltip";
+import { hideTooltip, installTooltips, isFocusTooltipVisible } from "./ui/tooltip";
 import { ShotEditor } from "./ui/shot-editor";
 import { Toolbar } from "./ui/toolbar";
 
@@ -1448,11 +1448,31 @@ function installTopFrame(): void {
         closeComposer();
         return;
       }
+      // Escape closes the innermost thing first, so one press never takes two layers with
+      // it. A tooltip opened by *focus* is the innermost of all — a hovered one is excluded
+      // on purpose, see `isFocusTooltipVisible`. Asking here rather than in `tooltip.ts` is
+      // the only way to know one was open at all: a handler on the trigger runs first and
+      // would have hidden it before this chain could look.
+      if (isFocusTooltipVisible()) {
+        hideTooltip();
+        return;
+      }
+      // Then the open card. Both of them: they are the overlay's dialogs, and a key that
+      // closes the composer but leaves these two needing a second click is the kind of
+      // inconsistency nobody reads a changelog to discover.
+      if (settingsCard) {
+        toggleSettings(false);
+        return;
+      }
       // A half-built pick set is the thing Escape is most likely to be aimed at, so it
-      // goes before leaving inspect mode entirely.
+      // goes before the panel and before leaving inspect mode entirely.
       if (picked.length) {
         clearPicked();
         if (hoveredElement?.isConnected) void updateHover(hoveredElement);
+        return;
+      }
+      if (panelOpen) {
+        togglePanel(false);
         return;
       }
       if (active) {

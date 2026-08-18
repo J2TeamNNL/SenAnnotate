@@ -49,9 +49,15 @@ export function report() {
 // Browser
 // -----------------------------------------------------------------------------
 
+// `SENANNOTATE_HEADLESS=1`, as in `e2e.mjs`: Chrome's new headless does load extensions, and
+// `channel: "chromium"` is what reaches it. Default headed — see that file.
+const HEADLESS_LAUNCH = process.env.SENANNOTATE_HEADLESS
+  ? { headless: true, channel: "chromium" }
+  : { headless: false };
+
 /**
- * Launch a headed Chromium with the built extension loaded. Extensions need a
- * persistent context and a headed one — the old headless shell does not load them.
+ * Launch a Chromium with the built extension loaded. Extensions need a persistent
+ * context; headed by default, windowless under `SENANNOTATE_HEADLESS=1`.
  *
  * Returns the context plus the teardown that removes its throwaway profile.
  */
@@ -73,7 +79,7 @@ export async function launchWithExtension({ viewport = { width: 1280, height: 80
   mkdirSync(SHOTS, { recursive: true });
   const profile = mkdtempSync(join(tmpdir(), "senannotate-verify-"));
   const context = await chromium.launchPersistentContext(profile, {
-    headless: false,
+    ...HEADLESS_LAUNCH,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     viewport,
   });
@@ -115,7 +121,7 @@ export async function annotateAndCopy(page, selector, note) {
   await page.locator(".composer .button--primary").click();
   await page.locator(".composer").waitFor({ state: "detached", timeout: 15_000 });
 
-  await page.locator('.tool[title^="Annotations"]').click();
+  await page.locator('.tool[aria-label^="Annotations"]').click();
   await page.locator(".panel").waitFor({ state: "visible", timeout: 15_000 });
   await page.locator(".panel .button--primary").click();
   return page.evaluate(() => navigator.clipboard.readText());

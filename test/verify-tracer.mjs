@@ -111,7 +111,7 @@ try {
   await page.locator(".composer .button--primary").click();
   await page.locator(".composer").waitFor({ state: "detached", timeout: 15_000 });
 
-  await page.locator('.tool[title^="Annotations"]').click();
+  await page.locator('.tool[aria-label^="Annotations"]').click();
   await page.locator(".panel").waitFor({ state: "visible", timeout: 15_000 });
   await page.locator(".panel .button--primary").click();
   const output = await page.evaluate(() => navigator.clipboard.readText());
