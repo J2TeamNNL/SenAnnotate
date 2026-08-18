@@ -36,7 +36,20 @@ export interface ExportFile {
   docks?: { page: string; position: { x: number; y: number } }[];
 }
 
+/**
+ * Notes across a set of pages.
+ *
+ * Every surface that reports a number reports this one — the popup's export line, its
+ * session copy, and the shared HTML document's title. They were three identical reduces
+ * that could drift apart; `unknown[]` because the callers hold three different shapes of
+ * annotation and none of them needs to be read to be counted.
+ */
+export function countNotes(pages: { annotations: unknown[] }[]): number {
+  return pages.reduce((total, entry) => total + entry.annotations.length, 0);
+}
+
 export interface ImportSummary {
+  /** Distinct page keys written, which after a remap is fewer than the entries read. */
   pages: number;
   annotations: number;
   /** Entries dropped for failing the shape check. */
@@ -170,6 +183,13 @@ export async function importAll(
   if (file.format !== EXPORT_FORMAT || !Array.isArray(file.pages)) return null;
 
   const summary: ImportSummary = { pages: 0, annotations: 0, skipped: 0, remapped: 0 };
+  // Counted as a set of keys, not as a count of entries read: a remap can send
+  // `https://staging.example/checkout` and `https://prod.example/checkout` to the same
+  // `http://localhost:3000/checkout`, and "across 2 pages" would then describe a file
+  // rather than this browser. The merge itself is already right — the awaits are
+  // sequential, so the second pass reads what the first wrote — but two captures
+  // interleaving on one screen is exactly the fact the user needs told.
+  const written = new Set<string>();
 
   for (const entry of file.pages) {
     if (!entry || typeof entry.page !== "string" || !Array.isArray(entry.annotations)) {
@@ -195,7 +215,8 @@ export async function importAll(
     for (const annotation of incoming) byId.set(annotation.id, annotation);
 
     await chrome.storage.local.set({ [key]: [...byId.values()] });
-    summary.pages += 1;
+    written.add(key);
+    summary.pages = written.size;
     summary.annotations += incoming.length;
   }
 

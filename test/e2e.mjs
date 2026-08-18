@@ -3228,6 +3228,37 @@ async function main() {
         `${parsed?.pages?.length ?? 0} pages exported`,
       );
 
+      // Embedded screenshots are the point of this format, and nothing above this line
+      // sets delivery to `embed` — line ~1269 asserts the default does *not* embed — so
+      // the whole `<img>` path would otherwise be dead in the run that claims to cover it.
+      // Seeding storage rather than flipping the setting and re-shooting: the renderer's
+      // input is `screenshotData`, and this also plants the payload only an *import* could
+      // ever produce, which is the one the gate exists for.
+      const seeded = await popup.evaluate(async () => {
+        const all = await chrome.storage.local.get(null);
+        const notes = [];
+        for (const [key, value] of Object.entries(all)) {
+          if (!key.startsWith("senannotate:page:") || !Array.isArray(value)) continue;
+          for (const note of value) notes.push({ key, note });
+        }
+        if (notes.length < 2) return 0;
+
+        // Base64, and `image/jpeg` — the only thing `screenshot.ts` ever writes.
+        notes[0].note.screenshotData =
+          "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQ=";
+        // A `data:` URI that is an image by MIME type and a document in practice. It must
+        // reach neither `src` nor the file at all; the path line is what should show.
+        notes[1].note.screenshotData =
+          'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>';
+        notes[1].note.screenshotPath = "~/Downloads/senannotate-not-embedded.png";
+
+        const write = {};
+        for (const { key } of notes) write[key] = all[key];
+        await chrome.storage.local.set(write);
+        return notes.length;
+      });
+      check("two stored notes could be given screenshots to share", seeded >= 2, `${seeded} notes seeded`);
+
       // The shareable copy: one HTML file, readable by someone with no extension.
       const shared = popup
         .waitForEvent("download", { timeout: 15_000 })
@@ -3255,6 +3286,37 @@ async function main() {
         "an element name cannot close a tag in the shared file",
         !/<h3 class="note__title">[^<]*<(?!\/h3)/.test(shareHtml),
         "an element name reached the document unescaped",
+      );
+      check(
+        "a screenshot travels inside the shared file",
+        /<img class="note__shot" src="data:image\/jpeg;base64,[A-Za-z0-9+/=]+"/.test(shareHtml),
+        "no embedded image reached the document",
+      );
+      check(
+        "the popup says the screenshots travelled",
+        /with their screenshots/.test((await popup.locator("#archive-hint").textContent()) ?? ""),
+        `hint read "${(await popup.locator("#archive-hint").textContent())?.trim() ?? ""}"`,
+      );
+      // `data:image/svg+xml` is an image by MIME type and a document to the parser. The
+      // extension never writes one; an imported file can say anything.
+      check(
+        "a data URI that is not an image this extension writes is never rendered",
+        shareHtml.length > 0 && !/data:image\/svg/i.test(shareHtml) && !/<svg/i.test(shareHtml),
+        "an SVG payload reached the document",
+      );
+      check(
+        "a screenshot it will not embed is named instead",
+        /senannotate-not-embedded\.png<\/code> on the reporter's machine/.test(shareHtml),
+        "the un-embeddable screenshot left no trace at all",
+      );
+      // The document states its own guarantee, so a later edit that grows a sink is a
+      // rendering bug in the recipient's browser rather than a fetch.
+      check(
+        "the shared file forbids everything but its own inline styles and data images",
+        /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'" \/>/.test(
+          shareHtml,
+        ),
+        "no CSP in the shared document",
       );
 
       // A file that is not ours must be refused rather than written into storage.
@@ -3328,6 +3390,22 @@ async function main() {
         "utf8",
       );
 
+      // Ticked on a tab no content script can ever run on — here the extension page
+      // itself, in the real popup a `chrome://` or Web Store tab. The notes go in at
+      // their original keys, which is survivable; being told they moved is not, because
+      // the box is ticked precisely by someone who knows they are otherwise unfindable.
+      await popup.evaluate(() => {
+        document.getElementById("import-remap").checked = true;
+      });
+      await popup.bringToFront();
+      await popup.locator("#import-file").setInputFiles(foreign);
+      await popup.waitForTimeout(600);
+      check(
+        "a remap with nowhere to land says so rather than reporting a plain import",
+        /could not move them/i.test((await popup.locator("#archive-hint").textContent()) ?? ""),
+        `hint read "${(await popup.locator("#archive-hint").textContent())?.trim() ?? ""}"`,
+      );
+
       // Clicks are avoided on purpose: `activeTabOrigin` reads the *active* tab, and
       // clicking anything in the popup would make the popup itself that tab.
       await popup.evaluate(() => {
@@ -3345,7 +3423,7 @@ async function main() {
 
       await triage.reload();
       await triage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
-      await triage.locator('.tool[title^="Annotations"]').click();
+      await triage.locator('.tool[aria-label^="Annotations"]').click();
       await triage.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
       check(
         "a note captured on another origin arrives on this one",

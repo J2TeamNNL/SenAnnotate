@@ -212,6 +212,7 @@ two things ever remove annotations** — the explicit "Clear all" and this setti
 button that also cleared was designed and then cut, and the argument is recorded there
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
+
 ## [`share-export/`](./share-export/) — unreleased
 
 A review two people could not previously receive: someone without the extension, and
@@ -219,9 +220,9 @@ someone on a different machine. A self-contained `.html` export answers the firs
 screenshot inlined, no script, no network reference — and an origin remap on import answers
 the second, since annotations are keyed on `origin + pathname` and a staging capture lands
 on a key no dev server will open. Its `context.md` states the rule for the project's **only
-HTML sink**: every interpolation goes through `esc()`, no exceptions, with an e2e check
-whose only job is to fail when someone forgets.
-
+HTML sink**: `share.ts` builds every string through one `html` tagged template that escapes
+as it interpolates, and the document carries a CSP that makes "nothing loads from the
+network" a property of the file rather than a habit of this repo.
 
 ## [`composer-retarget/`](./composer-retarget/) — unreleased
 
