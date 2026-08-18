@@ -70,8 +70,13 @@ const RETARGET_CONTROLS: {
  * Not a storage limit — `fitToQuota` owns that. It is a "you are describing one change"
  * limit: past three pictures the note is a mood board, and the strip stops fitting
  * across a 380px card without wrapping into something that needs a scroller.
+ *
+ * Exported because the orchestrator both slices files down to the cap before paying to
+ * encode them and writes the toast that names it. Spelling the number out in prose over
+ * there would leave a message insisting on three in a file nobody opens when the strip
+ * grows to four.
  */
-const MAX_REFERENCE_IMAGES = 3;
+export const MAX_REFERENCE_IMAGES = 3;
 
 export class Composer {
   readonly element: HTMLElement;
@@ -80,17 +85,19 @@ export class Composer {
   private readonly kindButtons = new Map<AnnotationKind, HTMLButtonElement>();
   private readonly strip: HTMLElement;
   private readonly fileInput: HTMLInputElement;
+  /**
+   * Where the card was first placed, kept rather than used once. `position()` decides
+   * between below the element and flipped above it by measuring the card, and the card
+   * changes height after that decision was taken — attaching an image grows it, and a
+   * retarget rebuilds a taller meta block. Both have to re-clamp against the anchor the
+   * first decision was made against, not against a `top` frozen when the card was shorter.
+   */
+  private readonly anchor: { left: number; top: number; right: number; bottom: number };
   private images: string[];
   private kind: AnnotationKind;
   /** Rebuilt whole on every retarget — see `renderMeta`. */
   private readonly meta: HTMLElement;
   private readonly callbacks: ComposerCallbacks;
-  /**
-   * Where the card was first placed. Kept so a retarget that grows the meta block can be
-   * re-clamped against the same anchor rather than against a `top` frozen when the card
-   * was shorter.
-   */
-  private readonly anchor: { left: number; top: number; right: number; bottom: number };
 
   constructor(
     layer: HTMLElement,
@@ -279,6 +286,17 @@ export class Composer {
     // happens to be is not information.
     this.teardown.push(
       listen(this.element, "paste", (event) => {
+        // Containment first, and unconditionally. `ClipboardEvent` is `composed: true`,
+        // so a paste in here reaches `document` retargeted to our host — and a page that
+        // listens for `paste` there (every rich-text editor, chat box and drag-drop
+        // uploader does) would receive the clipboard we were handed and act on it: the
+        // confidential frame the user is pasting *into a review note* gets uploaded into
+        // the application under review. `preventDefault` cannot stop that; it only
+        // suppresses the browser's own insertion. Same shape as `docs/modal-click-leak/`,
+        // with a much worse payload, and the reason this is not conditional on there
+        // being an image: a pasted paragraph of text is no more the page's business.
+        event.stopPropagation();
+
         const items = [...((event as ClipboardEvent).clipboardData?.items ?? [])];
         const files = items
           .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
@@ -286,8 +304,17 @@ export class Composer {
           .filter((file): file is File => file !== null);
 
         if (!files.length) return;
-        // Only once there is an image: a plain text paste has to keep working.
-        event.preventDefault();
+
+        // Cancel the default only when the image is the whole clipboard. A clipboard is
+        // not one thing: a copy out of Figma — or Excel, Word, Preview — carries
+        // `text/plain` beside the bitmap, and cancelling on sight of the image ate the
+        // half of the paste the textarea was about to receive. A plain text paste never
+        // reaches here at all.
+        const hasText = items.some(
+          (item) => item.kind === "string" && item.type === "text/plain",
+        );
+        if (!hasText) event.preventDefault();
+
         callbacks.onAttach(files);
       }),
     );
@@ -306,14 +333,29 @@ export class Composer {
   }
 
   /**
+   * How many more images this note will take.
+   *
+   * Asked *before* the files are encoded: the cap is known up front, and a full-size
+   * canvas per file that is going to be discarded anyway is the most expensive possible
+   * way to find out there was no room.
+   */
+  referenceImageRoom(): number {
+    return Math.max(0, MAX_REFERENCE_IMAGES - this.images.length);
+  }
+
+  /**
    * Hand back encoded images. Returns how many were kept, so the caller can say when
    * the cap swallowed some rather than leaving the user wondering.
    */
   addReferenceImages(uris: string[]): number {
-    const room = MAX_REFERENCE_IMAGES - this.images.length;
-    const kept = uris.slice(0, Math.max(0, room));
+    const kept = uris.slice(0, this.referenceImageRoom());
     this.images = [...this.images, ...kept];
     this.renderImages();
+    // The strip is ~62px of card that was not there when `position()` last ran. A note
+    // taken in the lower third of the viewport was placed to just fit, so without this
+    // the footer — Save, camera, attach, delete — slides under the fold, and the card
+    // sits in a layer with no scroller and no way to reach it.
+    this.position(this.anchor);
     return kept.length;
   }
 

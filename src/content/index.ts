@@ -67,6 +67,7 @@ import {
 } from "./storage";
 import {
   Composer,
+  MAX_REFERENCE_IMAGES,
   type ComposerCallbacks,
   type ComposerMeta,
   type RetargetDirection,
@@ -715,7 +716,11 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
       ...composerMeta(draft),
       initialComment: existing?.comment,
       initialKind: existing?.kind,
-      initialImages: existing?.referenceImages ?? draft.referenceImages,
+      // Only an existing note has any. A fresh `Draft` carries the field structurally —
+      // `Omit<Annotation, …>` keeps it — but `captureDraft` never writes it, and
+      // `openEditor` passes the same object as both `draft` and `existing`, so a
+      // fallback to `draft` would read either `undefined` or what was just read.
+      initialImages: existing?.referenceImages,
     },
     callbacks,
   );
@@ -901,21 +906,49 @@ function retargetable(draft: Draft, existing: Annotation | null): boolean {
 async function attachReferenceImages(files: File[]): Promise<void> {
   if (!composer || !files.length) return;
 
-  const encoded = (await Promise.all(files.map((file) => encodeSuppliedImage(file)))).filter(
-    (uri): uri is string => uri !== null,
-  );
+  const room = composer.referenceImageRoom();
+  if (!room) {
+    ui.toast(`${MAX_REFERENCE_IMAGES} reference images is the limit`, "error");
+    return;
+  }
+
+  // Sliced before the encode, not after it. The picker is `multiple`, so "select all" in
+  // a screenshots folder hands this sixty files and a synthesised paste could hand it a
+  // hundred — and every one of them would otherwise pay for a canvas and a JPEG encode,
+  // concurrently, only to be discarded by the cap a moment later.
+  const attempted = files.slice(0, room);
+  const encoded = (
+    await Promise.all(attempted.map((file) => encodeSuppliedImage(file)))
+  ).filter((uri): uri is string => uri !== null);
 
   if (!encoded.length) {
     ui.toast("Could not read that image", "error");
     return;
   }
 
-  // `composer` is checked again: encoding is async, and Esc during it is not rare.
-  const kept = composer?.addReferenceImages(encoded) ?? 0;
-  composer?.focus();
+  // Checked again rather than optional-chained: encoding is async and Esc during a 4 MB
+  // PNG is not rare. `?? 0` collapsed "the composer is gone" into the same 0 the cap
+  // produces, and told the user about a limit they were nowhere near.
+  if (!composer) return;
+  const kept = composer.addReferenceImages(encoded);
+  composer.focus();
 
+  // Room is re-read inside `addReferenceImages`, so a second paste that landed during
+  // this one's encode can still take the last slot.
   if (!kept) {
-    ui.toast("Three reference images is the limit", "error");
+    ui.toast(`${MAX_REFERENCE_IMAGES} reference images is the limit`, "error");
+    return;
+  }
+
+  // Counted against what the user handed over, not against what survived. Five files
+  // with three slots, or three files where one is a corrupt PNG, both used to report
+  // only the successes — leaving the rest to vanish with no word about why.
+  const lost = files.length - kept;
+  if (lost > 0) {
+    ui.toast(
+      `Attached ${kept} image${kept === 1 ? "" : "s"} — ${lost} could not be added`,
+      "error",
+    );
     return;
   }
   ui.toast(`Attached ${kept} image${kept === 1 ? "" : "s"}`);

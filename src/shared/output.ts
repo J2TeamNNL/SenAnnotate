@@ -262,6 +262,28 @@ function renderReferences(annotation: Annotation): string[] {
 }
 
 /**
+ * How many user-supplied images a set of notes carries, for the levels that cannot show
+ * them.
+ *
+ * Compact renders one line per note and drops every attachment — that is the deal it
+ * offers. But a reference image is the one attachment nobody can produce again: a
+ * screenshot can be retaken by standing on the page, while the frame that was on the
+ * clipboard an hour ago exists nowhere this extension can reach. Copying a Compact
+ * report and finding no trace of the picture you pasted is the same failure this file
+ * already refuses for captured console errors, so Compact says what it is holding back.
+ */
+function referenceCount(annotations: Annotation[]): number {
+  return annotations.reduce(
+    (sum, annotation) => sum + (annotation.referenceImages?.length ?? 0),
+    0,
+  );
+}
+
+function referencePhrase(count: number): string {
+  return `${count} reference image${count === 1 ? "" : "s"}`;
+}
+
+/**
  * A screenshot is only worth a line if the reader can actually open it.
  *
  * `screenshotData` (embed mode) wins when present: it needs nothing outside the
@@ -391,7 +413,15 @@ export function generateSessionOutput(
 
     if (detailLevel === "compact") {
       open.forEach((annotation, index) => lines.push(renderCompact(annotation, index + 1)));
-      if (done.length) lines.push("", `_${done.length} already fixed._`);
+
+      // Same contract as the single-page compact report: name what this level drops.
+      const withheld: string[] = [];
+      if (done.length) withheld.push(`${done.length} already fixed`);
+      const references = referenceCount(entry.annotations);
+      if (references) withheld.push(referencePhrase(references));
+      if (withheld.length) {
+        lines.push("", `_Also here: ${withheld.join(", ")} — switch off Compact to include them._`);
+      }
       lines.push("");
       continue;
     }
@@ -434,6 +464,10 @@ export function generateOutput(
     const withheld: string[] = [];
     if (logCount) withheld.push(`${logCount} console error${logCount === 1 ? "" : "s"}`);
     if (requestCount) withheld.push(`${requestCount} failed request${requestCount === 1 ? "" : "s"}`);
+    // Across every note, not just the open ones: the list is about what the file does not
+    // contain, and a fixed note's reference image is just as absent.
+    const references = referenceCount(annotations);
+    if (references) withheld.push(referencePhrase(references));
     if (done.length) withheld.unshift(`${done.length} already fixed`);
     if (withheld.length) {
       lines.push("", `_Also captured: ${withheld.join(", ")} — switch off Compact to include them._`);

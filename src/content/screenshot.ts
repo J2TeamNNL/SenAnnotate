@@ -107,6 +107,13 @@ export function encodeForEmbed(canvas: HTMLCanvasElement): string | null {
  * ceiling is the same 900px, so a reference image and a screenshot cost the same and
  * `fitToQuota` has one size of thing to reason about.
  *
+ * The scale is applied on the way *into* the canvas, which is why this does not simply
+ * hand a natural-size canvas to `encodeForEmbed` and let that downscale. A 2× Figma
+ * export of a desktop frame is 5120×8000 — 41M pixels, 164 MB of RGBA — and Chrome caps
+ * canvas area at 268,435,456 px. Past the cap it does not throw: `getContext("2d")`
+ * returns a context whose backing store failed, `drawImage` is a no-op, and `toDataURL`
+ * answers `"data:,"`. Under the cap but over memory pressure, the tab just stalls.
+ *
  * `createObjectURL` rather than a `FileReader` data URL: the file is decoded straight
  * into a canvas and the base64 round trip in between would be pure cost.
  */
@@ -114,20 +121,39 @@ export async function encodeSuppliedImage(file: Blob): Promise<string | null> {
   const url = URL.createObjectURL(file);
   try {
     const image = await loadImage(url);
+    // `accept="image/*"` admits SVG, and an SVG with no intrinsic width/height decodes
+    // with `naturalWidth === 0` in Chrome. A zero-area canvas is the other route to
+    // `"data:,"` — and that string is truthy, so nothing downstream would catch it.
+    if (!image.naturalWidth || !image.naturalHeight) return null;
+
+    const scale = Math.min(1, MAX_EMBED_WIDTH / image.naturalWidth);
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
 
     const context = canvas.getContext("2d");
     if (!context) return null;
-    context.drawImage(image, 0, 0);
+    context.imageSmoothingQuality = "high";
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-    return encodeForEmbed(canvas);
+    return validEmbed(encodeForEmbed(canvas));
   } catch {
     return null;
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * `null` is not the only way an embed fails.
+ *
+ * `toDataURL` answers the literal string `"data:,"` rather than throwing when the canvas
+ * has nothing to encode, and that string passes every `!== null` check between here and
+ * storage: the user gets a blank thumbnail with no error, and the report ships
+ * `![… — reference 1](data:,)` under a heading promising a picture.
+ */
+function validEmbed(uri: string | null): string | null {
+  return uri?.startsWith("data:image/") ? uri : null;
 }
 
 /**

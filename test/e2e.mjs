@@ -786,10 +786,16 @@ async function main() {
     // -------------------------------------------------------------------------
     //
     // Two ways in, both covered: the file picker, driven with Playwright's real
-    // `setInputFiles`, and a paste, which has to be synthesised — there is no way to
-    // put an image on the OS clipboard from here. `paste` is deliberately not one of
-    // the events `dom.ts` drops when untrusted; see `docs/reference-images/context.md`
-    // for why that is safe, and note that this check depends on it.
+    // `setInputFiles`, and a paste, which has to be synthesised — there is no way to put
+    // an image on the OS clipboard from here. The synthetic event works because the
+    // composer registers its handler through `listen()`, which calls `addEventListener`
+    // directly and never passes through `guarded()` — so `dom.ts`'s untrusted-event drop
+    // does not apply to it, whatever `ACTIVATION_EVENTS` contains.
+    // `docs/reference-images/context.md` weighs that exposure.
+    //
+    // `composed: true` on the dispatch is load-bearing, not decoration: it is what a real
+    // `paste` carries, and without it the event could not leave the shadow root at all,
+    // which would make the containment check below pass for the wrong reason.
     const reference = await context.newPage();
     await reference.goto(`${base}/reference.html`);
     await reference.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
@@ -817,13 +823,24 @@ async function main() {
       const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
       const transfer = new DataTransfer();
       transfer.items.add(new File([bytes], "pasted.png", { type: "image/png" }));
-      composer.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true }));
+      composer.dispatchEvent(
+        new ClipboardEvent("paste", {
+          clipboardData: transfer,
+          bubbles: true,
+          composed: true,
+        }),
+      );
     }, pngBase64);
     await reference.waitForTimeout(500);
     check(
       "a pasted image joins the attached one",
       (await reference.locator(".composer__thumb").count()) === 2,
       `${await reference.locator(".composer__thumb").count()} thumbnails after the paste`,
+    );
+    check(
+      "the pasted reference image never reaches the page",
+      (await reference.evaluate(() => window.__pastedIntoPage)) === false,
+      "the page's document paste listener saw our clipboard",
     );
 
     await reference.locator(".composer__image-remove").first().click();
@@ -839,7 +856,7 @@ async function main() {
     await reference.locator(".composer .button--primary").click();
     await reference.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
 
-    await reference.locator('.tool[title^="Annotations"]').click();
+    await reference.locator('.tool[aria-label^="Annotations"]').click();
     await reference.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
     await reference.locator(".panel .button--primary").click();
     const referenceReport = await reference.evaluate(() => navigator.clipboard.readText());
