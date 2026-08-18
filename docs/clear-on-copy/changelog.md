@@ -143,3 +143,43 @@ The check now extracts the `## Steps to reproduce` section and reads only that.
   An annotation arriving during the clipboard round-trip — realistically only a draft
   handed up from a child frame — would be wiped uncounted, and the toast would understate
   what was destroyed. Clearing by copied id rather than by truncation would close it.
+
+## 2026-08-18 — the clear is scoped to what was copied
+
+The second of the two open questions above, fixed. `copyReport()` used to read the count
+before the clipboard call but let `wipeAnnotations()` truncate the *live* list afterwards,
+so anything filed during the round-trip was destroyed without ever having been in the
+report, and the toast understated what it had taken.
+
+It now takes one snapshot before the call — the array the report was built from — and
+uses it for both halves: `count` for the toast, and the ids for
+`wipeAnnotations(only?: ReadonlySet<string>)`, which removes those and leaves the rest.
+`clearAll()` passes nothing and still empties everything.
+
+Two things checked before writing it, because the fix rests on them:
+
+- **The snapshot is real.** `annotations` is never mutated in place — every add, edit and
+  delete assigns a new array (`grep 'annotations.push\|annotations.splice'` is empty), so
+  holding the reference holds the list as it was.
+- **Every new annotation arrives through the composer's `onSubmit`.** `captureHovered()`
+  and a draft handed up from a child frame both open a composer rather than filing
+  directly, which is what makes the window narrow enough to have gone unnoticed — and
+  reachable at all, since a submit is one keystroke.
+
+The diagnostics and the trail still go unconditionally; `context.md` now says why.
+
+**No e2e check.** The window is a few milliseconds inside a promise the page cannot slow
+down: `navigator.clipboard` lives in the ISOLATED world, so nothing the fixture does can
+stall the write, and a fixture cannot submit a composer at a chosen point inside it. What
+the suite does cover is the regression risk this change carries — that scoping the clear
+leaves something behind — via "clearing empties the page" and "the clear reaches storage".
+249/249 after the change.
+
+### Still open: an unsaved draft dies with the clear
+
+`wipeAnnotations()` calls `closeComposer()` unconditionally, and an open composer holding
+an *unsaved* draft is work the copy never took either. It is reachable without any race:
+open a composer, type, then hit **Copy report** in the panel with the setting on, and the
+draft is gone. Left alone here deliberately — it is a different bug from the one this
+entry fixes, and closing it needs the composer to record which annotation (if any) it is
+editing, so it can close for a removed one and stay for a new draft.

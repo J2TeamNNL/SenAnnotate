@@ -689,11 +689,20 @@ function buildReport(): string {
 }
 
 function copyReport(): void {
-  // Read before the clipboard call, not inside the callback: `clearOnCopy` empties
-  // the list by the time the toast is written, and the toast should report what was
-  // copied rather than what is left.
-  const count = annotations.length;
-  if (!count) return;
+  if (!annotations.length) return;
+
+  // One snapshot, taken before the clipboard call, and everything downstream reads it
+  // rather than the live list: the count the toast quotes, and the set `clearOnCopy` is
+  // allowed to remove. `annotations` is replaced rather than mutated on every add, so
+  // holding the array is holding the exact list the report was built from.
+  //
+  // Both halves matter. `clearOnCopy` empties the list by the time the toast is written,
+  // so a count read there would say `Copied 0 annotations` about a copy that succeeded —
+  // and an annotation filed while the write was in flight was never in the report, so
+  // clearing must leave it alone rather than destroy work it never handed over.
+  const sent = annotations;
+  const sentIds = new Set(sent.map((item) => item.id));
+  const count = sent.length;
 
   const markdown = buildReport();
 
@@ -709,7 +718,7 @@ function copyReport(): void {
     // a copy would, the one time the clipboard refuses, throw the session away with
     // nothing to show for it — and `copyText` has a fallback path that can fail.
     if (settings.clearOnCopy) {
-      wipeAnnotations();
+      wipeAnnotations(sentIds);
       ui.toast(`Copied ${noun} · cleared`, "success");
       return;
     }
@@ -833,15 +842,22 @@ async function deliverScreenshot(
 }
 
 /**
- * Drop every annotation, and the diagnostics gathered alongside them.
+ * Drop annotations, and the diagnostics gathered alongside them.
  *
  * The trail goes too: keeping steps and errors from a bug you already filed would
  * attach them to the next, unrelated report. Deliberately silent — its two callers
  * are a deliberate "clear all" and the tail of a successful copy, and those want to
  * say quite different things.
+ *
+ * `only` is the set of ids the caller means, and the copy path is the reason it exists:
+ * it may remove what its report described and nothing else. Omit it and every annotation
+ * goes, which is what "Clear all" asks for.
+ *
+ * The diagnostics and the trail go regardless. They describe the report that was just
+ * handed over, whether or not something arrived after it.
  */
-function wipeAnnotations(): void {
-  annotations = [];
+function wipeAnnotations(only?: ReadonlySet<string>): void {
+  annotations = only ? annotations.filter((item) => !only.has(item.id)) : [];
   closeComposer();
   clearActions();
   diagnosticsCache = null;

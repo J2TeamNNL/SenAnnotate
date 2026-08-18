@@ -28,9 +28,22 @@ before the call. This is not defensive padding: `copyText` has a fallback path f
 the strength of *having asked* for a copy means the one time the clipboard says no, the
 session is gone and there is nothing on the clipboard to paste.
 
-The count is also read *before* the copy, not inside the callback. By the time the
-toast is written the list is empty, and `Copied 0 annotations` would be a lie about
-the thing that just succeeded.
+And it clears **a snapshot**, not the live list. `copyReport()` holds the array the
+report was built from, and hands its ids to `wipeAnnotations(only)`; the count in the
+toast comes from the same snapshot. Two things fall out of that, and both are the point:
+
+- By the time the toast is written the list is empty, so a count read *there* would say
+  `Copied 0 annotations` about a copy that had just succeeded.
+- An annotation filed while the clipboard write was in flight was never in the report.
+  Truncating the list would destroy work the copy never handed over — the one outcome
+  this feature exists to avoid — and the toast would understate what it took. Every path
+  to a new annotation runs through the composer's `onSubmit`, which *replaces*
+  `annotations` rather than mutating it, so holding the array is a real snapshot.
+
+The diagnostics and the action trail are cleared regardless of what survives. They
+describe the report that was handed over, and the reason for dropping them — steps from
+a bug already filed must not attach to the next one — does not change because something
+arrived late.
 
 ## Copy only, not download
 
