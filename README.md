@@ -644,6 +644,19 @@ Zero runtime dependencies. Build-time: `esbuild` and `typescript`.
 
 ## Docs
 
+The [**wiki**](https://github.com/thangnm93/SenAnnotate/wiki) is the manual: install,
+every gesture and setting, the report format, the framework matrix, the architecture, and
+troubleshooting — twenty pages, illustrated with screenshots of the built extension.
+
+Its source is [`wiki/`](./wiki) in this repository rather than the wiki repo, so a change
+goes through a pull request like any other:
+
+```bash
+SENANNOTATE_PLAYWRIGHT_DIR=… npm run wiki:assets   # re-shoot wiki/images/
+npm run wiki:sync                                  # dry run
+npm run wiki:sync -- --push                        # publish
+```
+
 Design notes, the reasoning behind the three-world split, the licensing history, and the
 full record of each release live in [`docs/`](./docs) — start with
 [`docs/README.md`](./docs/README.md).

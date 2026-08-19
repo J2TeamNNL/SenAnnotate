@@ -19,7 +19,9 @@
     "pack": "npm run build && node scripts/pack.mjs",
     "changelog": "node scripts/changelog.mjs",
     "assets": "npm run build && node scripts/store-assets.mjs",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "wiki:assets": "npm run build && node scripts/wiki-assets.mjs",
+    "wiki:sync": "node scripts/wiki-sync.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
