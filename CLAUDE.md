@@ -160,6 +160,51 @@ round-trip, and works identically with no framework at all. Keep it that way.
   because the popup needs the same strings.
 - Chrome 111 minimum (`world: "MAIN"`); esbuild targets `chrome111`.
 
+## Opening an issue or a pull request
+
+`.github/` holds the templates. **Fill the existing one in — do not invent a structure.**
+An agent writing its own PR body is the most common way the four rules below get skipped,
+because a body you wrote yourself never asks you the question you did not think of.
+
+**Pull requests.** `.github/PULL_REQUEST_TEMPLATE.md` pre-fills the body in the web UI,
+and `gh pr create` pre-fills its editor from it too — but **only when it runs
+interactively**. An agent passing `--body` or `--body-file` bypasses it entirely, which
+is exactly the path an agent takes, so start from the file on purpose:
+
+```bash
+gh pr create --body-file .github/PULL_REQUEST_TEMPLATE.md   # then edit
+# or: cp it to a scratch file, fill it in, pass that
+```
+
+Keep every heading and every checklist item, including the conditional sections; delete a
+section only when the change genuinely does not touch it. Tick a verification box **only
+after running the command** — an unticked box is information, a wrongly ticked one is a
+false claim to a reviewer, and `npm test` in particular cannot be inferred from a green
+CI tick.
+
+**Issues.** `.github/ISSUE_TEMPLATE/` holds three YAML forms — bug, framework detection,
+feature. `gh issue create --template <name>` uses one; if the gh version in front of you
+will not take a YAML form, read the file and answer every field it asks for. The required
+fields are required because triage stalls without them: the version, the install route,
+and whether the page is a production build. `blank_issues_enabled` is `false` on purpose.
+
+**The four things the PR template exists to stop.** They are in the template; they are
+here because an agent that reads this file may not open the template first:
+
+1. **A commit subject is a release note.** `CHANGELOG.md` is generated from Conventional
+   Commit subjects between tags — see *Releasing* below.
+2. **A green CI tick is not a test run.** CI is typecheck + build + pack. `npm test`
+   needs a browser and never runs there; run it yourself and say so.
+3. **`docs/<task-slug>/` is expected** on anything non-trivial, and reviewers read it.
+4. **Three modules carry a licensing constraint** — the next section.
+
+Conventions the template checks: branch `feature/<slug>`, `fix/<slug>` or `chore/<slug>`;
+Conventional Commit subjects; no version bump (releases are their own commit); no
+hand-edited `CHANGELOG.md`; `wiki/` updated when user-visible behaviour changed.
+
+`.github/CONTRIBUTING.md` is the prose version of all of this, and the wiki's
+*Development* page has the traps.
+
 ## Licensing constraint
 
 The project began as a port of [`agentation`](https://github.com/benjitaylor/agentation), which

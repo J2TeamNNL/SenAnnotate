@@ -39,3 +39,18 @@ Rewritten without.
   second regular contributor.
 - **Dependabot** — two devDependencies, zero runtime dependencies. The noise would exceed
   the value.
+
+## CLAUDE.md points at the templates
+
+Added *Opening an issue or a pull request*, because the templates only work if they are
+opened. An agent that writes its own PR body never asks itself the question it did not
+think of, and `CLAUDE.md` is the file it reads first.
+
+One correction while writing it: the first draft said `gh pr create` does not pick up the
+PR template. That is wrong — it pre-fills its editor from it, **interactively**. The real
+gap is that `--body` and `--body-file` bypass the template entirely, and that is exactly
+the path an agent takes. The section now says that instead, and tells the agent to start
+from the file deliberately.
+
+The four expensive rules are restated inline rather than only linked, because an agent
+reading `CLAUDE.md` may act without opening `.github/`.
