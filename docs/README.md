@@ -213,6 +213,14 @@ button that also cleared was designed and then cut, and the argument is recorded
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
 
+## [`composer-retarget/`](./composer-retarget/) — unreleased
+
+Clicking picks whatever is under the pointer, which is routinely one level off what you
+meant — the `<span>` inside the button, the wrapper around the card. The arrow keys and
+four buttons now walk the DOM from an open composer. Its `context.md` explains why the
+DevTools bindings this came from could not be copied, and why the keys stop working
+once the note has text.
+
 ## [`draggable-toolbar/`](./draggable-toolbar/) — unreleased
 
 Collapsing stops helping when the bottom-right corner is the thing being reviewed, so

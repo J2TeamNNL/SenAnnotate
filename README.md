@@ -137,6 +137,7 @@ the line and column.
 | Toggle inspect mode | click **Inspect**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> |
 | Annotate an element | click it |
 | Annotate what you are hovering | <kbd>C</kbd> — no click, so the menu stays open |
+| Fix a mis-click | arrow keys while the note is empty, or its ↑ ↓ ← → buttons at any time |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements near each other | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+drag a box around them — or mode <kbd>3</kbd> and drag |
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |

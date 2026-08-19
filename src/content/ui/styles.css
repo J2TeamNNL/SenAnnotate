@@ -626,6 +626,39 @@ button {
   color: var(--sa-accent);
 }
 
+/*
+ * Retarget controls, sitting on the Element row they change.
+ *
+ * `flex: none` and `align-self: center` because `.meta-row` aligns on the baseline —
+ * correct for two runs of text, wrong for a row of buttons, which would hang below it.
+ */
+.retarget {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  gap: 1px;
+  padding: 1px;
+  border-radius: 7px;
+  background: var(--sa-bg-sunken);
+}
+
+/*
+ * `.icon-button` carries the box, the colour and the hover; this only narrows it. Sharing
+ * the rule is what keeps the hover tint and any future focus ring identical to the
+ * footer's buttons instead of drifting apart by a percent at a time.
+ *
+ * Smaller than the 26px default because these sit inside an 11.5px text row — but not as
+ * small as they could be: with the arrow keys off once the note has text, they are the
+ * only way to retarget from then on, so they stay a real target.
+ */
+.retarget__button {
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  line-height: 1;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+
 .composer__input {
   width: 100%;
   min-height: 76px;

@@ -5,7 +5,16 @@
 import { ANNOTATION_KINDS, type AnnotationKind } from "../../shared/types";
 import { h, icon, listen, takeFocus } from "./dom";
 
-export interface ComposerData {
+/**
+ * The rows the composer *shows* — everything a retarget replaces, and nothing else.
+ *
+ * Split out from `ComposerData` because `initialComment` and `initialKind` are consumed
+ * exactly once, in the constructor. A `setData` that accepted them would imply the
+ * composer might reset the note and the chosen type on a retarget, which is the one
+ * behaviour this feature promises it will never do. The split makes that guarantee
+ * structural instead of something a reader has to verify inside `renderMeta`.
+ */
+export interface ComposerMeta {
   title: string;
   /** `src/components/Foo.vue:12:5`, when we could work it out. */
   source: string | null;
@@ -14,20 +23,40 @@ export interface ComposerData {
   props: string | null;
   selectedText?: string;
   elementCount?: number;
+}
+
+export interface ComposerData extends ComposerMeta {
   initialComment?: string;
   initialKind?: AnnotationKind;
 }
+
+/** Which way to walk the DOM from the element the composer is currently about. */
+export type RetargetDirection = "parent" | "child" | "previous" | "next";
 
 export interface ComposerCallbacks {
   onSubmit(comment: string, kind: AnnotationKind): void;
   onCancel(): void;
   onScreenshot(): void;
   onDelete?(): void;
+  /** Absent when retargeting does not apply — a saved note, text, or a multi-select. */
+  onRetarget?(direction: RetargetDirection): void;
 }
 
 const WIDTH = 380;
 const GAP = 12;
 const EDGE = 12;
+
+const RETARGET_CONTROLS: {
+  direction: RetargetDirection;
+  key: string;
+  glyph: string;
+  title: string;
+}[] = [
+  { direction: "parent", key: "ArrowUp", glyph: "↑", title: "Select the parent (↑)" },
+  { direction: "child", key: "ArrowDown", glyph: "↓", title: "Select the first child (↓)" },
+  { direction: "previous", key: "ArrowLeft", glyph: "←", title: "Previous sibling (←)" },
+  { direction: "next", key: "ArrowRight", glyph: "→", title: "Next sibling (→)" },
+];
 
 export class Composer {
   readonly element: HTMLElement;
@@ -35,6 +64,15 @@ export class Composer {
   private readonly teardown: Array<() => void> = [];
   private readonly kindButtons = new Map<AnnotationKind, HTMLButtonElement>();
   private kind: AnnotationKind;
+  /** Rebuilt whole on every retarget — see `renderMeta`. */
+  private readonly meta: HTMLElement;
+  private readonly callbacks: ComposerCallbacks;
+  /**
+   * Where the card was first placed. Kept so a retarget that grows the meta block can be
+   * re-clamped against the same anchor rather than against a `top` frozen when the card
+   * was shorter.
+   */
+  private readonly anchor: { left: number; top: number; right: number; bottom: number };
 
   constructor(
     layer: HTMLElement,
@@ -42,6 +80,8 @@ export class Composer {
     data: ComposerData,
     callbacks: ComposerCallbacks,
   ) {
+    this.callbacks = callbacks;
+    this.anchor = anchor;
     this.kind = data.initialKind ?? "ui";
 
     this.textarea = h("textarea", {
@@ -70,19 +110,12 @@ export class Composer {
 
     const kinds = h("div", { class: "composer__kinds" }, ...this.kindButtons.values());
 
-    const meta = h("div", { class: "composer__meta" });
-    meta.append(this.metaRow("Element", data.title));
-    if (data.elementCount && data.elementCount > 1) {
-      meta.append(this.metaRow("Selection", `${data.elementCount} elements`));
-    }
-    if (data.source) meta.append(this.metaRow("Source", data.source, true));
-    if (data.components) meta.append(this.metaRow("Component", data.components));
-    if (data.props) meta.append(this.metaRow("Props", data.props));
-    if (data.selectedText) meta.append(this.metaRow("Text", `"${data.selectedText}"`));
+    this.meta = h("div", { class: "composer__meta" });
+    this.renderMeta(data);
 
     const submit = h(
       "button",
-      { class: "button button--primary", on: { click: () => this.submit(callbacks) } },
+      { class: "button button--primary", on: { click: () => this.submit() } },
       h("span", { text: data.initialComment !== undefined ? "Save" : "Add note" }),
     );
 
@@ -91,13 +124,13 @@ export class Composer {
       { class: "card__footer" },
       h("span", { class: "hint", text: "⌘/Ctrl + Enter" }),
       h("span", { class: "spacer" }),
-      callbacks.onDelete
+      this.callbacks.onDelete
         ? h(
             "button",
             {
               class: "button button--ghost button--danger",
               title: "Delete annotation",
-              on: { click: () => callbacks.onDelete?.() },
+              on: { click: () => this.callbacks.onDelete?.() },
             },
             icon("trash", 14),
           )
@@ -107,7 +140,7 @@ export class Composer {
         {
           class: "button button--ghost",
           title: "Capture a screenshot of this element",
-          on: { click: () => callbacks.onScreenshot() },
+          on: { click: () => this.callbacks.onScreenshot() },
         },
         icon("camera", 14),
       ),
@@ -127,12 +160,12 @@ export class Composer {
           {
             class: "icon-button",
             title: "Cancel (Esc)",
-            on: { click: () => callbacks.onCancel() },
+            on: { click: () => this.callbacks.onCancel() },
           },
           icon("close", 14),
         ),
       ),
-      h("div", { class: "card__body" }, meta, kinds, this.textarea),
+      h("div", { class: "card__body" }, this.meta, kinds, this.textarea),
       footer,
     );
 
@@ -142,15 +175,57 @@ export class Composer {
     this.teardown.push(
       listen(this.element, "keydown", (event) => {
         const keyboard = event as KeyboardEvent;
+
+        // An IME candidate window owns the keyboard while it is open, and its keystrokes
+        // arrive here as ordinary `keydown`s. This guard is first so it covers Escape as
+        // well as the arrows: with a Vietnamese, Japanese or Korean IME, cancelling a
+        // composition would otherwise close the composer and drop the note, and picking a
+        // candidate with the arrows would retarget instead — the pre-edit buffer is not in
+        // `textarea.value`, so the "note is still empty" test below cannot see it.
+        if (keyboard.isComposing) return;
+
         if (keyboard.key === "Escape") {
           keyboard.preventDefault();
           keyboard.stopPropagation();
-          callbacks.onCancel();
+          this.callbacks.onCancel();
         }
         if (keyboard.key === "Enter" && (keyboard.metaKey || keyboard.ctrlKey)) {
           keyboard.preventDefault();
-          this.submit(callbacks);
+          this.submit();
         }
+
+        // Arrows retarget, but only while the note is still empty.
+        //
+        // The textarea takes focus the moment the composer opens, so from then on
+        // the arrows belong to the caret — taking them outright would mean you
+        // could not edit your own sentence. Empty is the honest signal that there
+        // is no sentence yet, and it is also exactly when retargeting is wanted:
+        // you clicked, you can see the wrong element highlighted, you fix it, then
+        // you write. Once there is text, the buttons remain.
+        //
+        // Trimmed, because `submit` is: a reflex tap on the space bar is invisible on
+        // screen and would otherwise kill the keys for the rest of this composer's life
+        // while `submit` still called the note empty and refused to save.
+        if (!this.callbacks.onRetarget || this.textarea.value.trim().length > 0) return;
+        if (keyboard.metaKey || keyboard.ctrlKey || keyboard.altKey || keyboard.shiftKey) return;
+
+        const control = RETARGET_CONTROLS.find((entry) => entry.key === keyboard.key);
+        if (!control) return;
+
+        // Auto-repeat is not a series of decisions. Each step is a bridge round trip and a
+        // rebuilt meta block, so a held key would fire ~30 of both a second and walk the
+        // tree far past what anyone was reading — and at the top, where the walk runs out,
+        // it would re-create the "Nothing there" toast on every frame, restarting its
+        // entrance animation into a strobe. One press, one level; the key still scrolls
+        // nothing, because the press is swallowed either way.
+        if (keyboard.repeat) {
+          keyboard.preventDefault();
+          return;
+        }
+
+        // Without this the page scrolls under the composer on every press.
+        keyboard.preventDefault();
+        this.callbacks.onRetarget(control.direction);
       }),
     );
 
@@ -176,13 +251,92 @@ export class Composer {
     takeFocus(this.textarea);
   }
 
-  private submit(callbacks: ComposerCallbacks): void {
+  private submit(): void {
     const comment = this.textarea.value.trim();
     if (!comment) {
       takeFocus(this.textarea);
       return;
     }
-    callbacks.onSubmit(comment, this.kind);
+    this.callbacks.onSubmit(comment, this.kind);
+  }
+
+  /**
+   * (Re)build the metadata block from a draft.
+   *
+   * Rebuilt wholesale rather than patched, because retargeting changes *which* rows
+   * exist — a `<div>` with no component data has no Source or Component row, and the
+   * `<BaseButton>` above it has both. Destroying and recreating the whole composer
+   * would be simpler still and is not an option: it would take the note being typed
+   * and the focus with it.
+   */
+  private renderMeta(data: ComposerMeta): void {
+    this.meta.replaceChildren();
+
+    const title = this.metaRow("Element", data.title);
+    if (this.callbacks.onRetarget) title.append(this.retargetControls());
+    this.meta.append(title);
+
+    if (data.elementCount && data.elementCount > 1) {
+      this.meta.append(this.metaRow("Selection", `${data.elementCount} elements`));
+    }
+    if (data.source) this.meta.append(this.metaRow("Source", data.source, true));
+    if (data.components) this.meta.append(this.metaRow("Component", data.components));
+    if (data.props) this.meta.append(this.metaRow("Props", data.props));
+    if (data.selectedText) this.meta.append(this.metaRow("Text", `"${data.selectedText}"`));
+  }
+
+  /**
+   * Buttons for the same four moves the arrow keys make.
+   *
+   * Not redundant with the keys: the keys only work while the note is still empty
+   * (see the keydown handler), so once you have started typing and *then* notice the
+   * wrong element is selected, these are the only way. They are also the only thing
+   * on screen that says retargeting exists at all — the lesson `marquee-select/`
+   * paid for.
+   */
+  private retargetControls(): HTMLElement {
+    return h(
+      "div",
+      { class: "retarget" },
+      ...RETARGET_CONTROLS.map(({ direction, glyph, title }) =>
+        h("button", {
+          class: "icon-button retarget__button",
+          title,
+          text: glyph,
+          attrs: { "aria-label": title },
+          on: {
+            click: () => {
+              this.callbacks.onRetarget?.(direction);
+              // Not because the button took focus — `root.ts` cancels `mousedown` outside
+              // text fields precisely so it cannot. This is the recovery path: a page's
+              // focus trap may have pulled focus out from under the note, and `takeFocus`
+              // is the one call that wins that race (`docs/modal-trap-refocus/`).
+              takeFocus(this.textarea);
+            },
+          },
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Swap in a new element's rows without disturbing what has been typed.
+   *
+   * The comment, the chosen kind, the caret and the focus all belong to the person
+   * writing, not to the element being described — retargeting changes the subject of
+   * the sentence, never the sentence. `ComposerMeta` rather than `ComposerData` is what
+   * makes that a type error rather than a promise.
+   *
+   * Re-clamped afterwards, against the original anchor. `position` writes a fixed `top`,
+   * and `.card` is `position: fixed` with `overflow: hidden` and no `max-height` — so a
+   * retarget from a bare `<div>` onto a framework component adds Source, Component and
+   * Props rows (~54px) and the card grows downward from a `top` that was clamped when it
+   * was shorter, putting Save, the camera and delete below the viewport. Not repositioning
+   * is about not *following the element*; it was never about refusing to stay on screen.
+   */
+  setData(meta: ComposerMeta): void {
+    this.renderMeta(meta);
+    this.position(this.anchor);
   }
 
   private metaRow(key: string, value: string, accent = false): HTMLElement {
