@@ -1,0 +1,130 @@
+name: Bug report
+description: Something in the extension does not work
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing — two things answer most reports on their own:
+
+        - **[Troubleshooting](https://github.com/thangnm93/SenAnnotate/wiki/Troubleshooting)**
+          covers the missing toolbar, dead keyboard shortcuts, missing component/source
+          lines, and the *"not trusted by Enhanced Safe Browsing"* warning (which is
+          Chrome's install-age clock, not a fault).
+        - If the **component chain or source line** is what is missing, use the
+          *Framework detection* form instead — it asks for what that needs.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        1. Opened https://…
+        2. Pressed Alt+Shift+S
+        3. Clicked the "Save" button in the sidebar
+        → The composer opened behind the page's modal instead of above it.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: SenAnnotate version
+      description: >
+        The settings card footer shows it — the gear on the toolbar, bottom of the card.
+        Or `chrome://extensions`.
+      placeholder: "0.8.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it
+      description: >
+        This matters more than it looks. An unpacked copy keeps running the old content
+        script in already-open tabs until you reload them, which looks exactly like a bug.
+      options:
+        - Chrome Web Store
+        - Release zip, loaded unpacked
+        - Built from source (`npm run build` → `dist/`)
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: chrome
+    attributes:
+      label: Browser and version
+      description: "`chrome://version` — the first line. Chrome 111 is the minimum."
+      placeholder: "Chrome 141.0.7390.65, macOS 15.5"
+    validations:
+      required: true
+
+  - type: input
+    id: page
+    attributes:
+      label: Page it happens on
+      description: >
+        A URL if it is public. Otherwise say what the page is — "a Nuxt 3 dashboard behind
+        SSO", "a Storybook preview in an iframe". If it reproduces on
+        [the demo](https://github.com/thangnm93/SenAnnotate/blob/main/store/demo.html),
+        say so — that is the most useful answer here.
+      placeholder: "https://example.com/checkout — or: local Nuxt 3 app, dev build"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Is the page a development or production build
+      options:
+        - Development build
+        - Production build
+        - No framework / plain HTML
+        - Not sure
+      default: 3
+    validations:
+      required: true
+
+  - type: textarea
+    id: report
+    attributes:
+      label: A SenAnnotate report of the page
+      description: >
+        If the extension works well enough to produce one, paste it — set the detail level
+        to **Forensic** first. It carries the element, the selector, the framework, the
+        viewport, and any console errors and failed requests, which is most of what triage
+        needs. Redact anything you would not want public.
+      render: markdown
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors
+      description: >
+        From the **page's** DevTools console, and — if the problem involves the toolbar
+        badge, screenshots or the keyboard command — from the service worker too
+        (`chrome://extensions` → SenAnnotate → *service worker*).
+      render: shell
+
+  - type: checkboxes
+    id: ruled-out
+    attributes:
+      label: Ruled out
+      description: The four things that explain most reports.
+      options:
+        - label: >
+            It is an ordinary web page — not `chrome://`, not the Chrome Web Store, not
+            the PDF viewer, not another extension's page. The extension cannot run on
+            those.
+        - label: >
+            *Hide until restart* is not on for this tab (it is per-tab and survives
+            reloads — close the tab to clear it).
+        - label: >
+            The toolbar is not merely collapsed. Its position is remembered **per page**,
+            so the dot may not be in the corner — <kbd>H</kbd> expands it.
+        - label: >
+            If installed unpacked: I reloaded the extension **and** the tab after
+            updating.
