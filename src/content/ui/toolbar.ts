@@ -12,8 +12,11 @@ export interface ToolbarState {
   frozen: boolean;
   panelOpen: boolean;
   settingsOpen: boolean;
-  /** Mode 4 and its hint clause are hidden entirely when this is off. */
-  measureTools: boolean;
+  /**
+   * Whether mode 4 exists at all. Computed by the caller from two settings — the toolbar
+   * has no business knowing that the switch it obeys is really two.
+   */
+  measureMode: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -85,9 +88,9 @@ const MODE_HINTS: Record<InspectMode, string> = {
  */
 const MEASURE_HINT = " · 4 measure";
 
-function hintFor(mode: InspectMode, measureTools: boolean): string {
+function hintFor(mode: InspectMode, measureMode: boolean): string {
   const base = MODE_HINTS[mode];
-  return measureTools && mode !== "measure" ? base + MEASURE_HINT : base;
+  return measureMode && mode !== "measure" ? base + MEASURE_HINT : base;
 }
 
 export class Toolbar {
@@ -504,9 +507,9 @@ export class Toolbar {
     // The button exists from construction and is hidden rather than rebuilt: the mode
     // map is what `onModeChange` and the e2e locators both go through.
     const measureModeButton = this.modeButtons.get("measure");
-    if (measureModeButton) measureModeButton.style.display = state.measureTools ? "" : "none";
+    if (measureModeButton) measureModeButton.style.display = state.measureMode ? "" : "none";
 
-    this.modeHint = hintFor(state.mode, state.measureTools);
+    this.modeHint = hintFor(state.mode, state.measureMode);
     this.hintVisible = state.active;
     this.hintElement.style.display = state.active ? "block" : "none";
     if (this.hintOverride === null) this.hintElement.textContent = this.modeHint;

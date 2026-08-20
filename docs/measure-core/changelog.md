@@ -217,12 +217,38 @@ was unstyled the whole time. Nothing caught it: the e2e asserted the input's beh
 never its appearance, and I never looked at the card in a screenshot, only at the overlay.
 It is the second thing in this release that only a picture would have found.
 
+## Then the flag became three flags
+
+Asked for next: *Measure distances* should be its own row too. The group is now a master
+plus two indented children that only appear once it is on — `measureTools`,
+`measureDistances`, `showBoxModel`.
+
+I flagged the state this structure allows: master on, both children off, nothing happens.
+It was chosen anyway, which is a fair call — so the fix is a default rather than a
+constraint. **`measureDistances` defaults to `true`**, under a master that defaults to
+`false`. One click gets you the mode; a second, if you want it, gets you the bands. A
+master switch you turn on that changes nothing on screen is a broken switch, and nobody
+reads a tooltip to find out why.
+
+The two are genuinely independent underneath, which is the point of the split: you can
+read spacing on hover all day without a fourth mode button, and the e2e asserts exactly
+that — turning off just the mode removes its button and leaves the badge alone.
+
+`measureModeAvailable()` is the single place the two settings are combined. Every gate —
+the `4` key, `enforceMeasureSetting`, the toolbar state — asks it rather than re-spelling
+the `&&`, which is how one of them ends up disagreeing with the others. The toolbar is
+handed the computed answer as `ToolbarState.measureMode` and never learns that the switch
+it obeys is really two.
+
+Both states were checked against a screenshot of the real card this time, not only by
+assertion — the last two defects in this release were things only a picture showed.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **299/299** e2e and **9/9** upgrade, run locally with
+- `npm test` — **301/301** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 

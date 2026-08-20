@@ -327,6 +327,16 @@ const panelCallbacks = {
 };
 
 /**
+ * Whether mode 4 exists right now.
+ *
+ * Two settings, one answer, in one place — every gate below asks this rather than
+ * re-spelling the `&&`, which is how one of them ends up disagreeing with the others.
+ */
+function measureModeAvailable(): boolean {
+  return settings.measureTools && settings.measureDistances;
+}
+
+/**
  * Leave mode 4 if the setting that provides it has just been switched off.
  *
  * Without this the mode survives its own button: the toolbar hides the fourth icon, the
@@ -335,7 +345,7 @@ const panelCallbacks = {
  * popup in another tab.
  */
 function enforceMeasureSetting(): void {
-  if (settings.measureTools || mode !== "measure") return;
+  if (measureModeAvailable() || mode !== "measure") return;
   mode = "point";
   measureOverlay.hideAll();
   broadcastFrameState(active, mode);
@@ -348,7 +358,7 @@ function render(): void {
     frozen,
     panelOpen,
     settingsOpen: !!settingsCard,
-    measureTools: settings.measureTools,
+    measureMode: measureModeAvailable(),
     collapsed: settings.toolbarCollapsed,
     count: annotations.length,
     page,
@@ -1969,7 +1979,7 @@ function installTopFrame(): void {
       case "4":
         // A key for a mode whose button is not on the toolbar would be a key that does
         // nothing visible, which is worse than a key that does nothing.
-        if (!settings.measureTools) break;
+        if (!measureModeAvailable()) break;
         mode = "measure";
         resetMarquee();
         clearPicked();

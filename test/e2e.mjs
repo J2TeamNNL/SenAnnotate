@@ -624,13 +624,21 @@ async function main() {
     await measure.locator('.tool[aria-label^="Settings"]').click();
     await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
     check(
-      "the box-model row is hidden while measuring is off",
-      !(await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
+      "both dependent rows are hidden while measuring is off",
+      !(await measure.locator('.settings input[data-setting="measureDistances"]').isVisible()) &&
+        !(await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
     );
     await measure.locator('.settings input[data-setting="measureTools"]').click();
     check(
-      "switching measuring on reveals the box-model row",
-      await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible(),
+      "switching measuring on reveals both rows",
+      (await measure.locator('.settings input[data-setting="measureDistances"]').isVisible()) &&
+        (await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
+    );
+    // The master doing nothing on its own would be a broken switch, so the mode it is
+    // named after is on underneath it from the start.
+    check(
+      "the mode is on under the master rather than waiting for a second click",
+      await measure.locator('.settings input[data-setting="measureDistances"]').isChecked(),
     );
     await measure.keyboard.press("Escape");
     await measure.waitForTimeout(200);
@@ -842,9 +850,28 @@ async function main() {
       `badge read "${((await measure.locator(".measure-badge").textContent()) ?? "").trim()}"`,
     );
 
-    // Switching the whole feature off has to take the mode with it. Stand in mode 4
-    // first: the mode outliving its own button is the failure this guards.
+    // Turning off just the mode has to leave the box model alone — that is the whole
+    // point of them being two switches rather than one.
     await measure.locator('.tool[aria-label^="Measure distances"]').click();
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="measureDistances"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "turning off just the mode removes its button",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
+    );
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "but leaves the box model, which is the other switch",
+      await measure.locator(".measure-badge").isVisible(),
+    );
+
+    // Then the master, which has to take everything with it.
     await measure.locator('.tool[aria-label^="Settings"]').click();
     await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
     await measure.locator('.settings input[data-setting="measureTools"]').click();
@@ -852,11 +879,7 @@ async function main() {
     await measure.waitForTimeout(200);
 
     check(
-      "switching measuring off takes mode 4 off the toolbar",
-      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
-    );
-    check(
-      "switching measuring off drops you back to point mode",
+      "switching the master off drops you back to point mode",
       ((await measure.locator(".toolbar-hint").textContent()) ?? "").trim() ===
         "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
       `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,

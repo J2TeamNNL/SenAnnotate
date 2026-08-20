@@ -1355,6 +1355,15 @@ kbd {
   margin-top: 0;
 }
 
+/*
+ * A row that only exists while the row above it is on. Indented so the dependency is
+ * visible without a second label saying so — the group heading is already doing the
+ * naming, and a sub-heading for two switches would be more chrome than content.
+ */
+.setting-row--child {
+  padding-left: 16px;
+}
+
 .setting-row {
   display: flex;
   align-items: center;

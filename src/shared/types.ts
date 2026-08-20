@@ -401,6 +401,12 @@ export interface Settings {
    * not spend a clause advertising it to them.
    */
   measureTools: boolean;
+  /**
+   * Mode 4 itself. Only reachable when `measureTools`, and **on** by default under it —
+   * a master switch you turn on that changes nothing on screen is a broken switch, and
+   * the gap measurement is the headline the master is named after.
+   */
+  measureDistances: boolean;
   /** Draw the box model on the hover highlight. Only reachable when `measureTools`. */
   showBoxModel: boolean;
   /** Freeze animations automatically whenever inspect mode turns on. */
@@ -446,6 +452,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "auto",
   showMarkers: true,
   measureTools: false,
+  measureDistances: true,
   showBoxModel: false,
   freezeOnInspect: false,
   includeProps: true,

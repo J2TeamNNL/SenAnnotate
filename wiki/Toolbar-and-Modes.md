@@ -17,7 +17,7 @@ in the corner, next to the page they describe.
 | ⌖ | **Click an element** | Mode 1 — the default. | <kbd>1</kbd> |
 | T | **Select text** | Mode 2. | <kbd>2</kbd> |
 | ⛶ | **Drag across elements** | Mode 3 — the marquee. | <kbd>3</kbd> |
-| ⇔ | **Measure distances** | Mode 4 — the gap between two elements. **Only present when *Measuring tools* is switched on in Settings; off by default.** | <kbd>4</kbd> |
+| ⇔ | **Measure distances** | Mode 4 — the gap between two elements. **Only present when *Measuring tools* and *Measure distances* are both on in Settings; the master is off by default.** | <kbd>4</kbd> |
 | ❄ | **Freeze animations** | Parks `requestAnimationFrame` and `setTimeout` in the page. | <kbd>F</kbd> |
 | ☰ ③ | **Annotations** | Opens the panel. The badge is the count on this page. | <kbd>A</kbd> |
 | ⚙ | **Settings** | Opens the settings card. | — |
@@ -163,7 +163,8 @@ see [[Troubleshooting]].
 
 ## Mode 4 — measuring
 
-**Off by default.** Turn on *Measuring tools* in Settings first. Until you do, there is
+**Off by default.** Turn on *Measuring tools* in Settings first; *Measure distances*
+underneath it is already on, so that is the only click needed. Until you do, there is
 no fourth button, <kbd>4</kbd> does nothing, and the hint line does not mention it —
 three modes is already the most a row of icon-only buttons can explain, and most reviews
 never measure anything.
