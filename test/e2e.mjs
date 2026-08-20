@@ -122,7 +122,8 @@ async function main() {
   // Extensions require a persistent context, and a headed one: the old headless
   // shell does not load them.
   const context = await chromium.launchPersistentContext(profile, {
-    headless: false,
+    headless: true,
+    channel: "chromium",
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
 
