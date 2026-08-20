@@ -113,12 +113,53 @@ specified for `index.ts` from the start, and this repo's banner-comment density 
 doubles any line count guessed from the code alone. The criterion was measuring the right
 thing with the wrong number.
 
+## The overlay was half-finished, and only a user noticed
+
+Reported after the first tester build: the overlay showed the size and nothing else.
+Padding, border and margin were measured, drawn as shaded bands, and written into the
+report — and never labelled on screen. A box-model overlay whose bands carry no figures is
+half a feature, and no check caught it because every assertion had been written against
+the badge and the report, both of which were correct.
+
+Added: a figure on each band thick enough to hold one, and a readout under the badge
+carrying the two shorthands in full, the type, the colour the element is painted on, and
+`display`/`border-radius`.
+
+**The 14px threshold is the interesting part.** A number crammed into an 8px padding band
+is illegible and overflows into the content it describes, so thin bands stay unlabelled —
+which is precisely why the readout repeats both shorthands in full rather than only
+covering what the bands miss. The e2e asserts the pair together: `16` on the margin band,
+nothing on the 8px padding band, `padding 8px 12px` in the readout.
+
+**Backgrounds needed an ancestor walk, and the fixture hid that.** Almost nothing declares
+its own `background-color`, so a swatch reading the element alone says `transparent` on
+nearly everything — true and useless. `effectiveBackground` climbs until something is
+painted and marks the result `(inherited)`.
+
+The first assertion for it failed, and the code was right: the fixture never set a
+background on `body`, so the page genuinely painted nothing and the white on screen was
+the browser's canvas. `transparent` was the honest answer and the walk was never
+exercised. The fixture now declares `background: #ffffff` — the test was wrong, not the
+engine.
+
+Gradients and images report as `image` rather than being sampled. Reducing one to a swatch
+would be a guess, and sampling a pixel is the eyedropper's job in the next release.
+
+`readBoxModel` and `readStyleSummary` now share one `CSSStyleDeclaration` threaded in by
+the caller: reading a property off it is what forces the style recalculation, and this
+runs at pointermove frequency.
+
+**Known interaction, not fixed.** The margin band is a fixed orange and the default accent
+is also orange, so the band and the hover highlight sit close in hue — legible, but less
+crisp than under another accent. Re-colouring the bands to dodge one accent would break
+their pairing with the readout dots, which is what makes that panel readable at all.
+
 ## Verification
 
-- `node test/measure.mjs` — 31 checks. New file; also wired into `npm test` ahead of the
+- `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **287/287** e2e and **9/9** upgrade, run locally with
+- `npm test` — **292/292** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 

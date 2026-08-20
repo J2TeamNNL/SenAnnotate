@@ -83,7 +83,7 @@ import {
   type MarqueeHits,
 } from "./ui/marquee";
 import { Overlay } from "./ui/overlay";
-import { measureGap, readBoxModel } from "./measure";
+import { measureGap, readBoxModel, readStyleSummary } from "./measure";
 import { Panel } from "./ui/panel";
 import { MeasureCard } from "./ui/measure-card";
 import { MeasureOverlay } from "./ui/measure-overlay";
@@ -631,8 +631,11 @@ function drawMeasure(element: Element): void {
     return;
   }
 
+  // One declaration shared by both readers: reading a property off it is what forces
+  // the style recalculation, and this runs at pointermove frequency.
+  const style = getComputedStyle(element);
   const rect = element.getBoundingClientRect();
-  measureOverlay.showBox(rect, readBoxModel(element));
+  measureOverlay.showBox(rect, readBoxModel(element, style), readStyleSummary(element, style));
 
   const anchor = measureOverlay.anchor;
   if (!anchor || anchor === element) {

@@ -12,7 +12,13 @@
          so a fixture that says nothing is silently testing one mode on the buttons and
          the other on the paragraph. Declared here, the numbers below ARE the border box.
          `border: 0` for the same reason — the UA gives buttons one. */
-      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; height: 700px; position: relative; }
+      /* `background` is declared, and that is load-bearing: without it the page paints
+         nothing and the white you see is the browser's canvas, not a background. The
+         ancestor walk would correctly answer `transparent` and never be exercised. */
+      body {
+        margin: 0; font: 14px/1.4 system-ui, sans-serif; height: 700px; position: relative;
+        background: #ffffff;
+      }
 
       /* 320 border box - 12 padding either side = 296 content; 48 - 8 - 8 = 32 high. */
       #save {

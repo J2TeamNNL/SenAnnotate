@@ -52,7 +52,7 @@ function rect(left, top, width, height) {
   return { left, top, width, height, right: left + width, bottom: top + height };
 }
 
-const { roundPx, measureGap } = await load("src/content/measure.ts", "measure.mjs");
+const { roundPx, measureGap, toHex } = await load("src/content/measure.ts", "measure.mjs");
 
 // --- roundPx -----------------------------------------------------------------
 check("roundPx trims trailing zeros", roundPx(24.0) === 24, String(roundPx(24.0)));
@@ -194,6 +194,14 @@ check(
 const compact = reportWith("compact");
 check("compact appends the gap to the bullet", compact.includes("\u00b7 gap 24\u00d70px"), compact.slice(0, 300));
 check("compact prints no measurement block", !compact.includes("**Gap:**"), "");
+
+// --- toHex ---------------------------------------------------------------------
+check("opaque rgb becomes six-digit hex", toHex("rgb(37, 99, 235)") === "#2563eb", toHex("rgb(37, 99, 235)"));
+check("white round-trips", toHex("rgb(255, 255, 255)") === "#ffffff", toHex("rgb(255, 255, 255)"));
+check("alpha 1 is not spelled out", toHex("rgba(0, 0, 0, 1)") === "#000000", toHex("rgba(0, 0, 0, 1)"));
+check("partial alpha becomes eight digits", toHex("rgba(0, 0, 0, 0.5)") === "#00000080", toHex("rgba(0, 0, 0, 0.5)"));
+check("fully transparent is named, not hexed", toHex("rgba(0, 0, 0, 0)") === "transparent", toHex("rgba(0, 0, 0, 0)"));
+check("an unparseable colour is passed through", toHex("color(srgb 1 0 0)") === "color(srgb 1 0 0)", toHex("color(srgb 1 0 0)"));
 
 console.log(failures ? `\n${failures} failed` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

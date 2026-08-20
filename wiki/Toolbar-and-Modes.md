@@ -178,6 +178,22 @@ things?* Hover reads, click writes — the same contract as mode 1.
 
 <kbd>Esc</kbd> drops the anchor without leaving the mode.
 
+### What the overlay tells you
+
+| On screen | Says |
+|---|---|
+| The badge, e.g. `320×48` | Border box as painted |
+| A figure on a shaded band | That band's thickness — only where the band is at least 14px, or the number would not be legible |
+| The readout under the badge | `padding` and `margin` in full, each with a dot matching its band's colour, then the type, then the colour the element is painted on, then `display` and `border-radius` |
+
+The colour line resolves what is **actually** behind the element. Most elements declare no
+background of their own, so it walks up until it finds one and marks the result
+`(inherited)`. Where a gradient or an image is painted it says `image` rather than
+inventing a swatch — one colour cannot honestly stand for one.
+
+None of this goes into the report; the report already carries the same ground in
+`**Box:**` and `**Computed styles:**`. See [[The Report]].
+
 The report gets `**Measured to:**`, `**Gap:**` and — from *Detailed* — `**Edges:**` and
 `**Box:**`. See [[The Report]] for the exact lines.
 

@@ -539,6 +539,66 @@ button {
   background: transparent;
 }
 
+/*
+ * A figure written on the band it measures. Only drawn on bands thick enough to hold
+ * it — see `LABEL_MIN_THICKNESS`; the readout below carries the rest.
+ */
+.measure-band-label {
+  position: fixed;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  color: #0b3b2e;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--sa-mono);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/*
+ * The properties the bands cannot say. Deliberately six short rows rather than a
+ * scrollable computed-style table: this sits over someone else's page, and a panel
+ * large enough to need scrolling is a panel that has stopped being an overlay.
+ */
+.measure-readout {
+  position: fixed;
+  pointer-events: none;
+  display: grid;
+  gap: 1px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  background: var(--sa-bg);
+  color: var(--sa-fg);
+  border: 1px solid var(--sa-border);
+  box-shadow: var(--sa-shadow);
+  font-size: 10px;
+  font-family: var(--sa-mono);
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.measure-readout__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Ties a row to the band it describes — the only reason those two colours are fixed. */
+.measure-readout__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.measure-readout__dot--padding {
+  background: rgba(16, 185, 129, 0.9);
+}
+
+.measure-readout__dot--margin {
+  background: rgba(249, 115, 22, 0.9);
+}
+
 .measure-line {
   position: fixed;
   pointer-events: none;

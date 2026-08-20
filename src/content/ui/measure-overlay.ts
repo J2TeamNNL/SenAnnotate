@@ -15,7 +15,7 @@
 // Every node is created once, in the constructor, and moved by style writes afterwards.
 // =============================================================================
 
-import type { BoxModel, GapGeometry, Sides } from "../../shared/types";
+import type { BoxModel, GapGeometry, Sides, StyleSummary } from "../../shared/types";
 import { h } from "./dom";
 
 /** Viewport-space box. `DOMRect` satisfies it structurally. */
@@ -30,6 +30,16 @@ interface Box {
 
 /** Four strips make a band; the middle is left alone so the content stays readable. */
 type Strips = [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
+
+/**
+ * How thick a strip has to be before a number is drawn inside it.
+ *
+ * A figure crammed into an 8px band is illegible and, worse, overflows into the content
+ * it is describing. Thin bands are not left unlabelled though — the readout carries the
+ * full `padding` and `margin` shorthands regardless, which is the other half of why
+ * that panel exists.
+ */
+const LABEL_MIN_THICKNESS = 14;
 
 function strips(layer: HTMLElement, variant: "padding" | "margin"): Strips {
   const one = () =>
@@ -69,6 +79,8 @@ export class MeasureOverlay {
   private readonly padding: Strips;
   private readonly margin: Strips;
   private readonly badge: HTMLElement;
+  private readonly bandLabels: HTMLElement[] = [];
+  private readonly readout: HTMLElement;
   private readonly anchorBox: HTMLElement;
   private readonly lineH: HTMLElement;
   private readonly lineV: HTMLElement;
@@ -85,12 +97,26 @@ export class MeasureOverlay {
 
     this.anchorBox = h("div", { class: "measure-anchor", style: { display: "none" } });
     this.badge = h("div", { class: "measure-badge", style: { display: "none" } });
+    // Eight: four padding strips and four margin strips, in that order.
+    for (let index = 0; index < 8; index++) {
+      this.bandLabels.push(h("div", { class: "measure-band-label", style: { display: "none" } }));
+    }
+    this.readout = h("div", { class: "measure-readout", style: { display: "none" } });
     this.lineH = h("div", { class: "measure-line", style: { display: "none" } });
     this.lineV = h("div", { class: "measure-line measure-line--v", style: { display: "none" } });
     this.labelH = h("div", { class: "measure-label", style: { display: "none" } });
     this.labelV = h("div", { class: "measure-label", style: { display: "none" } });
 
-    layer.append(this.anchorBox, this.badge, this.lineH, this.lineV, this.labelH, this.labelV);
+    layer.append(
+      this.anchorBox,
+      this.badge,
+      ...this.bandLabels,
+      this.readout,
+      this.lineH,
+      this.lineV,
+      this.labelH,
+      this.labelV,
+    );
   }
 
   get anchor(): Element | null {
@@ -121,9 +147,11 @@ export class MeasureOverlay {
   // Box model
   // ---------------------------------------------------------------------------
 
-  showBox(rect: Box, box: BoxModel): void {
-    this.paintBand(this.margin, rect, box.margin, "outside");
-    this.paintBand(this.padding, this.paddingBox(rect, box.border), box.padding, "inside");
+  showBox(rect: Box, box: BoxModel, style: StyleSummary): void {
+    this.paintBand(this.margin, rect, box.margin, "outside", 4);
+    this.paintBand(this.padding, this.paddingBox(rect, box.border), box.padding, "inside", 0);
+
+    this.paintReadout(rect, box, style);
 
     this.badge.style.display = "block";
     this.badge.textContent = box.scaled
@@ -137,7 +165,53 @@ export class MeasureOverlay {
   }
 
   hideBox(): void {
-    hide(...this.margin, ...this.padding, this.badge);
+    hide(...this.margin, ...this.padding, ...this.bandLabels, this.badge, this.readout);
+  }
+
+  /**
+   * Everything the bands cannot say: the shorthands in full, the type, and the colour
+   * the element is actually painted on.
+   *
+   * Sits under the badge, and flips above the element when there is no room — the same
+   * "prefer, flip" the highlight label already does, for the same reason.
+   */
+  private paintReadout(rect: Box, box: BoxModel, style: StyleSummary): void {
+    const rows: { dot?: "padding" | "margin"; text: string }[] = [];
+
+    const any = (sides: Sides) => sides.top || sides.right || sides.bottom || sides.left;
+    if (any(box.padding)) rows.push({ dot: "padding", text: `padding ${shorthand(box.padding)}` });
+    if (any(box.margin)) rows.push({ dot: "margin", text: `margin ${shorthand(box.margin)}` });
+    if (any(box.border)) rows.push({ text: `border ${shorthand(box.border)}` });
+
+    const line = style.lineHeight === "normal" ? "" : `/${style.lineHeight}`;
+    rows.push({ text: `${style.fontSize}${line} ${style.fontFamily} ${style.fontWeight}` });
+
+    const on = style.backgroundIsImage
+      ? "image"
+      : style.backgroundInherited
+        ? `${style.background} (inherited)`
+        : style.background;
+    rows.push({ text: `${style.color} on ${on}` });
+
+    const shape = [style.display, style.radius && `radius ${style.radius}`].filter(Boolean);
+    rows.push({ text: shape.join(" · ") });
+
+    this.readout.replaceChildren(
+      ...rows.map((row) =>
+        h(
+          "div",
+          { class: "measure-readout__row" },
+          row.dot ? h("span", { class: `measure-readout__dot measure-readout__dot--${row.dot}` }) : null,
+          h("span", { text: row.text }),
+        ),
+      ),
+    );
+
+    this.readout.style.display = "block";
+    this.readout.style.left = `${Math.max(0, rect.left)}px`;
+    // Below the badge, which is itself below the box — unless neither fits.
+    const below = rect.bottom + 24;
+    this.readout.style.top = `${below + 76 < window.innerHeight ? below : Math.max(0, rect.top - 96)}px`;
   }
 
   /** The border box shrunk by its own borders — where padding actually starts. */
@@ -149,7 +223,13 @@ export class MeasureOverlay {
     return { left, top, width, height, right: left + width, bottom: top + height };
   }
 
-  private paintBand(band: Strips, rect: Box, sides: Sides, side: "inside" | "outside"): void {
+  private paintBand(
+    band: Strips,
+    rect: Box,
+    sides: Sides,
+    side: "inside" | "outside",
+    labelOffset: number,
+  ): void {
     const [top, right, bottom, left] = band;
     const outside = side === "outside";
 
@@ -174,6 +254,25 @@ export class MeasureOverlay {
       sides.right,
       rect.height,
     );
+
+    // A strip that is drawn and thick enough gets its figure written on it. The offset
+    // separates the padding pool from the margin pool in the shared label array.
+    const thickness = [sides.top, sides.right, sides.bottom, sides.left];
+    band.forEach((strip, index) => {
+      const label = this.bandLabels[labelOffset + index];
+      if (strip.style.display === "none" || thickness[index] < LABEL_MIN_THICKNESS) {
+        label.style.display = "none";
+        return;
+      }
+      const box = {
+        left: Number.parseFloat(strip.style.left),
+        top: Number.parseFloat(strip.style.top),
+        width: Number.parseFloat(strip.style.width),
+        height: Number.parseFloat(strip.style.height),
+      };
+      this.label(label, String(thickness[index]), box.left + box.width / 2, box.top + box.height / 2);
+      label.className = "measure-band-label";
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -239,4 +338,13 @@ export class MeasureOverlay {
     element.style.left = `${x}px`;
     element.style.top = `${y}px`;
   }
+}
+
+/** `8px 12px`, collapsed the way a stylesheet would write it. */
+function shorthand(sides: Sides): string {
+  const unit = (value: number) => (value === 0 ? "0" : `${value}px`);
+  const { top, right, bottom, left } = sides;
+  if (top === right && right === bottom && bottom === left) return unit(top);
+  if (top === bottom && left === right) return `${unit(top)} ${unit(right)}`;
+  return `${unit(top)} ${unit(right)} ${unit(bottom)} ${unit(left)}`;
 }

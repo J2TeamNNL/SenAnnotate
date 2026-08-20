@@ -129,6 +129,31 @@ export interface Measurements {
   gap?: GapMeasurement;
 }
 
+/**
+ * The handful of computed properties worth reading *on the page*, as opposed to in the
+ * report. Overlay-only by design: `Annotation.computedStyles` already carries this
+ * ground for the report, and printing both would say everything twice.
+ */
+export interface StyleSummary {
+  fontSize: string;
+  /** Computed, so `normal` or a px value — never the ratio the stylesheet wrote. */
+  lineHeight: string;
+  /** First family only; a whole stack is unreadable at this size. */
+  fontFamily: string;
+  fontWeight: string;
+  /** `#rrggbb`, or `#rrggbbaa` when it is not opaque. */
+  color: string;
+  /** The first non-transparent background found walking up from the element. */
+  background: string;
+  /** The background came from an ancestor, not from the element itself. */
+  backgroundInherited: boolean;
+  /** Set when a gradient or image is painted, which no single swatch can honestly show. */
+  backgroundIsImage: boolean;
+  display: string;
+  /** Empty when the corners are square. */
+  radius: string;
+}
+
 // -----------------------------------------------------------------------------
 // Framework detection results
 // -----------------------------------------------------------------------------

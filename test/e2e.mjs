@@ -641,6 +641,33 @@ async function main() {
     );
     check("hovering alone creates no annotation", (await measure.locator(".marker").count()) === 0);
 
+    // The readout is the half of the box model the bands cannot say. Padding of 8px is
+    // too thin to hold a legible figure, so it is deliberately NOT labelled on the band
+    // — which is exactly why these two checks are a pair.
+    check(
+      "only bands thick enough to read are labelled",
+      (await measure.locator(".measure-band-label:visible").allTextContents()).join(",") === "16",
+      JSON.stringify(await measure.locator(".measure-band-label:visible").allTextContents()),
+    );
+    const readout = (await measure.locator(".measure-readout__row").allTextContents()).map((r) =>
+      r.trim(),
+    );
+    check(
+      "the readout carries both shorthands in full",
+      readout.includes("padding 8px 12px") && readout.includes("margin 0 0 16px 0"),
+      JSON.stringify(readout),
+    );
+    check(
+      "the readout names the type",
+      readout.some((row) => row.includes("system-ui")),
+      JSON.stringify(readout),
+    );
+    check(
+      "the readout resolves the colour it is painted on",
+      readout.includes("#ffffff on #2563eb"),
+      JSON.stringify(readout),
+    );
+
     // The other half of the pair. `getComputedStyle().width` reports the content box
     // here and the border box on the button above, so an engine that trusts it gets
     // exactly one of these two wrong — which is what it did before this check existed.
@@ -651,6 +678,13 @@ async function main() {
       "a content-box element measures its border box too",
       ((await badge.textContent()) ?? "").trim() === "340\u00d732",
       `badge read "${((await badge.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "an element with no background of its own walks up to the one that is painted",
+      (await measure.locator(".measure-readout__row").allTextContents()).some((row) =>
+        row.includes("#000000 on #ffffff (inherited)"),
+      ),
+      JSON.stringify(await measure.locator(".measure-readout__row").allTextContents()),
     );
     await measure.mouse.move(...middleOf(save));
     await measure.waitForTimeout(50);
