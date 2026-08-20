@@ -475,6 +475,34 @@ button {
  * through. See `docs/measure-core/context.md`.
  * ------------------------------------------------------------------------- */
 
+/*
+ * Placed like the settings card, and by the same rules — see `.settings` above. The
+ * `[data-anchored]` release and the `data-inspecting` lift are both mirrored, because a
+ * second card that sits 32px differently from the first reads as a bug in whichever one
+ * you noticed second.
+ */
+.measure-card {
+  bottom: 72px;
+  right: 20px;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  animation: vt-rise 0.16s ease;
+}
+
+.toolbar-dock[data-inspecting="true"] ~ .measure-card {
+  bottom: 104px;
+}
+
+.toolbar-dock[data-floating="true"] ~ .measure-card[data-anchored="true"] {
+  bottom: auto;
+  right: auto;
+}
+
+.measure-card[data-leaving="true"] {
+  animation: vt-fall 0.14s ease forwards;
+  pointer-events: none;
+}
+
 .measure-band {
   position: fixed;
   pointer-events: none;

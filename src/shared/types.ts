@@ -30,7 +30,7 @@ export type ThemePreference = "auto" | "light" | "dark";
 export type ScreenshotDelivery = "path" | "embed";
 
 /** What a click means while inspect mode is on. */
-export type InspectMode = "point" | "text" | "area";
+export type InspectMode = "point" | "text" | "area" | "measure";
 
 // -----------------------------------------------------------------------------
 // Triage

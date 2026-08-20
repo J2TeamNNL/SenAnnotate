@@ -463,21 +463,21 @@ async function main() {
     check(
       "the hint names the default mode and the keys for the others",
       ((await hint.textContent())?.trim() ?? "") ===
-        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
     await marquee.locator('.tool[aria-label^="Select text"]').click();
     check(
       "the hint follows the mode",
-      ((await hint.textContent())?.trim() ?? "") === "Select text · 1 point · 3 area",
+      ((await hint.textContent())?.trim() ?? "") === "Select text · 1 point · 3 area · 4 measure",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
     await marquee.locator('.tool[aria-label^="Drag"]').click();
     check(
       "the hint says the drag mode is a drag",
-      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text",
+      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text · 4 measure",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -591,7 +591,7 @@ async function main() {
 
     check(
       "the hint returns to the mode line after a drag",
-      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text",
+      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text · 4 measure",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -607,7 +607,7 @@ async function main() {
     check(
       "the point hint advertises the modifier drag",
       ((await hint.textContent())?.trim() ?? "") ===
-        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -763,7 +763,7 @@ async function main() {
     check(
       "Escape drops the set and stays in inspect mode",
       (await pickHint()) ===
-        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area" &&
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure" &&
         (await pick.locator(".highlight--preview").count()) === 0 &&
         (await pick.locator(".tool--brand").getAttribute("aria-pressed")) === "true",
       `hint read "${await pickHint()}", ${await pick.locator(".highlight--preview").count()} boxes`,

@@ -12,6 +12,8 @@ export interface ToolbarState {
   frozen: boolean;
   panelOpen: boolean;
   settingsOpen: boolean;
+  /** The Measure card is open. */
+  measureOpen: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -24,6 +26,7 @@ export interface ToolbarCallbacks {
   onToggleFreeze(): void;
   onTogglePanel(): void;
   onToggleSettings(): void;
+  onToggleMeasure(): void;
   onToggleCollapse(): void;
   /** Fired once, on drop — not per frame. The drag itself needs no persistence. */
   onMove(position: { x: number; y: number }): void;
@@ -58,6 +61,7 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
   { mode: "point", iconName: "cursor", title: "Click an element (1)" },
   { mode: "text", iconName: "text", title: "Select text (2)" },
   { mode: "area", iconName: "marquee", title: "Drag across elements (3)" },
+  { mode: "measure", iconName: "arrows", title: "Measure distances (4)" },
 ];
 
 /**
@@ -66,9 +70,11 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
  * mode exists — which is exactly how mode `area` went unused for three releases.
  */
 const MODE_HINTS: Record<InspectMode, string> = {
-  point: "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
-  text: "Select text · 1 point · 3 area",
-  area: "Drag across elements · 1 point · 2 text",
+  point:
+    "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
+  text: "Select text · 1 point · 3 area · 4 measure",
+  area: "Drag across elements · 1 point · 2 text · 4 measure",
+  measure: "Click two elements · C captures the pair · Esc clears · 1 point · 2 text · 3 area",
 };
 
 export class Toolbar {
@@ -79,6 +85,7 @@ export class Toolbar {
   private readonly modeButtons = new Map<InspectMode, HTMLButtonElement>();
   private readonly modeGroup: HTMLElement;
   private readonly freezeButton: HTMLButtonElement;
+  private readonly measureButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
@@ -157,6 +164,16 @@ export class Toolbar {
       icon("snowflake"),
     );
 
+    this.measureButton = h(
+      "button",
+      {
+        class: "tool tool--measure",
+        attrs: { "aria-label": "Measure tools", "aria-pressed": "false" },
+        on: { click: () => callbacks.onToggleMeasure() },
+      },
+      icon("ruler"),
+    );
+
     this.countBadge = h("span", { class: "count", text: "0", style: { display: "none" } });
     this.panelButton = h(
       "button",
@@ -213,6 +230,7 @@ export class Toolbar {
       this.modeGroup,
       h("span", { class: "divider" }),
       this.freezeButton,
+      this.measureButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -231,6 +249,7 @@ export class Toolbar {
       this.brandButton,
       ...this.modeButtons.values(),
       this.freezeButton,
+      this.measureButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -494,6 +513,7 @@ export class Toolbar {
     this.freezeButton.setAttribute("aria-pressed", String(state.frozen));
     this.panelButton.setAttribute("aria-pressed", String(state.panelOpen));
     this.settingsButton.setAttribute("aria-pressed", String(state.settingsOpen));
+    this.measureButton.setAttribute("aria-pressed", String(state.measureOpen));
 
     this.countBadge.textContent = String(state.count);
     this.countBadge.style.display = state.count > 0 ? "inline-flex" : "none";
