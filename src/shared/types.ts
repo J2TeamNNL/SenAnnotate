@@ -77,6 +77,59 @@ export interface Rect {
 }
 
 // -----------------------------------------------------------------------------
+// Measurements
+// -----------------------------------------------------------------------------
+//
+// All figures are **layout pixels**, not on-screen pixels. `getComputedStyle` reports
+// the pre-transform box while `getBoundingClientRect` reports the post-transform one,
+// and mixing the two gives a badge whose width and padding describe different
+// coordinate spaces. Everything here is the former, and `BoxModel.scaled` is set when
+// the two disagree so a reader knows the element is not drawn at these numbers.
+
+export interface Sides {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface BoxModel {
+  /** Border box: content + padding + border. */
+  width: number;
+  height: number;
+  content: { width: number; height: number };
+  padding: Sides;
+  border: Sides;
+  margin: Sides;
+  /** The rendered rect differs from the layout box — a transform or a zoom is in play. */
+  scaled: boolean;
+}
+
+export type Containment = "none" | "b-inside-a" | "a-inside-b";
+
+/** Pure geometry between two rects, with no idea what either element is. */
+export interface GapGeometry {
+  /** Empty space on each axis. Positive apart, negative overlapping, 0 touching. */
+  gap: { x: number; y: number };
+  /** B's edge minus A's edge. 0 means aligned. */
+  edges: Sides;
+  /** B's centre minus A's centre. */
+  center: { x: number; y: number };
+  containment: Containment;
+}
+
+export interface GapMeasurement extends GapGeometry {
+  /** Human-readable name of the second element, e.g. `button "Cancel"`. */
+  toElement: string;
+  toSelector: string;
+}
+
+export interface Measurements {
+  box?: BoxModel;
+  gap?: GapMeasurement;
+}
+
+// -----------------------------------------------------------------------------
 // Framework detection results
 // -----------------------------------------------------------------------------
 //
@@ -259,6 +312,14 @@ export interface Annotation {
   elementBoundingBoxes?: Rect[];
   isMultiSelect?: boolean;
 
+  /**
+   * Figures the reviewer deliberately took. Absent on every annotation made outside
+   * `measure` mode and on every one written before this feature — the same optional-field
+   * treatment `framework` and `frame` get, for the same reason: these are per-review
+   * scratch data and no migration is worth carrying.
+   */
+  measurements?: Measurements;
+
   selectedText?: string;
   nearbyText?: string;
   nearbyElements?: string;
@@ -306,6 +367,8 @@ export interface Settings {
   theme: ThemePreference;
   /** Show the numbered pins on the page. */
   showMarkers: boolean;
+  /** Draw the box model on the hover highlight. Off: it is a second thing to read. */
+  showBoxModel: boolean;
   /** Freeze animations automatically whenever inspect mode turns on. */
   freezeOnInspect: boolean;
   /** Include the owner component's props in the report. */
@@ -348,6 +411,7 @@ export const DEFAULT_SETTINGS: Settings = {
   componentMode: "filtered",
   theme: "auto",
   showMarkers: true,
+  showBoxModel: false,
   freezeOnInspect: false,
   includeProps: true,
   maxComponents: 6,

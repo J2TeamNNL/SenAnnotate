@@ -114,13 +114,14 @@ export interface Measurements {
 }
 ```
 
-Then three edits elsewhere in the same file:
+Then two edits elsewhere in the same file. **`InspectMode` is deliberately not one of
+them** — widening it here fails `tsc` immediately, because `MODE_HINTS` in
+`toolbar.ts` is a `Record<InspectMode, string>` and would be missing a key. It is
+widened in Task 4, in the same commit as the hint that fills the gap, so that every
+commit on the branch typechecks on its own.
 
 ```ts
-// 1. InspectMode — the mode group renders in this order.
-export type InspectMode = "point" | "text" | "area" | "measure";
-
-// 2. Annotation — put it directly under `elementBoundingBoxes` / `isMultiSelect`.
+// 1. Annotation — put it directly under `elementBoundingBoxes` / `isMultiSelect`.
   /**
    * Figures the reviewer deliberately took. Absent on every annotation made outside
    * `measure` mode and on every one written before 0.9.0 — the same optional-field
@@ -129,7 +130,7 @@ export type InspectMode = "point" | "text" | "area" | "measure";
    */
   measurements?: Measurements;
 
-// 3. Settings — plus the DEFAULT_SETTINGS entry.
+// 2. Settings — plus the DEFAULT_SETTINGS entry.
   /** Draw the box model on the hover highlight. Off: it is a second thing to read. */
   showBoxModel: boolean;
 ```
@@ -1083,6 +1084,13 @@ In `src/content/ui/dom.ts`, inside `PATHS`:
 ```
 
 - [ ] **Step 2: Update the toolbar**
+
+First widen the mode union in `src/shared/types.ts` — held back from Task 1 so that
+this commit and the hint it needs land together:
+
+```ts
+export type InspectMode = "point" | "text" | "area" | "measure";
+```
 
 `MODES` gains a fourth entry — the array order is the render order:
 
