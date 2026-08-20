@@ -465,6 +465,186 @@ button {
   background: color-mix(in srgb, var(--sa-accent) 12%, transparent);
 }
 
+/* ---------------------------------------------------------------------------
+ * Measurement overlay
+ *
+ * The band colours are the one place in this UI that does NOT derive from
+ * `--sa-accent`. The padding band and the margin band have to be distinguishable
+ * from each other, and two shades derived from an arbitrary colour the user picked
+ * cannot guarantee that. Fixed green and orange, translucent enough to read the page
+ * through. See `docs/measure-core/context.md`.
+ * ------------------------------------------------------------------------- */
+
+.measure-band {
+  position: fixed;
+  pointer-events: none;
+}
+
+.measure-band--padding {
+  background: rgba(16, 185, 129, 0.28);
+}
+
+.measure-band--margin {
+  background: rgba(249, 115, 22, 0.24);
+}
+
+/*
+ * The boundary lines between the three regions.
+ *
+ * Three regions meet at two lines: margin ends where the border box begins, and padding
+ * ends where the content begins. The border box already has one — the hover highlight's
+ * accent border — so only these two were missing, and without them a shaded band over a
+ * page with its own strong background is a tint with no edge.
+ *
+ * `box-sizing: border-box` so the element occupies exactly the rect it is handed and the
+ * line lands ON the boundary rather than a pixel outside it. Dashed, and at a far higher
+ * alpha than the fills, because surviving a coloured page is the entire job.
+ */
+.measure-edge {
+  position: fixed;
+  pointer-events: none;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.measure-edge--content {
+  border: 1px dashed rgba(4, 120, 87, 0.95);
+}
+
+.measure-edge--margin {
+  border: 1px dashed rgba(194, 65, 12, 0.9);
+}
+
+.measure-badge {
+  position: fixed;
+  pointer-events: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--sa-accent);
+  color: var(--sa-accent-ink);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--sa-mono);
+  white-space: nowrap;
+}
+
+/* The element a gap is measured from. Solid where the live hover is translucent, so the
+   two are never mistaken for each other mid-measurement. */
+.measure-anchor {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid var(--sa-accent);
+  border-radius: 3px;
+  background: transparent;
+}
+
+/*
+ * A figure written on the band it measures. Only drawn on bands thick enough to hold
+ * it — see `LABEL_MIN_THICKNESS`; the readout below carries the rest.
+ */
+.measure-band-label {
+  position: fixed;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  color: #0b3b2e;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--sa-mono);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/*
+ * The properties the bands cannot say. Deliberately six short rows rather than a
+ * scrollable computed-style table: this sits over someone else's page, and a panel
+ * large enough to need scrolling is a panel that has stopped being an overlay.
+ */
+.measure-readout {
+  position: fixed;
+  pointer-events: none;
+  display: grid;
+  gap: 1px;
+  padding: 5px 7px;
+  border-radius: 5px;
+  /* Solid, not `--sa-bg`: this panel lands on top of whatever the page is showing, and
+     a translucent one lets the page text through the figures it is there to make
+     readable. Same variable every real card uses. */
+  background: var(--sa-bg-solid);
+  color: var(--sa-fg);
+  border: 1px solid var(--sa-border);
+  box-shadow: var(--sa-shadow);
+  font-size: 10px;
+  font-family: var(--sa-mono);
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.measure-readout__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Ties a row to the band it describes — the only reason those two colours are fixed. */
+/*
+ * Fixed widths, so the four side cells line up between the padding row and the margin
+ * row. Without that the eye has to re-find the columns on every row, which is most of
+ * what makes a shorthand hard to read in the first place.
+ */
+.measure-readout__key {
+  min-width: 48px;
+}
+
+.measure-readout__side {
+  min-width: 34px;
+}
+
+/*
+ * This side's figure is already drawn on its band, on the page. Dimming it is the point
+ * of the row: what stays at full weight is exactly what the page could not tell you.
+ */
+.measure-readout__side--drawn {
+  opacity: 0.4;
+}
+
+.measure-readout__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.measure-readout__dot--padding {
+  background: rgba(16, 185, 129, 0.9);
+}
+
+.measure-readout__dot--margin {
+  background: rgba(249, 115, 22, 0.9);
+}
+
+.measure-line {
+  position: fixed;
+  pointer-events: none;
+  background: var(--sa-accent);
+}
+
+.measure-label {
+  position: fixed;
+  pointer-events: none;
+  /* Centred on its point without a layout read — the alternative is measuring
+     offsetWidth on every pointermove. */
+  transform: translate(-50%, -50%);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--sa-accent);
+  color: var(--sa-accent-ink);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--sa-mono);
+  line-height: 15px;
+  white-space: nowrap;
+}
+
 /* ==========================================================================
    Markers
    ========================================================================== */
@@ -1236,6 +1416,15 @@ kbd {
 
 .settings__group:first-child {
   margin-top: 0;
+}
+
+/*
+ * A row that only exists while the row above it is on. Indented so the dependency is
+ * visible without a second label saying so — the group heading is already doing the
+ * naming, and a sub-heading for two switches would be more chrome than content.
+ */
+.setting-row--child {
+  padding-left: 16px;
 }
 
 .setting-row {

@@ -12,6 +12,11 @@ export interface ToolbarState {
   frozen: boolean;
   panelOpen: boolean;
   settingsOpen: boolean;
+  /**
+   * Whether mode 4 exists at all. Computed by the caller from two settings — the toolbar
+   * has no business knowing that the switch it obeys is really two.
+   */
+  measureMode: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -58,6 +63,7 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
   { mode: "point", iconName: "cursor", title: "Click an element (1)" },
   { mode: "text", iconName: "text", title: "Select text (2)" },
   { mode: "area", iconName: "marquee", title: "Drag across elements (3)" },
+  { mode: "measure", iconName: "arrows", title: "Measure distances (4)" },
 ];
 
 /**
@@ -69,7 +75,23 @@ const MODE_HINTS: Record<InspectMode, string> = {
   point: "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
   text: "Select text · 1 point · 3 area",
   area: "Drag across elements · 1 point · 2 text",
+  measure: "Click two elements · C captures the pair · Esc clears · 1 point · 2 text · 3 area",
 };
+
+/**
+ * Appended only when the measuring tools are switched on.
+ *
+ * The hint line is the only thing on screen that says a mode exists, so advertising a
+ * fourth one to someone who has not enabled it would be advertising a key that does
+ * nothing. With the setting off, all three hints read exactly as they did before
+ * measuring existed.
+ */
+const MEASURE_HINT = " · 4 measure";
+
+function hintFor(mode: InspectMode, measureMode: boolean): string {
+  const base = MODE_HINTS[mode];
+  return measureMode && mode !== "measure" ? base + MEASURE_HINT : base;
+}
 
 export class Toolbar {
   readonly element: HTMLElement;
@@ -482,7 +504,12 @@ export class Toolbar {
     this.brandLabel.textContent = state.active ? "Inspecting" : "Inspect";
     this.modeGroup.style.display = state.active ? "flex" : "none";
 
-    this.modeHint = MODE_HINTS[state.mode];
+    // The button exists from construction and is hidden rather than rebuilt: the mode
+    // map is what `onModeChange` and the e2e locators both go through.
+    const measureModeButton = this.modeButtons.get("measure");
+    if (measureModeButton) measureModeButton.style.display = state.measureMode ? "" : "none";
+
+    this.modeHint = hintFor(state.mode, state.measureMode);
     this.hintVisible = state.active;
     this.hintElement.style.display = state.active ? "block" : "none";
     if (this.hintOverride === null) this.hintElement.textContent = this.modeHint;

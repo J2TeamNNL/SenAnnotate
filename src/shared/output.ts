@@ -22,9 +22,12 @@ import {
   kindOf,
   type ActionEntry,
   type Annotation,
+  type BoxModel,
   type Diagnostics,
+  type Measurements,
   type OutputDetailLevel,
   type PageFrameworkInfo,
+  type Sides,
   type SourceRef,
 } from "./types";
 
@@ -70,6 +73,119 @@ function formatBox(annotation: Annotation): string {
   if (!box) return "";
   const round = Math.round;
   return `x:${round(box.x)}, y:${round(box.y)} (${round(box.width)}×${round(box.height)}px)`;
+}
+
+// -----------------------------------------------------------------------------
+// Measurements
+// -----------------------------------------------------------------------------
+
+/**
+ * CSS shorthand order, collapsed the way a stylesheet would write it.
+ *
+ * Collapsing matters more than it looks: `8px 12px` is a value a reader can paste
+ * straight into a rule, while `8px 12px 8px 12px` reads as four separate numbers
+ * they have to compare before they trust it.
+ */
+export function formatSides(sides: Sides): string {
+  const unit = (value: number) => (value === 0 ? "0" : `${value}px`);
+  const { top, right, bottom, left } = sides;
+
+  if (top === right && right === bottom && bottom === left) return unit(top);
+  if (top === bottom && left === right) return `${unit(top)} ${unit(right)}`;
+  return `${unit(top)} ${unit(right)} ${unit(bottom)} ${unit(left)}`;
+}
+
+/** `320×48px · content 296×32 · padding 8px 12px · margin 0 0 16px 0`. */
+export function formatBoxModel(box: BoxModel): string {
+  const parts = [
+    `${box.width}×${box.height}px`,
+    `content ${box.content.width}×${box.content.height}`,
+  ];
+
+  // A band of nothing is noise. Only the ones that exist earn a place on the line.
+  const nonZero = (sides: Sides) => sides.top || sides.right || sides.bottom || sides.left;
+  if (nonZero(box.padding)) parts.push(`padding ${formatSides(box.padding)}`);
+  if (nonZero(box.margin)) parts.push(`margin ${formatSides(box.margin)}`);
+  if (nonZero(box.border)) parts.push(`border ${formatSides(box.border)}`);
+
+  // Last, because it qualifies everything before it.
+  if (box.scaled) parts.push("scaled");
+
+  return parts.join(" · ");
+}
+
+/** `24px` apart, `12px overlap`, or a plain `0px` when the edges touch. */
+function formatAxis(value: number): string {
+  if (value < 0) return `${-value}px overlap`;
+  return `${value}px`;
+}
+
+/** `+8px`, `-12px`, or `aligned`. ASCII minus: this line gets grepped. */
+function formatDelta(value: number): string {
+  if (value === 0) return "aligned";
+  return value > 0 ? `+${value}px` : `${value}px`;
+}
+
+/**
+ * The lines a deliberately-taken measurement earns.
+ *
+ * `**Gap:**` appears from `standard` while `**Box:**` waits for `detailed`, and the
+ * asymmetry is the point: a gap cost the reviewer two clicks in a mode they chose,
+ * so suppressing it would discard an expressed intention. The box model is passive
+ * data collected alongside, which is the same standing `**Position:**` has.
+ */
+function measurementLines(measurements: Measurements, detail: OutputDetailLevel): string[] {
+  const lines: string[] = [];
+  const wantsDetail = detail === "detailed" || detail === "forensic";
+  const wantsForensic = detail === "forensic";
+  const { gap, box } = measurements;
+
+  if (gap) {
+    lines.push(`**Measured to:** ${gap.toElement} (\`${gap.toSelector}\`)`);
+
+    if (gap.containment === "none") {
+      lines.push(`**Gap:** ${formatAxis(gap.gap.x)} horizontal, ${formatAxis(gap.gap.y)} vertical`);
+    } else {
+      // One rect is wholly inside the other, so "the space between them" describes
+      // nothing. The edge deltas are the whole answer, and they are printed below.
+      const which =
+        gap.containment === "b-inside-a"
+          ? "the second element is inside the first"
+          : "the first element is inside the second";
+      lines.push(`**Gap:** none — ${which}`);
+    }
+
+    if (wantsDetail) {
+      const { top, right, bottom, left } = gap.edges;
+      lines.push(
+        `**Edges:** top ${formatDelta(top)}, right ${formatDelta(right)}, ` +
+          `bottom ${formatDelta(bottom)}, left ${formatDelta(left)}`,
+      );
+    }
+
+    if (wantsForensic) {
+      const horizontal =
+        gap.center.x === 0
+          ? "aligned horizontally"
+          : `${Math.abs(gap.center.x)}px ${gap.center.x > 0 ? "right" : "left"}`;
+      const vertical =
+        gap.center.y === 0
+          ? "aligned vertically"
+          : `${Math.abs(gap.center.y)}px ${gap.center.y > 0 ? "down" : "up"}`;
+      lines.push(`**Centres:** ${horizontal}, ${vertical}`);
+    }
+  }
+
+  if (wantsDetail && box) lines.push(`**Box:** ${formatBoxModel(box)}`);
+
+  return lines;
+}
+
+/** `gap 24×0px`, for the one-line bullet in a compact report. */
+function compactGap(measurements: Measurements | undefined): string {
+  const gap = measurements?.gap;
+  if (!gap) return "";
+  return ` · gap ${gap.gap.x}×${gap.gap.y}px`;
 }
 
 /**
@@ -139,7 +255,8 @@ function renderCompact(annotation: Annotation, number: number): string {
   const source = formatSource(annotation.source);
   const where = source ? ` (${source})` : "";
   const quoted = annotation.selectedText ? ` — re: "${truncate(annotation.selectedText, 30)}"` : "";
-  return `${number}. ${tag(annotation)}**${annotation.element}**${where}: ${annotation.comment}${quoted}`;
+  const gap = compactGap(annotation.measurements);
+  return `${number}. ${tag(annotation)}**${annotation.element}**${where}${gap}: ${annotation.comment}${quoted}`;
 }
 
 /**
@@ -208,6 +325,9 @@ function renderAnnotation(
 
   if (wantsDetail && annotation.cssClasses) lines.push(`**Classes:** ${annotation.cssClasses}`);
   if (wantsDetail && annotation.boundingBox) lines.push(`**Position:** ${formatBox(annotation)}`);
+  if (annotation.measurements) {
+    lines.push(...measurementLines(annotation.measurements, detail));
+  }
   if (wantsForensic) {
     lines.push(
       `**Marker at:** ${annotation.x.toFixed(1)}% from left, ${Math.round(annotation.y)}px from top`,

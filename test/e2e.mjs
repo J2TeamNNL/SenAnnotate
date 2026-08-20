@@ -596,6 +596,422 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // Measure — box model, and the gap between two elements
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, and nothing else annotates it: `chrome.storage.local` is shared
+    // across this context and annotations are keyed on origin + pathname, so a page
+    // another block has been through opens with that block's leftovers.
+    const measure = await context.newPage();
+    await measure.goto(`${base}/measure.html`);
+    await measure.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await measure.locator(".tool--brand").click();
+
+    // Measuring is off by default, so mode 4 is not on the toolbar and `4` does nothing.
+    // Both are asserted before switching it on: the off state is the one every user
+    // meets first, and a feature flag nobody checks the off side of is not a flag.
+    check(
+      "mode 4 is absent until the setting is switched on",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
+    );
+    await measure.keyboard.press("4");
+    check(
+      "the 4 key does nothing while the setting is off",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("Click an element"),
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "both dependent rows are hidden while measuring is off",
+      !(await measure.locator('.settings input[data-setting="measureDistances"]').isVisible()) &&
+        !(await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
+    );
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    check(
+      "switching measuring on reveals both rows",
+      (await measure.locator('.settings input[data-setting="measureDistances"]').isVisible()) &&
+        (await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
+    );
+    // The master doing nothing on its own would be a broken switch, so the mode it is
+    // named after is on underneath it from the start.
+    check(
+      "the mode is on under the master rather than waiting for a second click",
+      await measure.locator('.settings input[data-setting="measureDistances"]').isChecked(),
+    );
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "the hint advertises mode 4 once it exists",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").trim() ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
+    const measureHint = measure.locator(".toolbar-hint");
+    check(
+      "the hint explains that measuring takes two clicks",
+      ((await measureHint.textContent())?.trim() ?? "") ===
+        "Click two elements \u00b7 C captures the pair \u00b7 Esc clears \u00b7 1 point \u00b7 2 text \u00b7 3 area",
+      `hint read "${(await measureHint.textContent())?.trim() ?? ""}"`,
+    );
+
+    const save = await measure.locator("#save").boundingBox();
+    const cancel = await measure.locator("#cancel").boundingBox();
+    const middleOf = (box) => [box.x + box.width / 2, box.y + box.height / 2];
+
+    // Hovering alone draws the badge — reading a size must not cost an annotation.
+    await measure.mouse.move(...middleOf(save));
+    const badge = measure.locator(".measure-badge");
+    await badge.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the badge reports the layout border box",
+      ((await badge.textContent()) ?? "").trim() === "320\u00d748",
+      `badge read "${((await badge.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "the padding band is drawn on all four sides",
+      (await measure.locator(".measure-band--padding:visible").count()) === 4,
+      String(await measure.locator(".measure-band--padding:visible").count()),
+    );
+    // Counting the nodes is not enough, and this is not a hypothetical: the whole
+    // `.measure-band` / `.measure-badge` / `.measure-anchor` block was once deleted from
+    // the stylesheet by an over-eager slice, and every count-based check here stayed
+    // green while the overlay drew nothing at all. Read the computed style.
+    const painted = await measure.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const of = (selector) => {
+        const node = root.querySelector(selector);
+        if (!node) return null;
+        const style = getComputedStyle(node);
+        return { position: style.position, background: style.backgroundColor, border: style.borderTopWidth };
+      };
+      return {
+        padding: of(".measure-band--padding"),
+        margin: of(".measure-band--margin"),
+        badge: of(".measure-badge"),
+        contentEdge: of(".measure-edge--content"),
+      };
+    });
+    check(
+      "the bands are positioned and actually painted",
+      painted.padding?.position === "fixed" &&
+        painted.padding.background !== "rgba(0, 0, 0, 0)" &&
+        painted.margin?.background !== "rgba(0, 0, 0, 0)" &&
+        painted.badge?.position === "fixed",
+      JSON.stringify(painted),
+    );
+    check(
+      "the content edge carries a visible line",
+      painted.contentEdge?.position === "fixed" && painted.contentEdge.border === "1px",
+      JSON.stringify(painted.contentEdge),
+    );
+
+    // Where the regions actually end. 320x48 border box, 12px padding either side and
+    // 8px top and bottom, so the content is 296x32; margin adds 16px at the bottom only.
+    const edgeSize = async (selector) =>
+      measure.evaluate((sel) => {
+        const node = document
+          .querySelector("[data-senannotate-ui]")
+          .shadowRoot.querySelector(sel);
+        return `${Math.round(parseFloat(node.style.width))}x${Math.round(parseFloat(node.style.height))}`;
+      }, selector);
+    check(
+      "the content edge sits inside the padding",
+      (await edgeSize(".measure-edge--content")) === "296x32",
+      await edgeSize(".measure-edge--content"),
+    );
+    check(
+      "the margin edge sits outside the border box",
+      (await edgeSize(".measure-edge--margin")) === "320x64",
+      await edgeSize(".measure-edge--margin"),
+    );
+    check(
+      "only the margin side that exists is drawn",
+      (await measure.locator(".measure-band--margin:visible").count()) === 1,
+      String(await measure.locator(".measure-band--margin:visible").count()),
+    );
+    check("hovering alone creates no annotation", (await measure.locator(".marker").count()) === 0);
+
+    // The readout is the half of the box model the bands cannot say. Padding of 8px is
+    // too thin to hold a legible figure, so it is deliberately NOT labelled on the band
+    // — which is exactly why these two checks are a pair.
+    check(
+      "only bands thick enough to read are labelled",
+      (await measure.locator(".measure-band-label:visible").allTextContents()).join(",") === "16",
+      JSON.stringify(await measure.locator(".measure-band-label:visible").allTextContents()),
+    );
+    const readout = (await measure.locator(".measure-readout__row").allTextContents()).map((r) =>
+      r.trim(),
+    );
+    // The cells are separate spans laid out by a flex gap, so the row's text content
+    // runs them together — read the cells, not the row.
+    const sideCells = (await measure.locator(".measure-readout__side").allTextContents()).map(
+      (cell) => cell.trim(),
+    );
+    check(
+      "the readout names every side rather than a shorthand",
+      sideCells.join(" ") === "T 8 R 12 B 8 L 12 T 0 R 0 B 16 L 0",
+      JSON.stringify(sideCells),
+    );
+    check(
+      "each side row is keyed by its property",
+      (await measure.locator(".measure-readout__key").allTextContents()).join(",") ===
+        "padding,margin",
+      JSON.stringify(await measure.locator(".measure-readout__key").allTextContents()),
+    );
+    // The dimming is the whole mechanism: full weight means "the page could not tell you
+    // this". Only the 16px margin band was thick enough to label itself.
+    check(
+      "sides already drawn on their band are dimmed, and only those",
+      (await measure.locator(".measure-readout__side--drawn").allTextContents())
+        .map((cell) => cell.replace(/\s+/g, " ").trim())
+        .join(",") === "B 16",
+      JSON.stringify(
+        await measure.locator(".measure-readout__side--drawn").allTextContents(),
+      ),
+    );
+    check(
+      "the readout names the type",
+      readout.some((row) => row.includes("system-ui")),
+      JSON.stringify(readout),
+    );
+    check(
+      "the readout resolves the colour it is painted on",
+      readout.includes("#ffffff on #2563eb"),
+      JSON.stringify(readout),
+    );
+
+    // The other half of the pair. `getComputedStyle().width` reports the content box
+    // here and the border box on the button above, so an engine that trusts it gets
+    // exactly one of these two wrong — which is what it did before this check existed.
+    const note = await measure.locator("#note").boundingBox();
+    await measure.mouse.move(note.x + note.width / 2, note.y + note.height / 2);
+    await measure.waitForTimeout(50);
+    check(
+      "a content-box element measures its border box too",
+      ((await badge.textContent()) ?? "").trim() === "340\u00d732",
+      `badge read "${((await badge.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "an element with no background of its own walks up to the one that is painted",
+      (await measure.locator(".measure-readout__row").allTextContents()).some((row) =>
+        row.includes("#000000 on #ffffff (inherited)"),
+      ),
+      JSON.stringify(await measure.locator(".measure-readout__row").allTextContents()),
+    );
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(50);
+
+    // First click anchors.
+    await measure.mouse.click(...middleOf(save));
+    check(
+      "the first click anchors rather than annotating",
+      (await measure.locator(".measure-anchor").isVisible()) &&
+        (await measure.locator(".composer").count()) === 0,
+    );
+
+    // Hovering the second element draws the dimension line.
+    await measure.mouse.move(...middleOf(cancel));
+    const gapLabel = measure.locator(".measure-label").first();
+    await gapLabel.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the dimension line carries the measured gap",
+      ((await gapLabel.textContent()) ?? "").trim() === "24px",
+      `label read "${((await gapLabel.textContent()) ?? "").trim()}"`,
+    );
+
+    // Escape abandons a half-taken measurement without leaving the mode.
+    await measure.keyboard.press("Escape");
+    check("Escape clears the anchor", !(await measure.locator(".measure-anchor").isVisible()));
+    check(
+      "Escape does not leave the mode",
+      (await measure
+        .locator('.tool[aria-label^="Measure distances"]')
+        .getAttribute("aria-pressed")) === "true",
+    );
+
+    // Take it again and commit it.
+    await measure.mouse.click(...middleOf(save));
+    await measure.mouse.click(...middleOf(cancel));
+    const measureComposer = measure.locator(".composer");
+    await measureComposer.waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator(".composer__input").fill("these two are not aligned");
+    await measure.locator(".composer .button--primary").click();
+    await measureComposer.waitFor({ state: "detached", timeout: 5_000 });
+
+    await measure.locator('.tool[aria-label^="Annotations"]').click();
+    await measure.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    // Detailed, so the box and the edges are in scope.
+    await measure.locator(".panel select").selectOption("detailed");
+    await measure.locator(".panel .button--primary").click();
+    const measureReport = await measure.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "the report names the element measured to",
+      measureReport.includes("**Measured to:**") && measureReport.includes("#cancel"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "the report carries the gap",
+      measureReport.includes("**Gap:** 24px horizontal"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "the report carries the box model",
+      measureReport.includes("**Box:** 320\u00d748px \u00b7 content 296\u00d732 \u00b7 padding 8px 12px"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "aligned edges say so rather than printing 0px",
+      measureReport.includes("top aligned"),
+      measureReport.slice(0, 500),
+    );
+
+    await measure.locator(".panel select").selectOption("standard");
+    await measure.locator('.tool[aria-label^="Annotations"]').click();
+
+    // --- the box-model toggle, now a settings row -----------------------------
+    //
+    // It used to live on a card of its own with a toolbar button. Both are gone: the
+    // controls moved into Settings behind the same flag that provides the mode.
+    await measure.keyboard.press("1");
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "the box model is off by default outside mode 4",
+      !(await measure.locator(".measure-badge").isVisible()),
+    );
+
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="showBoxModel"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "the toggle turns the badge on in point mode",
+      ((await measure.locator(".measure-badge").textContent()) ?? "").trim() === "320\u00d748",
+      `badge read "${((await measure.locator(".measure-badge").textContent()) ?? "").trim()}"`,
+    );
+
+    // Leaving inspect mode has to take every mark off the page with it. The bands, the
+    // badge and the readout are drawn on hover and nothing else was clearing them, so
+    // switching off left them painted over the page with no way to dismiss them.
+    //
+    // Leaving via Escape, with the pointer still on the element, is the repro that
+    // matters: clicking the toolbar moves the pointer off first, and `pointermove`
+    // clears the bands on its way past — which is how this passed against a broken
+    // build the first time it was written.
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(100);
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(150);
+    const leftovers = await measure.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]")?.shadowRoot;
+      if (!root) return ["no shadow root"];
+      const selectors = [
+        ".measure-badge",
+        ".measure-band",
+        ".measure-band-label",
+        ".measure-readout",
+        ".measure-anchor",
+        ".measure-line",
+        ".measure-label",
+        ".highlight",
+      ];
+      return selectors.filter((selector) =>
+        [...root.querySelectorAll(selector)].some(
+          (node) => getComputedStyle(node).display !== "none",
+        ),
+      );
+    });
+    check(
+      "leaving inspect mode wipes every mark off the page",
+      leftovers.length === 0,
+      `still drawn: ${JSON.stringify(leftovers)}`,
+    );
+    check(
+      "no probe attribute is left stranded on the page",
+      (await measure.locator("[data-senannotate-probe]").count()) === 0,
+    );
+    await measure.locator(".tool--brand").click();
+    await measure.waitForTimeout(100);
+
+    // Turning off just the mode has to leave the box model alone — that is the whole
+    // point of them being two switches rather than one.
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="measureDistances"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "turning off just the mode removes its button",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
+    );
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "but leaves the box model, which is the other switch",
+      await measure.locator(".measure-badge").isVisible(),
+    );
+
+    // The dead state this three-switch shape allows, and the rule that closes it:
+    // with the mode left off, cycling the master has to bring it back — otherwise the
+    // master is a switch you can turn on and watch do nothing.
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the mode is genuinely off before the master is cycled",
+      !(await measure.locator('.settings input[data-setting="measureDistances"]').isChecked()),
+    );
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    check(
+      "switching the master back on brings the mode with it",
+      await measure.locator('.settings input[data-setting="measureDistances"]').isChecked(),
+    );
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+    check(
+      "and the hint advertises it again",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("4 measure"),
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    // Then the master, which has to take everything with it.
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "switching the master off drops you back to point mode",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").trim() ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "and takes the box model with it, whatever its own switch says",
+      !(await measure.locator(".measure-badge").isVisible()),
+    );
+
+    // -------------------------------------------------------------------------
     // ⌘/Ctrl+drag — the same box without leaving point mode
     // -------------------------------------------------------------------------
     //

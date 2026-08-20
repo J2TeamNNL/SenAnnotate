@@ -141,6 +141,8 @@ the line and column.
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements near each other | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+drag a box around them — or mode <kbd>3</kbd> and drag |
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
+| Measure the gap between two elements | switch on **Measuring tools** in settings, then mode <kbd>4</kbd>: click one, then the other |
+| See an element's size, padding, margin, type and colours | **Box model on hover** in settings — or just enter mode <kbd>4</kbd> |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Open settings | the gear on the toolbar |
@@ -150,7 +152,7 @@ the line and column.
 | Copy the report | **Copy report** in the panel |
 | Save the report as a file | **.md** in the panel |
 | Copy every page at once | **Copy session report** in the extension popup |
-| Cancel / exit | <kbd>Esc</kbd> — closes the innermost thing first: tooltip, then the open card, then a half-built pick set, then the panel, then inspect mode |
+| Cancel / exit | <kbd>Esc</kbd> — closes the innermost thing first: tooltip, then the open card, then a half-built pick set or measuring anchor, then the panel, then inspect mode |
 
 The line under the toolbar always names what the current mode does and which keys
 switch to the others, so nothing above needs memorising. Every button on the pill names
@@ -162,6 +164,15 @@ tooltip, anything styled `:hover`. <kbd>C</kbd> captures whatever the pointer is
 without pressing anything, so the menu is still open while you type the note. Freeze
 does not help here: it parks timers and animation frames, and those surfaces are driven
 by pointer events rather than by time.
+
+Mode <kbd>4</kbd> is the other one worth knowing, and it is **off by default** —
+switch on *Measuring tools* in settings to get it. Most UI feedback is a claim about a
+number — *too tight*, *not aligned*, *wrong size* — and typing that claim in prose
+leaves the reader to re-derive the geometry from a screenshot. Click one element, hover
+a second, and the gap is drawn between them with the figure on it; click again and the
+note carries `**Gap:** 24px horizontal` into the report. Hovering alone costs nothing,
+so reading a number never creates an annotation. Figures keep two decimals: a `0.5px`
+seam reports as `0.5px` rather than rounding to nothing.
 
 The toolbar is docked bottom-right, which is exactly where a page tends to put its
 chat widget, cookie bar or footer actions. <kbd>H</kbd> collapses it to a single dot

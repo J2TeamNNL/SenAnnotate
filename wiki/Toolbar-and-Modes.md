@@ -17,12 +17,13 @@ in the corner, next to the page they describe.
 | ⌖ | **Click an element** | Mode 1 — the default. | <kbd>1</kbd> |
 | T | **Select text** | Mode 2. | <kbd>2</kbd> |
 | ⛶ | **Drag across elements** | Mode 3 — the marquee. | <kbd>3</kbd> |
+| ⇔ | **Measure distances** | Mode 4 — the gap between two elements. **Only present when *Measuring tools* and *Measure distances* are both on in Settings; the master is off by default.** | <kbd>4</kbd> |
 | ❄ | **Freeze animations** | Parks `requestAnimationFrame` and `setTimeout` in the page. | <kbd>F</kbd> |
 | ☰ ③ | **Annotations** | Opens the panel. The badge is the count on this page. | <kbd>A</kbd> |
 | ⚙ | **Settings** | Opens the settings card. | — |
 | » | **Collapse toolbar** | Collapses to a dot. | <kbd>H</kbd> |
 
-**The three mode buttons only appear once inspect mode is on.** They are icon-only, which
+**The mode buttons only appear once inspect mode is on**, and the fourth only if you have switched measuring on. They are icon-only, which
 is exactly why the hint line exists.
 
 ---
@@ -157,3 +158,68 @@ ordinary page instead.
 **Hide until restart** in [[Settings]] removes the overlay from one tab deliberately.
 If the toolbar is missing where you expect it, that is the first thing to check —
 see [[Troubleshooting]].
+
+---
+
+## Mode 4 — measuring
+
+**Off by default.** Turn on *Measuring tools* in Settings first; *Measure distances*
+underneath it is already on, so that is the only click needed. Until you do, there is
+no fourth button, <kbd>4</kbd> does nothing, and the hint line does not mention it —
+three modes is already the most a row of icon-only buttons can explain, and most reviews
+never measure anything.
+
+
+Mode 4 answers the question most UI notes are really about: *how far apart are these two
+things?* Hover reads, click writes — the same contract as mode 1.
+
+1. **Hover** anything. The highlight gains a `320×48` badge, and padding and margin are
+   shaded on it.
+2. **Click** an element. It stays outlined as the **anchor**, and the hint changes to ask
+   for the second one.
+3. **Hover** a second element. A dimension line is drawn across the space between them,
+   with the figure on it. Nothing has been recorded yet — reading a number costs nothing.
+4. **Click** it, or press <kbd>C</kbd>, and the composer opens with both elements captured
+   and the figures attached.
+
+<kbd>Esc</kbd> drops the anchor without leaving the mode.
+
+### What the overlay tells you
+
+| On screen | Says |
+|---|---|
+| The badge, e.g. `320×48` | Border box as painted |
+| A figure on a shaded band | That band's thickness — only where the band is at least 14px, or the number would not be legible |
+| A dashed green line | Where the padding ends and the content begins |
+| A dashed orange line | The outer edge of the margin |
+| The readout under the badge | `padding` and `margin` **side by side** — `T R B L`, each with a dot matching its band's colour — then the type, the colour the element is painted on, and `display` / `border-radius` |
+
+A side whose figure is already drawn on its band is **dimmed** in the readout. What stays
+at full weight is exactly what the page could not tell you — the bands too thin to hold a
+number. That is why the sides are spelled out rather than written as a shorthand: being
+told `8px 12px` and left to work out which of two unlabelled bands is which is not being
+shown the value.
+
+Three regions meet at two dashed lines; the border box itself is the solid accent
+outline of the hover highlight. On a page with a strong background of its own the
+translucent bands alone read as a vague tint, so the lines are what make them regions.
+
+The colour line resolves what is **actually** behind the element. Most elements declare no
+background of their own, so it walks up until it finds one and marks the result
+`(inherited)`. Where a gradient or an image is painted it says `image` rather than
+inventing a swatch — one colour cannot honestly stand for one.
+
+None of this goes into the report; the report already carries the same ground in
+`**Box:**` and `**Computed styles:**`. See [[The Report]].
+
+The report gets `**Measured to:**`, `**Gap:**` and — from *Detailed* — `**Edges:**` and
+`**Box:**`. See [[The Report]] for the exact lines.
+
+Two things worth knowing:
+
+- **The box model describes the anchor**, not the second element, because every other
+  line of the annotation does too. The second element is named on the `**Measured to:**`
+  line.
+- **A `(scaled)` badge** means the element is drawn at a different size than it is laid
+  out at — a CSS `transform`, or page zoom. The size shown is what is on screen; the
+  padding and margin figures are the layout ones, and the two genuinely differ.

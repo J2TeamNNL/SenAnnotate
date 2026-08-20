@@ -10,9 +10,10 @@
   "scripts": {
     "icons": "node scripts/make-icons.mjs",
     "typecheck": "tsc --noEmit",
+    "test:unit": "node test/measure.mjs",
     "build": "node scripts/make-icons.mjs && node build.mjs",
     "dev": "node scripts/make-icons.mjs && node build.mjs --watch",
-    "test": "npm run build && node test/e2e.mjs && node test/upgrade.mjs",
+    "test": "npm run build && node test/measure.mjs && node test/e2e.mjs && node test/upgrade.mjs",
     "test:upgrade": "npm run build && node test/upgrade.mjs",
     "verify:sites": "npm run build && node test/verify-real-sites.mjs",
     "verify:tracer": "npm run build && node test/verify-tracer.mjs",

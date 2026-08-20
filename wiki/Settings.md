@@ -121,6 +121,47 @@ To get it back: close the tab, or open the page in a new one.
 
 ---
 
+## Measuring
+
+Three switches: a master, and two indented under it that only appear once it is on.
+
+### Measuring tools
+
+**Off by default**, and the only one of the three you see until you turn it on.
+
+Off is the default because the cost is paid by people who never measure anything: a
+fourth icon-only button on a toolbar that docks over someone else's page, and a fourth
+clause on the hint line, which is the only thing on screen that explains the modes at
+all. With it off, everything reads exactly as it did before measuring existed.
+
+### Measure distances
+
+**Switched on whenever the master is.** Turning *Measuring tools* on and watching nothing
+happen would make it look broken, and this is the mode it is named after — so the master
+brings it along every time, not just on a fresh profile.
+
+It is a suggestion, not a lock: turn this row straight back off and it stays off until
+the master is cycled again.
+
+Adds mode 4: click two elements and the report carries the gap between them in pixels.
+See [[Toolbar and Modes]].
+
+Switching it off while you are standing in mode 4 drops you back to mode 1. A mode that
+outlives its own button is a mode you can neither see nor leave.
+
+### Box model on hover
+
+Off by default. On, every hover — in any mode — shades the element's padding and margin,
+puts its border-box size on a badge, and lists the sides, the type and the colours
+underneath.
+
+Mode 4 draws all of it regardless of this switch: measuring without the bands would be
+measuring blind. The switch is for the other three modes, where the bands are extra
+information rather than the point. That is also why the two are separate switches — you
+can read spacing all day without ever wanting a fourth mode button.
+
+---
+
 ## Appearance
 
 ### Theme

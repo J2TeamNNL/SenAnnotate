@@ -17,6 +17,7 @@ import {
   type AnnotationKind,
   type Diagnostics,
   type InspectMode,
+  type Measurements,
   type OutputDetailLevel,
   type PageFrameworkInfo,
   type Settings,
@@ -46,7 +47,7 @@ import {
   onFrameDraft,
   requestFrameHoverCapture,
 } from "./frames";
-import { identifyElement, isAnnotatable, isOurUi } from "./identify";
+import { buildSelector, identifyElement, isAnnotatable, isOurUi } from "./identify";
 import {
   canvasToBlob,
   cropToCanvas,
@@ -82,7 +83,9 @@ import {
   type MarqueeHits,
 } from "./ui/marquee";
 import { Overlay } from "./ui/overlay";
+import { measureGap, readBoxModel, readStyleSummary } from "./measure";
 import { Panel } from "./ui/panel";
+import { MeasureOverlay } from "./ui/measure-overlay";
 import { SettingsCard } from "./ui/settings";
 import { createUiRoot, type UiRoot } from "./ui/root";
 import { hideTooltip, installTooltips, isFocusTooltipVisible } from "./ui/tooltip";
@@ -216,6 +219,7 @@ let markers!: Markers;
 let toolbar!: Toolbar;
 let panel: Panel | null = null;
 let settingsCard: SettingsCard | null = null;
+let measureOverlay!: MeasureOverlay;
 
 /**
  * Build the chrome. Top frame only — a second toolbar inside every iframe is both
@@ -225,6 +229,7 @@ function createTopUi(): void {
   ui = createUiRoot();
   installTooltips(ui.cardLayer);
   overlay = new Overlay(ui.overlayLayer);
+  measureOverlay = new MeasureOverlay(ui.overlayLayer);
 
   markers = new Markers(ui.markerLayer, {
     onClick: (annotation) => openEditor(annotation),
@@ -248,6 +253,7 @@ function createTopUi(): void {
       resetMarquee();
       clearPicked();
       overlay.hideAll();
+      measureOverlay.hideAll();
       render();
       broadcastFrameState(active, mode);
     },
@@ -273,17 +279,26 @@ const settingsCallbacks = {
   onClose: () => toggleSettings(false),
   onHideUntilRestart: () => hideUntilRestart(),
   onChange: (patch: Partial<Settings>) => {
+    const derived: Partial<Settings> = {};
+
     // Changing the detail level moves `componentMode` to its preset, exactly as the
     // panel's own detail select does. A suggestion, not a lock: the components row can
     // be set to anything afterwards and stays there until the level changes again.
-    const derived =
-      patch.detailLevel !== undefined
-        ? { componentMode: DETAIL_TO_COMPONENT_MODE[patch.detailLevel] }
-        : {};
+    if (patch.detailLevel !== undefined) {
+      derived.componentMode = DETAIL_TO_COMPONENT_MODE[patch.detailLevel];
+    }
+
+    // Switching the master on switches the mode on with it. The default alone was not
+    // enough: turn the mode off, turn the master off, turn the master back on, and you
+    // had a switch that visibly did nothing — the one dead state this three-switch shape
+    // allows. Same suggestion-not-a-lock rule as above; the row below it can be turned
+    // straight back off and will stay off until the master is cycled again.
+    if (patch.measureTools === true) derived.measureDistances = true;
 
     settings = { ...settings, ...derived, ...patch };
     void saveSettings(settings);
     applyAppearance();
+    enforceMeasureSetting();
     render();
   },
 };
@@ -319,6 +334,31 @@ const panelCallbacks = {
   },
 };
 
+/**
+ * Whether mode 4 exists right now.
+ *
+ * Two settings, one answer, in one place — every gate below asks this rather than
+ * re-spelling the `&&`, which is how one of them ends up disagreeing with the others.
+ */
+function measureModeAvailable(): boolean {
+  return settings.measureTools && settings.measureDistances;
+}
+
+/**
+ * Leave mode 4 if the setting that provides it has just been switched off.
+ *
+ * Without this the mode survives its own button: the toolbar hides the fourth icon, the
+ * hint drops its clause, and clicks keep anchoring elements with nothing on screen to
+ * say why. Called from both places settings can change — this card, and a push from the
+ * popup in another tab.
+ */
+function enforceMeasureSetting(): void {
+  if (measureModeAvailable() || mode !== "measure") return;
+  mode = "point";
+  measureOverlay.hideAll();
+  broadcastFrameState(active, mode);
+}
+
 function render(): void {
   toolbar.update({
     active,
@@ -326,6 +366,7 @@ function render(): void {
     frozen,
     panelOpen,
     settingsOpen: !!settingsCard,
+    measureMode: measureModeAvailable(),
     collapsed: settings.toolbarCollapsed,
     count: annotations.length,
     page,
@@ -365,6 +406,11 @@ function setActive(next: boolean): void {
     resetMarquee();
     clearPicked();
     overlay.hideAll();
+    // Bands, badge and readout are drawn on hover and cleared by the next hover — so
+    // leaving inspect mode with the pointer still on an element used to strand them on
+    // the page with nothing left running that would take them off. Turning the tool off
+    // has to leave the page as the tool found it.
+    measureOverlay.hideAll();
     hoveredElement = null;
     hoverLabel = null;
     document.body.style.removeProperty("cursor");
@@ -427,6 +473,9 @@ function toggleSettings(force?: boolean): void {
 
   if (next) {
     togglePanel(false);
+    // The exclusion has to be stated at both doors. Stating it only in
+    // `toggleMeasureCard` let Settings open on top of a Measure card already showing,
+    // and the two share the eight pixels above the dock.
     settingsCard = new SettingsCard(
       ui.cardLayer,
       settingsCallbacks,
@@ -556,6 +605,62 @@ function drawHover(element: Element): void {
     return;
   }
   overlay.showHighlights([element.getBoundingClientRect()], hoverLabel ?? undefined);
+  drawMeasure(element);
+}
+
+/**
+ * Bands, badge and — once an anchor is set — the dimension lines.
+ *
+ * Split out of `drawHover` so its cost stays visible: this is the only thing in the
+ * hover path that calls `getComputedStyle`, which forces a style recalculation. It runs
+ * when the user asked for it, or when the mode is about nothing else.
+ */
+function drawMeasure(element: Element): void {
+  if (!settings.measureTools || (mode !== "measure" && !settings.showBoxModel)) {
+    measureOverlay.hideBox();
+    measureOverlay.hideGap();
+    return;
+  }
+
+  // One declaration shared by both readers: reading a property off it is what forces
+  // the style recalculation, and this runs at pointermove frequency.
+  const style = getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  measureOverlay.showBox(rect, readBoxModel(element, style), readStyleSummary(element, style));
+
+  const anchor = measureOverlay.anchor;
+  if (!anchor || anchor === element) {
+    measureOverlay.hideGap();
+    return;
+  }
+  const anchorRect = anchor.getBoundingClientRect();
+  measureOverlay.showGap(anchorRect, rect, measureGap(anchorRect, rect));
+}
+
+/**
+ * What the composer will store. Never `undefined`: the box alone is worth keeping.
+ *
+ * `box` describes the **anchor**, not the element just clicked, because `captureDraft`
+ * makes `elements[0]` the subject of the whole annotation — its name, its selector, its
+ * `**Position:**`. A box measured off the second element would sit directly under a
+ * Position line describing the first, and the two would silently disagree. The second
+ * element is not lost: `gap.toElement` names it, which is the line's whole job.
+ */
+function currentMeasurements(target: Element): Measurements {
+  const anchor = measureOverlay.anchor;
+  if (!anchor || anchor === target) return { box: readBoxModel(target) };
+
+  const anchorRect = anchor.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+
+  return {
+    box: readBoxModel(anchor),
+    gap: {
+      ...measureGap(anchorRect, targetRect),
+      toElement: identifyElement(target).name,
+      toSelector: buildSelector(target),
+    },
+  };
 }
 
 /**
@@ -572,7 +677,7 @@ function drawHover(element: Element): void {
  * conclusion `docs/modal-focus-leak/` reached for dialogs.
  */
 function captureHovered(): void {
-  if (mode !== "point") return;
+  if (mode !== "point" && mode !== "measure") return;
 
   if (hoveredElement && !hoveredElement.isConnected) hoveredElement = null;
 
@@ -585,6 +690,15 @@ function captureHovered(): void {
   // document whose `elementFromPoint` can see what the pointer is actually on.
   // Keyboard focus is usually still up here, so the top frame has to hand it over.
   if (requestFrameHoverCapture(hoveredElement)) return;
+
+  if (mode === "measure") {
+    const from = measureOverlay.anchor;
+    const measurements = currentMeasurements(hoveredElement);
+    const elements = from && from !== hoveredElement ? [from, hoveredElement] : [hoveredElement];
+    measureOverlay.setAnchor(null);
+    void beginAnnotation(elements, undefined, measurements);
+    return;
+  }
 
   void beginAnnotation([hoveredElement]);
 }
@@ -606,8 +720,12 @@ function frameAnchor(draft: Draft): DOMRect {
 // Creating annotations
 // -----------------------------------------------------------------------------
 
-async function beginAnnotation(elements: Element[], selectedText?: string): Promise<void> {
-  const draft = await captureDraft(elements, { settings, selectedText });
+async function beginAnnotation(
+  elements: Element[],
+  selectedText?: string,
+  measurements?: Measurements,
+): Promise<void> {
+  const draft = await captureDraft(elements, { settings, selectedText, measurements });
   if (!draft) return;
 
   composerTargets = elements;
@@ -1416,7 +1534,15 @@ function queueSync(): void {
     // containing block for our fixed host — and a resize changes the viewport we fit to.
     ui.syncPlacement();
     markers.syncPositions();
-    if (composer || !active || mode !== "point") return;
+    if (composer || !active) return;
+    if (mode === "measure") {
+      // The anchor outline and the bands are both viewport-space, so a scroll leaves
+      // them behind the page unless they are redrawn with it.
+      measureOverlay.syncAnchor();
+      if (hoveredElement?.isConnected) drawHover(hoveredElement);
+      return;
+    }
+    if (mode !== "point") return;
     if (picked.length) drawPicked();
     else if (hoveredElement) {
       overlay.showHighlights([hoveredElement.getBoundingClientRect()], hoverLabel ?? undefined);
@@ -1557,6 +1683,7 @@ function installTopFrame(): void {
   async function refreshSettings(): Promise<void> {
     settings = await loadSettings();
     applyAppearance();
+    enforceMeasureSetting();
     render();
   }
 
@@ -1565,7 +1692,9 @@ function installTopFrame(): void {
     "pointermove",
     (event) => {
       if (!active || composer || marqueeStart) return;
-      if (mode !== "point") return;
+      // `measure` shares the whole hover path with `point` — it is the same "what is the
+      // pointer over" question, answered with two more things drawn on top.
+      if (mode !== "point" && mode !== "measure") return;
       // Pointer capture retargets the toolbar drag's moves; it does not stop them
       // propagating, and `root.ts` deliberately lets `pointermove` through the host. So
       // during a fast drag the cursor outruns the pill, lands on page content, and this
@@ -1580,6 +1709,10 @@ function installTopFrame(): void {
         // Moving off an element must not erase a set that is still being built.
         if (picked.length) drawPicked();
         else overlay.hideHighlights();
+        // The bands belong to the element under the pointer; the anchor outline does
+        // not, and survives until the measurement is taken or abandoned.
+        measureOverlay.hideBox();
+        measureOverlay.hideGap();
         return;
       }
       if (target === hoveredElement) return;
@@ -1610,6 +1743,28 @@ function installTopFrame(): void {
 
       event.preventDefault();
       event.stopPropagation();
+
+      if (mode === "measure") {
+        const picked = document.elementFromPoint(event.clientX, event.clientY);
+        if (!picked || !eligible(picked)) return;
+
+        // First click anchors, second commits. The same contract as `point` — hover
+        // reads, click writes — measure just needs two clicks to have anything to say.
+        if (!measureOverlay.anchor) {
+          measureOverlay.setAnchor(picked);
+          render();
+          return;
+        }
+        const from = measureOverlay.anchor;
+        const measurements = currentMeasurements(picked);
+        measureOverlay.setAnchor(null);
+        void beginAnnotation(
+          from === picked ? [picked] : [from, picked],
+          undefined,
+          measurements,
+        );
+        return;
+      }
 
       if (mode !== "point") return;
       const target = document.elementFromPoint(event.clientX, event.clientY);
@@ -1774,6 +1929,14 @@ function installTopFrame(): void {
         toggleSettings(false);
         return;
       }
+      // A half-taken measurement is as likely a target for Escape as a half-built pick
+      // set, and for the same reason: it is a gesture the user started and abandoned.
+      // Neither leaves the mode — only the gesture.
+      if (measureOverlay.anchor) {
+        measureOverlay.setAnchor(null);
+        if (hoveredElement?.isConnected) void updateHover(hoveredElement);
+        return;
+      }
       // A half-built pick set is the thing Escape is most likely to be aimed at, so it
       // goes before the panel and before leaving inspect mode entirely.
       if (picked.length) {
@@ -1815,6 +1978,7 @@ function installTopFrame(): void {
         resetMarquee();
         clearPicked();
         overlay.hideAll();
+        measureOverlay.hideAll();
         render();
         break;
       case "2":
@@ -1822,6 +1986,18 @@ function installTopFrame(): void {
         resetMarquee();
         clearPicked();
         overlay.hideAll();
+        measureOverlay.hideAll();
+        render();
+        break;
+      case "4":
+        // A key for a mode whose button is not on the toolbar would be a key that does
+        // nothing visible, which is worse than a key that does nothing.
+        if (!measureModeAvailable()) break;
+        mode = "measure";
+        resetMarquee();
+        clearPicked();
+        overlay.hideAll();
+        measureOverlay.hideAll();
         render();
         break;
       case "3":
@@ -1829,6 +2005,7 @@ function installTopFrame(): void {
         resetMarquee();
         clearPicked();
         overlay.hideAll();
+        measureOverlay.hideAll();
         render();
         break;
       // Annotate what the pointer is already over, without clicking it.

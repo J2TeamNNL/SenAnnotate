@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Measure fixture</title>
+    <style>
+      /* Whole-pixel geometry on purpose: every number the suite asserts is derived from
+         these rules, not from a layout the browser was free to round.
+
+         `box-sizing` is declared rather than left to the default, and that is the point
+         of this fixture: Chrome's UA stylesheet already puts `<button>` in `border-box`,
+         so a fixture that says nothing is silently testing one mode on the buttons and
+         the other on the paragraph. Declared here, the numbers below ARE the border box.
+         `border: 0` for the same reason — the UA gives buttons one. */
+      /* `background` is declared, and that is load-bearing: without it the page paints
+         nothing and the white you see is the browser's canvas, not a background. The
+         ancestor walk would correctly answer `transparent` and never be exercised. */
+      body {
+        margin: 0; font: 14px/1.4 system-ui, sans-serif; height: 700px; position: relative;
+        background: #ffffff;
+      }
+
+      /* 320 border box - 12 padding either side = 296 content; 48 - 8 - 8 = 32 high. */
+      #save {
+        box-sizing: border-box;
+        position: absolute; left: 40px; top: 100px;
+        width: 320px; height: 48px;
+        padding: 8px 12px; margin: 0 0 16px 0; border: 0;
+        background: #2563eb; color: #fff; font: inherit;
+      }
+
+      /* Left edge 24px clear of #save's right edge (40 + 320 + 24 = 384), same top. */
+      #cancel {
+        box-sizing: border-box;
+        position: absolute; left: 384px; top: 100px;
+        width: 120px; height: 48px;
+        padding: 8px 12px; margin: 0; border: 0;
+        background: #e5e7eb; font: inherit;
+      }
+
+      /* The other half of the box-sizing pair, and the reason it is here: under
+         `content-box` the declared 320x24 is the CONTENT, so the border box is 340x32.
+         An engine that reads the border box off computed `width` gets one of these two
+         elements wrong whichever way it guesses. Sits 40px below #save (100+48+40). */
+      #note {
+        box-sizing: content-box;
+        position: absolute; left: 40px; top: 188px;
+        width: 320px; height: 24px;
+        padding: 4px 10px; margin: 0; border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 style="margin: 0; padding: 20px 0 0 40px">Measure fixture</h1>
+    <button id="save">Save</button>
+    <button id="cancel">Cancel</button>
+    <p id="note">Nothing else in the suite annotates this page.</p>
+  </body>
+</html>

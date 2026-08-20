@@ -30,7 +30,7 @@ export type ThemePreference = "auto" | "light" | "dark";
 export type ScreenshotDelivery = "path" | "embed";
 
 /** What a click means while inspect mode is on. */
-export type InspectMode = "point" | "text" | "area";
+export type InspectMode = "point" | "text" | "area" | "measure";
 
 // -----------------------------------------------------------------------------
 // Triage
@@ -74,6 +74,84 @@ export interface Rect {
   y: number;
   width: number;
   height: number;
+}
+
+// -----------------------------------------------------------------------------
+// Measurements
+// -----------------------------------------------------------------------------
+//
+// All figures are **layout pixels**, not on-screen pixels. `getComputedStyle` reports
+// the pre-transform box while `getBoundingClientRect` reports the post-transform one,
+// and mixing the two gives a badge whose width and padding describe different
+// coordinate spaces. Everything here is the former, and `BoxModel.scaled` is set when
+// the two disagree so a reader knows the element is not drawn at these numbers.
+
+export interface Sides {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface BoxModel {
+  /** Border box: content + padding + border. */
+  width: number;
+  height: number;
+  content: { width: number; height: number };
+  padding: Sides;
+  border: Sides;
+  margin: Sides;
+  /** The rendered rect differs from the layout box — a transform or a zoom is in play. */
+  scaled: boolean;
+}
+
+export type Containment = "none" | "b-inside-a" | "a-inside-b";
+
+/** Pure geometry between two rects, with no idea what either element is. */
+export interface GapGeometry {
+  /** Empty space on each axis. Positive apart, negative overlapping, 0 touching. */
+  gap: { x: number; y: number };
+  /** B's edge minus A's edge. 0 means aligned. */
+  edges: Sides;
+  /** B's centre minus A's centre. */
+  center: { x: number; y: number };
+  containment: Containment;
+}
+
+export interface GapMeasurement extends GapGeometry {
+  /** Human-readable name of the second element, e.g. `button "Cancel"`. */
+  toElement: string;
+  toSelector: string;
+}
+
+export interface Measurements {
+  box?: BoxModel;
+  gap?: GapMeasurement;
+}
+
+/**
+ * The handful of computed properties worth reading *on the page*, as opposed to in the
+ * report. Overlay-only by design: `Annotation.computedStyles` already carries this
+ * ground for the report, and printing both would say everything twice.
+ */
+export interface StyleSummary {
+  fontSize: string;
+  /** Computed, so `normal` or a px value — never the ratio the stylesheet wrote. */
+  lineHeight: string;
+  /** First family only; a whole stack is unreadable at this size. */
+  fontFamily: string;
+  fontWeight: string;
+  /** `#rrggbb`, or `#rrggbbaa` when it is not opaque. */
+  color: string;
+  /** The first non-transparent background found walking up from the element. */
+  background: string;
+  /** The background came from an ancestor, not from the element itself. */
+  backgroundInherited: boolean;
+  /** Set when a gradient or image is painted, which no single swatch can honestly show. */
+  backgroundIsImage: boolean;
+  display: string;
+  /** Empty when the corners are square. */
+  radius: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -259,6 +337,14 @@ export interface Annotation {
   elementBoundingBoxes?: Rect[];
   isMultiSelect?: boolean;
 
+  /**
+   * Figures the reviewer deliberately took. Absent on every annotation made outside
+   * `measure` mode and on every one written before this feature — the same optional-field
+   * treatment `framework` and `frame` get, for the same reason: these are per-review
+   * scratch data and no migration is worth carrying.
+   */
+  measurements?: Measurements;
+
   selectedText?: string;
   nearbyText?: string;
   nearbyElements?: string;
@@ -306,6 +392,24 @@ export interface Settings {
   theme: ThemePreference;
   /** Show the numbered pins on the page. */
   showMarkers: boolean;
+  /**
+   * Show the measuring tools at all: mode 4, the `4` key, and the box-model overlay.
+   *
+   * Off by default, and the default is the argument. Three modes is already the most a
+   * toolbar of icon-only buttons can explain, and most reviews never measure anything —
+   * so the people who do not want it should not have to see it, and the hint line should
+   * not spend a clause advertising it to them.
+   */
+  measureTools: boolean;
+  /**
+   * Mode 4 itself. Only reachable when `measureTools`, and switched **on** whenever the
+   * master is — a master switch you turn on that changes nothing on screen is a broken
+   * switch, and the gap measurement is the headline the master is named after. The
+   * default here only covers a profile that has never touched either.
+   */
+  measureDistances: boolean;
+  /** Draw the box model on the hover highlight. Only reachable when `measureTools`. */
+  showBoxModel: boolean;
   /** Freeze animations automatically whenever inspect mode turns on. */
   freezeOnInspect: boolean;
   /** Include the owner component's props in the report. */
@@ -348,6 +452,9 @@ export const DEFAULT_SETTINGS: Settings = {
   componentMode: "filtered",
   theme: "auto",
   showMarkers: true,
+  measureTools: false,
+  measureDistances: true,
+  showBoxModel: false,
   freezeOnInspect: false,
   includeProps: true,
   maxComponents: 6,

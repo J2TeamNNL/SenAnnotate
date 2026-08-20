@@ -55,6 +55,15 @@ export class SettingsCard {
 
   private readonly selects = new Map<keyof Settings, HTMLSelectElement>();
   private readonly switches = new Map<keyof Settings, HTMLInputElement>();
+  /**
+   * The two rows that only exist under `measureTools`, kept so `render` can take them
+   * away together.
+   *
+   * They are the only rows in this card that depend on another one. A switch for a
+   * surface the user has turned off is not a setting, it is a puzzle — and leaving one
+   * visible but inert is worse than either showing or hiding it.
+   */
+  private readonly measureRows: HTMLElement[];
   private readonly swatches = new Map<string, HTMLButtonElement>();
   private readonly accentCustom: HTMLInputElement;
 
@@ -78,6 +87,20 @@ export class SettingsCard {
       // nothing. Lifted verbatim from the popup, along with the reason.
       on: { input: () => this.emit({ accentColor: this.accentCustom.value }) },
     });
+
+    this.measureRows = [
+      this.toggle(
+        "measureDistances",
+        "Measure distances",
+        "Adds mode 4 to the toolbar: click two elements and the report carries the gap between them in pixels.",
+      ),
+      this.toggle(
+        "showBoxModel",
+        "Box model on hover",
+        "Shades padding and margin on whatever the pointer is over, and puts the border-box size on a badge. Mode 4 shows them regardless of this.",
+      ),
+    ];
+    for (const row of this.measureRows) row.classList.add("setting-row--child");
 
     this.element = h(
       "div",
@@ -146,6 +169,14 @@ export class SettingsCard {
           "Empties the page's annotations once a copy has reached the clipboard, ready for the next round. Off by default — a failed copy never clears.",
         ),
         this.hideUntilRestartRow(),
+
+        this.group("Measuring"),
+        this.toggle(
+          "measureTools",
+          "Measuring tools",
+          "Off by default. On, it reveals the two switches below — measuring adds a fourth button to the toolbar and a fourth clause to the hint line, which is a cost paid by everyone who never measures anything.",
+        ),
+        ...this.measureRows,
 
         this.group("Appearance"),
         this.select("theme", "Theme", "The overlay's own colours. Match system follows your browser.", THEME_OPTIONS),
@@ -292,6 +323,10 @@ export class SettingsCard {
   render(settings: Settings): void {
     for (const [key, select] of this.selects) select.value = String(settings[key]);
     for (const [key, input] of this.switches) input.checked = Boolean(settings[key]);
+
+    for (const row of this.measureRows) {
+      row.style.display = settings.measureTools ? "" : "none";
+    }
 
     this.accentCustom.value = settings.accentColor;
     for (const [value, button] of this.swatches) {
