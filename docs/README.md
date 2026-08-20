@@ -261,6 +261,14 @@ things: why a card this tall cannot use the composer's "prefer, flip, clamp" pla
 why the default corner is left entirely to CSS. The `changelog.md` records the e2e trap —
 a vertical drag gesture whose first step leaves the pill never starts one.
 
+## [`freeze-frame-scope/`](./freeze-frame-scope/) — issue #24
+
+`freeze.ts` was monkey-patching five native timer functions in every iframe at
+`document_start` — the same native-identity tampering that broke Turnstile once already.
+The brief records why the fix is a one-line top-frame guard rather than a design
+decision: `freeze()` provably cannot run in a child frame, so the wrap was dead weight.
+Read it before adding cross-frame freeze; it says where that work attaches.
+
 ## [`release-changelog/`](./release-changelog/) — generated release notes
 
 `CHANGELOG.md`, rebuilt from the tags and the Conventional Commit subjects between them,

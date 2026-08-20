@@ -2675,6 +2675,37 @@ async function main() {
       `innerNative=${innerNative}`,
     );
 
+    // Same argument, second offender: `freeze.ts` wrapped the four scheduling functions
+    // plus `clearTimeout`/`cancelAnimationFrame` at module load in *every* frame, and
+    // `freeze()` can only ever run in the top frame — the bridge is a same-window
+    // `postMessage` and `toggleFreeze` lives in `installTopFrame()`. So every iframe on
+    // every page had its timers monkey-patched for a `frozen` flag that could never
+    // become true there, which is the same `Function.prototype.toString` tampering
+    // Turnstile refuses to verify through. Issue #24.
+    const TIMER_SOURCES = () =>
+      [
+        window.setTimeout.toString(),
+        window.clearTimeout.toString(),
+        window.setInterval.toString(),
+        window.requestAnimationFrame.toString(),
+        window.cancelAnimationFrame.toString(),
+      ].every((source) => source.includes("[native code]"));
+
+    const innerTimersNative = await innerFrame?.evaluate(TIMER_SOURCES);
+    check(
+      "a child frame's timers are left unwrapped — freeze never reaches it anyway",
+      innerTimersNative === true,
+      `innerTimersNative=${innerTimersNative}`,
+    );
+
+    // And the top frame must still be wrapped, or the guard above took freeze with it.
+    const topTimersNative = await framed.evaluate(TIMER_SOURCES);
+    check(
+      "the top frame's timers are still wrapped, so freeze still parks callbacks",
+      topTimersNative === false,
+      `topTimersNative=${topTimersNative}`,
+    );
+
     await framed.locator(".tool--brand").click();
     // The state broadcast is a postMessage; give it a turn to land.
     await framed.waitForTimeout(300);
