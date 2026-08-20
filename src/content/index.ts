@@ -398,6 +398,11 @@ function setActive(next: boolean): void {
     resetMarquee();
     clearPicked();
     overlay.hideAll();
+    // Bands, badge and readout are drawn on hover and cleared by the next hover — so
+    // leaving inspect mode with the pointer still on an element used to strand them on
+    // the page with nothing left running that would take them off. Turning the tool off
+    // has to leave the page as the tool found it.
+    measureOverlay.hideAll();
     hoveredElement = null;
     hoverLabel = null;
     document.body.style.removeProperty("cursor");

@@ -243,12 +243,42 @@ it obeys is really two.
 Both states were checked against a screenshot of the real card this time, not only by
 assertion — the last two defects in this release were things only a picture showed.
 
+## Leaving inspect mode left the page marked
+
+Reported: switching inspect off should take every mark with it. It did not —
+`setActive(false)` cleared the marquee, the pick set and the highlight, and knew nothing
+about the measurement overlay. The bands, the badge and the readout are drawn on hover
+and cleared by the *next* hover, so leaving with the pointer still on an element stranded
+them on the page with nothing left running that would ever take them off.
+
+One line in `setActive`. The interesting part is the test.
+
+**The first version of the check passed against the broken build.** It left inspect mode
+by clicking the toolbar — which moves the pointer off the element first, and the
+`pointermove` handler clears the bands on its way past. The assertion was true, the bug
+was still there, and the check was worth nothing. It now leaves via `Escape` with the
+pointer held on the element, which is the only path that reaches `setActive(false)`
+without a pointer move, and it fails on the old code as it should.
+
+Worth generalising: a teardown check that lets the pointer move first is not testing
+teardown, it is testing the hover handler.
+
+The same check also asserts no `data-senannotate-probe` attribute is left behind. That
+one passed first time — the reference counting in `bridge.ts` is correct — but it is the
+other thing this extension writes into the page, and a cleanup test that covers only what
+was broken this week will not cover it next week.
+
+**Not changed, and both deliberate.** Numbered pins survive inspect mode — they are the
+record of the annotations, and dropping them would hide the user's own work rather than
+tidy up after ours. Freeze survives too, for the reason `README.md` already gives: it is a
+property of the page, not of the toolbar, and it has its own switch.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **301/301** e2e and **9/9** upgrade, run locally with
+- `npm test` — **303/303** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 

@@ -850,6 +850,50 @@ async function main() {
       `badge read "${((await measure.locator(".measure-badge").textContent()) ?? "").trim()}"`,
     );
 
+    // Leaving inspect mode has to take every mark off the page with it. The bands, the
+    // badge and the readout are drawn on hover and nothing else was clearing them, so
+    // switching off left them painted over the page with no way to dismiss them.
+    //
+    // Leaving via Escape, with the pointer still on the element, is the repro that
+    // matters: clicking the toolbar moves the pointer off first, and `pointermove`
+    // clears the bands on its way past — which is how this passed against a broken
+    // build the first time it was written.
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(100);
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(150);
+    const leftovers = await measure.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]")?.shadowRoot;
+      if (!root) return ["no shadow root"];
+      const selectors = [
+        ".measure-badge",
+        ".measure-band",
+        ".measure-band-label",
+        ".measure-readout",
+        ".measure-anchor",
+        ".measure-line",
+        ".measure-label",
+        ".highlight",
+      ];
+      return selectors.filter((selector) =>
+        [...root.querySelectorAll(selector)].some(
+          (node) => getComputedStyle(node).display !== "none",
+        ),
+      );
+    });
+    check(
+      "leaving inspect mode wipes every mark off the page",
+      leftovers.length === 0,
+      `still drawn: ${JSON.stringify(leftovers)}`,
+    );
+    check(
+      "no probe attribute is left stranded on the page",
+      (await measure.locator("[data-senannotate-probe]").count()) === 0,
+    );
+    await measure.locator(".tool--brand").click();
+    await measure.waitForTimeout(100);
+
     // Turning off just the mode has to leave the box model alone — that is the whole
     // point of them being two switches rather than one.
     await measure.locator('.tool[aria-label^="Measure distances"]').click();
