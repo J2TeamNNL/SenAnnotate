@@ -567,7 +567,10 @@ button {
   gap: 1px;
   padding: 5px 7px;
   border-radius: 5px;
-  background: var(--sa-bg);
+  /* Solid, not `--sa-bg`: this panel lands on top of whatever the page is showing, and
+     a translucent one lets the page text through the figures it is there to make
+     readable. Same variable every real card uses. */
+  background: var(--sa-bg-solid);
   color: var(--sa-fg);
   border: 1px solid var(--sa-border);
   box-shadow: var(--sa-shadow);
@@ -584,6 +587,27 @@ button {
 }
 
 /* Ties a row to the band it describes — the only reason those two colours are fixed. */
+/*
+ * Fixed widths, so the four side cells line up between the padding row and the margin
+ * row. Without that the eye has to re-find the columns on every row, which is most of
+ * what makes a shorthand hard to read in the first place.
+ */
+.measure-readout__key {
+  min-width: 48px;
+}
+
+.measure-readout__side {
+  min-width: 34px;
+}
+
+/*
+ * This side's figure is already drawn on its band, on the page. Dimming it is the point
+ * of the row: what stays at full weight is exactly what the page could not tell you.
+ */
+.measure-readout__side--drawn {
+  opacity: 0.4;
+}
+
 .measure-readout__dot {
   width: 6px;
   height: 6px;

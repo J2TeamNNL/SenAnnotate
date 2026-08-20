@@ -652,10 +652,32 @@ async function main() {
     const readout = (await measure.locator(".measure-readout__row").allTextContents()).map((r) =>
       r.trim(),
     );
+    // The cells are separate spans laid out by a flex gap, so the row's text content
+    // runs them together — read the cells, not the row.
+    const sideCells = (await measure.locator(".measure-readout__side").allTextContents()).map(
+      (cell) => cell.trim(),
+    );
     check(
-      "the readout carries both shorthands in full",
-      readout.includes("padding 8px 12px") && readout.includes("margin 0 0 16px 0"),
-      JSON.stringify(readout),
+      "the readout names every side rather than a shorthand",
+      sideCells.join(" ") === "T 8 R 12 B 8 L 12 T 0 R 0 B 16 L 0",
+      JSON.stringify(sideCells),
+    );
+    check(
+      "each side row is keyed by its property",
+      (await measure.locator(".measure-readout__key").allTextContents()).join(",") ===
+        "padding,margin",
+      JSON.stringify(await measure.locator(".measure-readout__key").allTextContents()),
+    );
+    // The dimming is the whole mechanism: full weight means "the page could not tell you
+    // this". Only the 16px margin band was thick enough to label itself.
+    check(
+      "sides already drawn on their band are dimmed, and only those",
+      (await measure.locator(".measure-readout__side--drawn").allTextContents())
+        .map((cell) => cell.replace(/\s+/g, " ").trim())
+        .join(",") === "B 16",
+      JSON.stringify(
+        await measure.locator(".measure-readout__side--drawn").allTextContents(),
+      ),
     );
     check(
       "the readout names the type",

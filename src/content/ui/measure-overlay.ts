@@ -31,6 +31,14 @@ interface Box {
 /** Four strips make a band; the middle is left alone so the content stays readable. */
 type Strips = [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
 
+/** Which sides of a band ended up carrying their own figure. */
+interface DrawnSides {
+  top: boolean;
+  right: boolean;
+  bottom: boolean;
+  left: boolean;
+}
+
 /**
  * How thick a strip has to be before a number is drawn inside it.
  *
@@ -148,10 +156,14 @@ export class MeasureOverlay {
   // ---------------------------------------------------------------------------
 
   showBox(rect: Box, box: BoxModel, style: StyleSummary): void {
-    this.paintBand(this.margin, rect, box.margin, "outside", 4);
-    this.paintBand(this.padding, this.paddingBox(rect, box.border), box.padding, "inside", 0);
+    // The readout dims whatever the bands managed to say for themselves, so it has to
+    // run second and be told what they did.
+    const drawn = {
+      margin: this.paintBand(this.margin, rect, box.margin, "outside", 4),
+      padding: this.paintBand(this.padding, this.paddingBox(rect, box.border), box.padding, "inside", 0),
+    };
 
-    this.paintReadout(rect, box, style);
+    this.paintReadout(rect, box, style, drawn);
 
     this.badge.style.display = "block";
     this.badge.textContent = box.scaled
@@ -175,37 +187,46 @@ export class MeasureOverlay {
    * Sits under the badge, and flips above the element when there is no room — the same
    * "prefer, flip" the highlight label already does, for the same reason.
    */
-  private paintReadout(rect: Box, box: BoxModel, style: StyleSummary): void {
-    const rows: { dot?: "padding" | "margin"; text: string }[] = [];
+  /**
+   * `padding` and `margin` are broken out per side rather than written as shorthand.
+   *
+   * A shorthand only reads if you already know its order, and half the point of this
+   * panel is the sides whose band was too thin to hold a figure — telling someone
+   * `8px 12px` and leaving them to work out which of the two unlabelled bands is which
+   * is not showing them the value. Sides the band *did* label are dimmed: they are
+   * already legible on the page, and repeating them at full weight buries the ones that
+   * are not.
+   *
+   * `border` keeps its shorthand. It has no band of its own, so there is no thin-strip
+   * problem to solve, and it is very nearly always uniform.
+   */
+  private paintReadout(
+    rect: Box,
+    box: BoxModel,
+    style: StyleSummary,
+    drawn: { padding: DrawnSides; margin: DrawnSides },
+  ): void {
+    const rows: HTMLElement[] = [];
 
     const any = (sides: Sides) => sides.top || sides.right || sides.bottom || sides.left;
-    if (any(box.padding)) rows.push({ dot: "padding", text: `padding ${shorthand(box.padding)}` });
-    if (any(box.margin)) rows.push({ dot: "margin", text: `margin ${shorthand(box.margin)}` });
-    if (any(box.border)) rows.push({ text: `border ${shorthand(box.border)}` });
+    if (any(box.padding)) rows.push(this.sideRow("padding", box.padding, drawn.padding));
+    if (any(box.margin)) rows.push(this.sideRow("margin", box.margin, drawn.margin));
+    if (any(box.border)) rows.push(this.textRow(`border ${shorthand(box.border)}`));
 
     const line = style.lineHeight === "normal" ? "" : `/${style.lineHeight}`;
-    rows.push({ text: `${style.fontSize}${line} ${style.fontFamily} ${style.fontWeight}` });
+    rows.push(this.textRow(`${style.fontSize}${line} ${style.fontFamily} ${style.fontWeight}`));
 
     const on = style.backgroundIsImage
       ? "image"
       : style.backgroundInherited
         ? `${style.background} (inherited)`
         : style.background;
-    rows.push({ text: `${style.color} on ${on}` });
+    rows.push(this.textRow(`${style.color} on ${on}`));
 
     const shape = [style.display, style.radius && `radius ${style.radius}`].filter(Boolean);
-    rows.push({ text: shape.join(" · ") });
+    rows.push(this.textRow(shape.join(" · ")));
 
-    this.readout.replaceChildren(
-      ...rows.map((row) =>
-        h(
-          "div",
-          { class: "measure-readout__row" },
-          row.dot ? h("span", { class: `measure-readout__dot measure-readout__dot--${row.dot}` }) : null,
-          h("span", { text: row.text }),
-        ),
-      ),
-    );
+    this.readout.replaceChildren(...rows);
 
     this.readout.style.display = "block";
     this.readout.style.left = `${Math.max(0, rect.left)}px`;
@@ -229,7 +250,7 @@ export class MeasureOverlay {
     sides: Sides,
     side: "inside" | "outside",
     labelOffset: number,
-  ): void {
+  ): DrawnSides {
     const [top, right, bottom, left] = band;
     const outside = side === "outside";
 
@@ -258,12 +279,14 @@ export class MeasureOverlay {
     // A strip that is drawn and thick enough gets its figure written on it. The offset
     // separates the padding pool from the margin pool in the shared label array.
     const thickness = [sides.top, sides.right, sides.bottom, sides.left];
+    const labelled = [false, false, false, false];
     band.forEach((strip, index) => {
       const label = this.bandLabels[labelOffset + index];
       if (strip.style.display === "none" || thickness[index] < LABEL_MIN_THICKNESS) {
         label.style.display = "none";
         return;
       }
+      labelled[index] = true;
       const box = {
         left: Number.parseFloat(strip.style.left),
         top: Number.parseFloat(strip.style.top),
@@ -273,6 +296,8 @@ export class MeasureOverlay {
       this.label(label, String(thickness[index]), box.left + box.width / 2, box.top + box.height / 2);
       label.className = "measure-band-label";
     });
+
+    return { top: labelled[0], right: labelled[1], bottom: labelled[2], left: labelled[3] };
   }
 
   // ---------------------------------------------------------------------------
@@ -329,6 +354,29 @@ export class MeasureOverlay {
     this.hideGap();
     hide(this.anchorBox);
     this.anchored = null;
+  }
+
+  private textRow(text: string): HTMLElement {
+    return h("div", { class: "measure-readout__row" }, h("span", { text }));
+  }
+
+  private sideRow(name: "padding" | "margin", sides: Sides, drawn: DrawnSides): HTMLElement {
+    const cell = (initial: string, value: number, alreadyDrawn: boolean) =>
+      h("span", {
+        class: `measure-readout__side${alreadyDrawn ? " measure-readout__side--drawn" : ""}`,
+        text: `${initial} ${value}`,
+      });
+
+    return h(
+      "div",
+      { class: "measure-readout__row" },
+      h("span", { class: `measure-readout__dot measure-readout__dot--${name}` }),
+      h("span", { class: "measure-readout__key", text: name }),
+      cell("T", sides.top, drawn.top),
+      cell("R", sides.right, drawn.right),
+      cell("B", sides.bottom, drawn.bottom),
+      cell("L", sides.left, drawn.left),
+    );
   }
 
   /** Centred on the point by a CSS transform, so no layout read is needed. */

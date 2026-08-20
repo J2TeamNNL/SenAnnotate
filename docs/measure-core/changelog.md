@@ -154,12 +154,42 @@ is also orange, so the band and the hover highlight sit close in hue — legible
 crisp than under another accent. Re-colouring the bands to dodge one accent would break
 their pairing with the readout dots, which is what makes that panel readable at all.
 
+## Then the readout was wrong too, for a subtler reason
+
+Second report on the same overlay: a value that cannot fit inside its band should be
+shown clearly below. The readout already carried `padding 8px 12px` — so the information
+was technically present and still not *shown*. A shorthand only reads if you already know
+its order, and the whole problem being solved is the sides whose band was too thin to
+label. Naming two numbers and leaving the reader to work out which of two unlabelled
+bands each belongs to is not showing them the value.
+
+`padding` and `margin` are now broken out per side — `T 8 R 12 B 8 L 12` — and a side
+whose figure the band *did* draw is dimmed. The dimming is the mechanism, not decoration:
+what stays at full weight is precisely what the page could not say for itself. It means
+`paintBand` has to report which sides it labelled and `paintReadout` has to run second,
+which is now stated in `showBox`.
+
+`border` keeps its shorthand. It has no band, so it has no thin-strip problem to solve,
+and it is very nearly always uniform.
+
+Two things the fix turned up:
+
+- **The cells have no separator in the DOM.** They are sibling spans laid out by a flex
+  gap, so the row's `textContent` runs them together — `paddingT 8R 12B 8L 12`. The first
+  e2e assertion read the row and failed on a display that was correct; it now reads the
+  cells. Fixed column widths keep the padding row and the margin row aligned, which is
+  most of what makes columns readable at all.
+- **The panel was translucent.** It used `--sa-bg`, and page text showed through the
+  figures it exists to make legible. Every real card uses `--sa-bg-solid`; so does this
+  now. Caught by looking at a screenshot, not by any assertion — and no assertion added,
+  because "is it opaque" is not a thing this suite can ask.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **292/292** e2e and **9/9** upgrade, run locally with
+- `npm test` — **294/294** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 
