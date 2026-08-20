@@ -312,12 +312,45 @@ of the earlier teardown check in this same release, which passed against a broke
 and taught nothing; a regression test nobody has watched fail is a regression test nobody
 has tested.
 
+## The buttonless mode was reverted
+
+Removing the fourth mode button lasted one build. Reported back as *"the distance mode
+does not work"* — and it did work; it simply had no route in that anyone would find.
+
+Worth recording how that was established, because three plausible causes were wrong:
+
+| Suspected | Result |
+|---|---|
+| Focus stuck in the overlay after closing Settings, swallowing `4` | Wrong — the key works immediately after `Escape` closes the card |
+| A page calling `stopPropagation()` on `keydown` | Wrong — same node, so both listeners still run |
+| Old stored settings missing `measureDistances`, leaving it `undefined` | Wrong — `loadSettings` merges `DEFAULT_SETTINGS` (`storage.ts:145`) |
+
+A fresh-profile run of the whole flow — hover, anchor, gap line reading `24px`, composer —
+passed at every step. The feature was never broken. What was broken was the only way in:
+a keystroke, named once in small text at the end of a hint line, replacing a button.
+
+`git revert` of the button-removal commit, with two things held back from the revert:
+
+- **`ruler` stays out of the icon set.** It was removed in the same commit but for a
+  different reason — the Measure card it belonged to is gone for good. Reverting it back
+  in would have re-added dead data that `icon()` silently tolerates.
+- **This changelog is not reverted.** The design record keeps what happened; erasing the
+  entry would leave the next reader wondering why the button has a comment about being
+  deliberately absent that no longer matches anything.
+
+**The lesson is about the question, not the code.** The trade was named when the option
+was offered — "mode 4 is the only mode with no mouse route in" — and it was still chosen,
+because a cost written in a sentence does not feel like a cost until you go looking for a
+button that is not there. Offering an option with its downside stated is not the same as
+the downside being understood, and a one-build round trip through a real user was the
+cheaper way to find that out than arguing about it.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **307/307** e2e and **9/9** upgrade, run locally with
+- `npm test` — **306/306** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 

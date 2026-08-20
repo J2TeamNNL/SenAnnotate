@@ -130,8 +130,9 @@ Three switches: a master, and two indented under it that only appear once it is 
 **Off by default**, and the only one of the three you see until you turn it on.
 
 Off is the default because the cost is paid by people who never measure anything: a
-fourth clause on the hint line, which is the only thing on screen that explains the modes
-at all. With it off, everything reads exactly as it did before measuring existed.
+fourth icon-only button on a toolbar that docks over someone else's page, and a fourth
+clause on the hint line, which is the only thing on screen that explains the modes at
+all. With it off, everything reads exactly as it did before measuring existed.
 
 ### Measure distances
 
@@ -142,9 +143,8 @@ brings it along every time, not just on a fresh profile.
 It is a suggestion, not a lock: turn this row straight back off and it stays off until
 the master is cycled again.
 
-Adds mode 4, reached by pressing <kbd>4</kbd> — it has no toolbar button. Click two
-elements and the report carries the gap between them in pixels. See
-[[Toolbar and Modes]].
+Adds mode 4: click two elements and the report carries the gap between them in pixels.
+See [[Toolbar and Modes]].
 
 Switching it off while you are standing in mode 4 drops you back to mode 1. A mode that
 outlives its own button is a mode you can neither see nor leave.

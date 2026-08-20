@@ -63,12 +63,8 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
   { mode: "point", iconName: "cursor", title: "Click an element (1)" },
   { mode: "text", iconName: "text", title: "Select text (2)" },
   { mode: "area", iconName: "marquee", title: "Drag across elements (3)" },
+  { mode: "measure", iconName: "arrows", title: "Measure distances (4)" },
 ];
-
-// `measure` is deliberately absent: it is the one mode with no button, reachable only by
-// pressing `4`. Three icon-only buttons is what this pill can explain; a fourth, on a
-// dock that already sits over the page's own corner, costs more than the click it saves.
-// The hint line is what keeps it findable — see `MEASURE_HINT`.
 
 /**
  * One line of standing instruction. The mode buttons are icon-only and appear
@@ -85,10 +81,10 @@ const MODE_HINTS: Record<InspectMode, string> = {
 /**
  * Appended only when the measuring tools are switched on.
  *
- * This clause carries more weight than the other mode references around it: mode 4 has no
- * button, so the hint line is the *only* thing on screen that says it exists. Advertising
- * it to someone who has not enabled it would be advertising a key that does nothing, and
- * with the setting off all three hints read exactly as they did before measuring existed.
+ * The hint line is the only thing on screen that says a mode exists, so advertising a
+ * fourth one to someone who has not enabled it would be advertising a key that does
+ * nothing. With the setting off, all three hints read exactly as they did before
+ * measuring existed.
  */
 const MEASURE_HINT = " · 4 measure";
 
@@ -507,6 +503,11 @@ export class Toolbar {
     this.brandButton.setAttribute("aria-pressed", String(state.active));
     this.brandLabel.textContent = state.active ? "Inspecting" : "Inspect";
     this.modeGroup.style.display = state.active ? "flex" : "none";
+
+    // The button exists from construction and is hidden rather than rebuilt: the mode
+    // map is what `onModeChange` and the e2e locators both go through.
+    const measureModeButton = this.modeButtons.get("measure");
+    if (measureModeButton) measureModeButton.style.display = state.measureMode ? "" : "none";
 
     this.modeHint = hintFor(state.mode, state.measureMode);
     this.hintVisible = state.active;

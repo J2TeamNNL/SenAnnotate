@@ -610,12 +610,9 @@ async function main() {
     // Measuring is off by default, so mode 4 is not on the toolbar and `4` does nothing.
     // Both are asserted before switching it on: the off state is the one every user
     // meets first, and a feature flag nobody checks the off side of is not a flag.
-    // Mode 4 has no button by design, so the hint line is the only thing that says it
-    // exists — and the only thing a test can read.
     check(
-      "no fourth mode button is ever added to the toolbar",
-      (await measure.locator(".tool-group .tool").count()) === 3,
-      String(await measure.locator(".tool-group .tool").count()),
+      "mode 4 is absent until the setting is switched on",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
     );
     await measure.keyboard.press("4");
     check(
@@ -653,7 +650,7 @@ async function main() {
       `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
     );
 
-    await measure.keyboard.press("4");
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
     const measureHint = measure.locator(".toolbar-hint");
     check(
       "the hint explains that measuring takes two clicks",
@@ -780,8 +777,9 @@ async function main() {
     check("Escape clears the anchor", !(await measure.locator(".measure-anchor").isVisible()));
     check(
       "Escape does not leave the mode",
-      ((await measureHint.textContent()) ?? "").trim().startsWith("Click two elements"),
-      `hint read "${(await measureHint.textContent())?.trim() ?? ""}"`,
+      (await measure
+        .locator('.tool[aria-label^="Measure distances"]')
+        .getAttribute("aria-pressed")) === "true",
     );
 
     // Take it again and commit it.
@@ -898,7 +896,7 @@ async function main() {
 
     // Turning off just the mode has to leave the box model alone — that is the whole
     // point of them being two switches rather than one.
-    await measure.keyboard.press("4");
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
     await measure.locator('.tool[aria-label^="Settings"]').click();
     await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
     await measure.locator('.settings input[data-setting="measureDistances"]').click();
@@ -906,16 +904,8 @@ async function main() {
     await measure.waitForTimeout(200);
 
     check(
-      "turning off just the mode stops the 4 key advertising itself",
-      !((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("4 measure"),
-      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
-    );
-    await measure.keyboard.press("4");
-    await measure.waitForTimeout(80);
-    check(
-      "and the key itself does nothing",
-      !((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("Click two elements"),
-      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+      "turning off just the mode removes its button",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
     );
     await measure.mouse.move(save.x + 8, save.y + 8);
     await measure.mouse.move(...middleOf(save));

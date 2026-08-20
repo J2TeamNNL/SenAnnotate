@@ -141,7 +141,7 @@ the line and column.
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements near each other | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+drag a box around them — or mode <kbd>3</kbd> and drag |
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
-| Measure the gap between two elements | switch on **Measuring tools** in settings, then press <kbd>4</kbd> — no button, by design — and click one element, then the other |
+| Measure the gap between two elements | switch on **Measuring tools** in settings, then mode <kbd>4</kbd>: click one, then the other |
 | See an element's size, padding, margin, type and colours | **Box model on hover** in settings — or just enter mode <kbd>4</kbd> |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
