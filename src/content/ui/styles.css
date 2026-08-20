@@ -465,6 +465,75 @@ button {
   background: color-mix(in srgb, var(--sa-accent) 12%, transparent);
 }
 
+/* ---------------------------------------------------------------------------
+ * Measurement overlay
+ *
+ * The band colours are the one place in this UI that does NOT derive from
+ * `--sa-accent`. The padding band and the margin band have to be distinguishable
+ * from each other, and two shades derived from an arbitrary colour the user picked
+ * cannot guarantee that. Fixed green and orange, translucent enough to read the page
+ * through. See `docs/measure-core/context.md`.
+ * ------------------------------------------------------------------------- */
+
+.measure-band {
+  position: fixed;
+  pointer-events: none;
+}
+
+.measure-band--padding {
+  background: rgba(16, 185, 129, 0.28);
+}
+
+.measure-band--margin {
+  background: rgba(249, 115, 22, 0.24);
+}
+
+.measure-badge {
+  position: fixed;
+  pointer-events: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--sa-accent);
+  color: var(--sa-accent-ink);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--sa-mono);
+  white-space: nowrap;
+}
+
+/* The element a gap is measured from. Solid where the live hover is translucent, so
+   the two are never mistaken for each other mid-measurement. */
+.measure-anchor {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid var(--sa-accent);
+  border-radius: 3px;
+  background: transparent;
+}
+
+.measure-line {
+  position: fixed;
+  pointer-events: none;
+  background: var(--sa-accent);
+}
+
+.measure-label {
+  position: fixed;
+  pointer-events: none;
+  /* Centred on its point without a layout read — the alternative is measuring
+     offsetWidth on every pointermove. */
+  transform: translate(-50%, -50%);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--sa-accent);
+  color: var(--sa-accent-ink);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--sa-mono);
+  line-height: 15px;
+  white-space: nowrap;
+}
+
 /* ==========================================================================
    Markers
    ========================================================================== */
