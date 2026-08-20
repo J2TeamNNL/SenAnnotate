@@ -402,9 +402,10 @@ export interface Settings {
    */
   measureTools: boolean;
   /**
-   * Mode 4 itself. Only reachable when `measureTools`, and **on** by default under it —
-   * a master switch you turn on that changes nothing on screen is a broken switch, and
-   * the gap measurement is the headline the master is named after.
+   * Mode 4 itself. Only reachable when `measureTools`, and switched **on** whenever the
+   * master is — a master switch you turn on that changes nothing on screen is a broken
+   * switch, and the gap measurement is the headline the master is named after. The
+   * default here only covers a profile that has never touched either.
    */
   measureDistances: boolean;
   /** Draw the box model on the hover highlight. Only reachable when `measureTools`. */

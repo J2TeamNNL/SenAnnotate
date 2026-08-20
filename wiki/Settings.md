@@ -135,8 +135,12 @@ at all. With it off, everything reads exactly as it did before measuring existed
 
 ### Measure distances
 
-On by default *under the master* — turning the master on and getting nothing would make
-it look broken, and this is the mode it is named after.
+**Switched on whenever the master is.** Turning *Measuring tools* on and watching nothing
+happen would make it look broken, and this is the mode it is named after — so the master
+brings it along every time, not just on a fresh profile.
+
+It is a suggestion, not a lock: turn this row straight back off and it stays off until
+the master is cycled again.
 
 Adds mode 4, reached by pressing <kbd>4</kbd> — it has no toolbar button. Click two
 elements and the report carries the gap between them in pixels. See

@@ -294,12 +294,30 @@ since the Measure card was deleted, `arrows` as of this change — and `icon()` 
 falls back to `cursor` for an unknown name, so a dead entry is exactly the kind of thing
 that survives forever.
 
+## Closing the dead state properly
+
+The default on `measureDistances` covered a fresh profile and nothing else. Turn the mode
+off, turn the master off, turn the master back on — and you had a switch you could flip
+and watch do nothing, which is exactly the state flagged when this shape was chosen.
+
+Switching the master on now derives `measureDistances: true`, in the same place and by
+the same rule as `detailLevel → componentMode`: a suggestion, not a lock. The row below
+can be turned straight back off and stays off until the master is cycled again. The
+popup writes none of these settings, so the derivation needs to exist in exactly one
+place.
+
+**The new check was verified by breaking the fix.** The line was commented out, the suite
+re-run, and both new assertions failed — then it was put back. That step exists because
+of the earlier teardown check in this same release, which passed against a broken build
+and taught nothing; a regression test nobody has watched fail is a regression test nobody
+has tested.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **304/304** e2e and **9/9** upgrade, run locally with
+- `npm test` — **307/307** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 

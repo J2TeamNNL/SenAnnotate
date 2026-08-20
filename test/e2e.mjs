@@ -925,6 +925,29 @@ async function main() {
       await measure.locator(".measure-badge").isVisible(),
     );
 
+    // The dead state this three-switch shape allows, and the rule that closes it:
+    // with the mode left off, cycling the master has to bring it back — otherwise the
+    // master is a switch you can turn on and watch do nothing.
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the mode is genuinely off before the master is cycled",
+      !(await measure.locator('.settings input[data-setting="measureDistances"]').isChecked()),
+    );
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    check(
+      "switching the master back on brings the mode with it",
+      await measure.locator('.settings input[data-setting="measureDistances"]').isChecked(),
+    );
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+    check(
+      "and the hint advertises it again",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("4 measure"),
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
     // Then the master, which has to take everything with it.
     await measure.locator('.tool[aria-label^="Settings"]').click();
     await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });

@@ -279,13 +279,21 @@ const settingsCallbacks = {
   onClose: () => toggleSettings(false),
   onHideUntilRestart: () => hideUntilRestart(),
   onChange: (patch: Partial<Settings>) => {
+    const derived: Partial<Settings> = {};
+
     // Changing the detail level moves `componentMode` to its preset, exactly as the
     // panel's own detail select does. A suggestion, not a lock: the components row can
     // be set to anything afterwards and stays there until the level changes again.
-    const derived =
-      patch.detailLevel !== undefined
-        ? { componentMode: DETAIL_TO_COMPONENT_MODE[patch.detailLevel] }
-        : {};
+    if (patch.detailLevel !== undefined) {
+      derived.componentMode = DETAIL_TO_COMPONENT_MODE[patch.detailLevel];
+    }
+
+    // Switching the master on switches the mode on with it. The default alone was not
+    // enough: turn the mode off, turn the master off, turn the master back on, and you
+    // had a switch that visibly did nothing — the one dead state this three-switch shape
+    // allows. Same suggestion-not-a-lock rule as above; the row below it can be turned
+    // straight back off and will stay off until the master is cycled again.
+    if (patch.measureTools === true) derived.measureDistances = true;
 
     settings = { ...settings, ...derived, ...patch };
     void saveSettings(settings);
