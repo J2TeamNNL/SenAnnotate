@@ -273,12 +273,33 @@ record of the annotations, and dropping them would hide the user's own work rath
 tidy up after ours. Freeze survives too, for the reason `README.md` already gives: it is a
 property of the page, not of the toolbar, and it has its own switch.
 
+## And then mode 4 lost its button
+
+Last change asked for: take the fourth mode button off the toolbar. Mode 4 is now
+reachable only by pressing `4`, and `MODES` in `toolbar.ts` is back to three entries.
+
+The trade is stated rather than hidden: it is the one mode with no pointer route in, so
+the hint line stops being a convenience and becomes the *only* thing on screen that says
+the mode exists. That is why `MEASURE_HINT` is still gated on the setting — advertising a
+key that does nothing would be worse than not advertising it — and why the comment above
+`MODES` explains the absence rather than leaving the next reader to assume an oversight.
+
+Three e2e assertions were reading state off that button: whether it existed, whether it
+was pressed, and how to enter the mode. All three now read the hint line, which is the
+same signal a user has. That is a better test than the one it replaced — it was asserting
+on an affordance rather than on the state.
+
+`arrows` and `ruler` came out of the icon set in the same commit. Both were dead — `ruler`
+since the Measure card was deleted, `arrows` as of this change — and `icon()` silently
+falls back to `cursor` for an unknown name, so a dead entry is exactly the kind of thing
+that survives forever.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **303/303** e2e and **9/9** upgrade, run locally with
+- `npm test` — **304/304** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 
