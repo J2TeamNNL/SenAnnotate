@@ -57,6 +57,22 @@ e2e report assertion, not by reading the code.
 `box` is now read off the anchor. The second element is not lost — naming it is the whole
 job of the `**Measured to:**` line.
 
+## The third bug: the exclusion was only guarded at one door
+
+Found while building a tester zip, by probing the Measure card — which nothing in the
+suite touched. `toggleMeasureCard` closed the settings card on the way in, but
+`toggleSettings` did not close the Measure card, so opening Settings on top of an open
+Measure card stacked both on the same eight pixels above the dock.
+
+The mistake was treating "only one anchored card at a time" as a property of the card
+being opened rather than of the pair. It is now stated at both doors, and the e2e block
+asserts it from both directions — a one-directional check would have passed against the
+broken build.
+
+The wider lesson for the plan: Task 5 shipped a UI surface with no browser check at all,
+and the plan's verification for it was `npm run typecheck && npm run build`. A card is
+not verified by compiling.
+
 ## Two assumptions in the plan that were wrong about the code
 
 **`pointermove` returns early on any mode but `point`** (`content/index.ts`). The plan
@@ -102,7 +118,7 @@ thing with the wrong number.
 - `node test/measure.mjs` — 31 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **282/282** e2e and **9/9** upgrade, run locally with
+- `npm test` — **287/287** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 

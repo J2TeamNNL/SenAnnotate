@@ -456,6 +456,10 @@ function toggleSettings(force?: boolean): void {
 
   if (next) {
     togglePanel(false);
+    // The exclusion has to be stated at both doors. Stating it only in
+    // `toggleMeasureCard` let Settings open on top of a Measure card already showing,
+    // and the two share the eight pixels above the dock.
+    toggleMeasureCard(false);
     settingsCard = new SettingsCard(
       ui.cardLayer,
       settingsCallbacks,

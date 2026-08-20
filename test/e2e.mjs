@@ -721,6 +721,71 @@ async function main() {
     );
 
     await measure.locator(".panel select").selectOption("standard");
+    await measure.locator('.tool[aria-label^="Annotations"]').click();
+
+    // --- the Measure card -----------------------------------------------------
+    //
+    // Its own controls, and the mutual exclusion with the settings card. That last one
+    // shipped broken: `toggleMeasureCard` closed Settings but `toggleSettings` did not
+    // close this one, so the two stacked on the same eight pixels above the dock. The
+    // exclusion has to be asserted from both directions or only one door is guarded.
+    await measure.locator('.tool[aria-label^="Measure tools"]').click();
+    const measureCard = measure.locator(".measure-card");
+    await measureCard.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the Measure card opens from the toolbar",
+      (await measure
+        .locator('.tool[aria-label^="Measure tools"]')
+        .getAttribute("aria-pressed")) === "true",
+    );
+
+    // Back to point mode: the box model is a setting there, not a given.
+    await measure.keyboard.press("1");
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "the box model is off by default outside mode 4",
+      !(await measure.locator(".measure-badge").isVisible()),
+    );
+
+    await measureCard.locator('input[data-setting="showBoxModel"]').click();
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "the toggle turns the badge on in point mode",
+      ((await measure.locator(".measure-badge").textContent()) ?? "").trim() === "320\u00d748",
+      `badge read "${((await measure.locator(".measure-badge").textContent()) ?? "").trim()}"`,
+    );
+
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.waitForTimeout(200);
+    check(
+      "opening Settings closes the Measure card",
+      (await measure.locator(".measure-card:visible").count()) === 0,
+      String(await measure.locator(".measure-card:visible").count()),
+    );
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    await measure.locator('.tool[aria-label^="Measure tools"]').click();
+    await measureCard.waitFor({ state: "visible", timeout: 5_000 });
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+    check(
+      "Escape closes the Measure card",
+      (await measure.locator(".measure-card:visible").count()) === 0,
+      String(await measure.locator(".measure-card:visible").count()),
+    );
+
+    // Put it back: `showBoxModel` is stored in sync storage, so leaving it on would
+    // paint bands over every page the rest of the suite hovers.
+    await measure.locator('.tool[aria-label^="Measure tools"]').click();
+    await measureCard.waitFor({ state: "visible", timeout: 5_000 });
+    await measureCard.locator('input[data-setting="showBoxModel"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
 
     // -------------------------------------------------------------------------
     // ⌘/Ctrl+drag — the same box without leaving point mode
