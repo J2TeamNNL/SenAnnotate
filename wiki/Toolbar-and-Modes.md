@@ -17,12 +17,14 @@ in the corner, next to the page they describe.
 | ⌖ | **Click an element** | Mode 1 — the default. | <kbd>1</kbd> |
 | T | **Select text** | Mode 2. | <kbd>2</kbd> |
 | ⛶ | **Drag across elements** | Mode 3 — the marquee. | <kbd>3</kbd> |
+| ⇔ | **Measure distances** | Mode 4 — the gap between two elements. | <kbd>4</kbd> |
 | ❄ | **Freeze animations** | Parks `requestAnimationFrame` and `setTimeout` in the page. | <kbd>F</kbd> |
 | ☰ ③ | **Annotations** | Opens the panel. The badge is the count on this page. | <kbd>A</kbd> |
+| ▤ | **Measure tools** | Opens the Measure card. | — |
 | ⚙ | **Settings** | Opens the settings card. | — |
 | » | **Collapse toolbar** | Collapses to a dot. | <kbd>H</kbd> |
 
-**The three mode buttons only appear once inspect mode is on.** They are icon-only, which
+**The four mode buttons only appear once inspect mode is on.** They are icon-only, which
 is exactly why the hint line exists.
 
 ---
@@ -157,3 +159,33 @@ ordinary page instead.
 **Hide until restart** in [[Settings]] removes the overlay from one tab deliberately.
 If the toolbar is missing where you expect it, that is the first thing to check —
 see [[Troubleshooting]].
+
+---
+
+## Mode 4 — measuring
+
+Mode 4 answers the question most UI notes are really about: *how far apart are these two
+things?* Hover reads, click writes — the same contract as mode 1.
+
+1. **Hover** anything. The highlight gains a `320×48` badge, and padding and margin are
+   shaded on it.
+2. **Click** an element. It stays outlined as the **anchor**, and the hint changes to ask
+   for the second one.
+3. **Hover** a second element. A dimension line is drawn across the space between them,
+   with the figure on it. Nothing has been recorded yet — reading a number costs nothing.
+4. **Click** it, or press <kbd>C</kbd>, and the composer opens with both elements captured
+   and the figures attached.
+
+<kbd>Esc</kbd> drops the anchor without leaving the mode.
+
+The report gets `**Measured to:**`, `**Gap:**` and — from *Detailed* — `**Edges:**` and
+`**Box:**`. See [[The Report]] for the exact lines.
+
+Two things worth knowing:
+
+- **The box model describes the anchor**, not the second element, because every other
+  line of the annotation does too. The second element is named on the `**Measured to:**`
+  line.
+- **A `(scaled)` badge** means the element is drawn at a different size than it is laid
+  out at — a CSS `transform`, or page zoom. The size shown is what is on screen; the
+  padding and margin figures are the layout ones, and the two genuinely differ.

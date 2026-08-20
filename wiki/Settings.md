@@ -121,6 +121,25 @@ To get it back: close the tab, or open the page in a new one.
 
 ---
 
+## The Measure card
+
+One control, and it is **not** in Settings. The ▤ button on the toolbar opens its own
+small card next to the settings one.
+
+### Box model on hover
+
+Off by default. On, every hover — in any mode — shades the element's padding and margin
+and puts its border-box size on a badge.
+
+It lives in its own card because it is switched *during* a review rather than configured
+once: you turn it on to look at some spacing and off again when it is in the way. A row
+in Settings, under three selects you set on install day, is the wrong shelf for that.
+
+**Mode 4 shows the bands regardless of this setting** — measuring without them would be
+measuring blind.
+
+---
+
 ## Appearance
 
 ### Theme

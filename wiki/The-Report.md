@@ -120,6 +120,46 @@ A multi-element note says so, and the forensic block covers the first element:
 
 ---
 
+## Measurements
+
+Only present on annotations taken in **mode 4**. The figures are deliberately not gated
+the same way:
+
+| Line | Compact | Standard | Detailed | Forensic |
+|---|:-:|:-:|:-:|:-:|
+| ` · gap 24×0px` on the one-line bullet | ✓ | | | |
+| `**Measured to:**` and `**Gap:**` | | ✓ | ✓ | ✓ |
+| `**Edges:**` | | | ✓ | ✓ |
+| `**Box:**` | | | ✓ | ✓ |
+| `**Centres:**` | | | | ✓ |
+
+```markdown
+**Measured to:** button "Cancel" (`.actions > button.secondary`)
+**Gap:** 24px horizontal, 0px vertical
+**Edges:** top aligned, right -12px, bottom aligned, left +8px
+**Box:** 320×48px · content 296×32 · padding 8px 12px · margin 0 0 16px 0
+```
+
+**Why `**Gap:**` appears a level earlier than `**Box:**`.** A gap costs two deliberate
+clicks in a mode you chose — it is the thing you meant to say, so lowering the detail
+level does not throw it away. The box model is collected alongside without being asked
+for, which puts it at the same level as `**Position:**` and `**Classes:**`.
+
+**Reading the numbers.**
+
+- `**Gap:**` is the clear space on each axis. `12px overlap` means they overlap by that
+  much; `0px` means the edges touch. When one element is wholly inside the other the
+  line reads `none` and `**Edges:**` is the real answer.
+- `**Edges:**` is the second element's edge minus the first's, so `aligned` means 0 and
+  the sign tells you which way to move.
+- Figures keep two decimal places. A `0.5px` gap prints as `0.5px` rather than being
+  rounded to nothing — a half-pixel seam is a real defect and the usual integer
+  rounding is what hides it.
+- `**Box:**` describes the **anchor** — the first element you clicked — because every
+  other line in the annotation does. `320×48px` is the border box as painted.
+
+---
+
 ## Frames
 
 An element inside an iframe carries a `**Frame:**` line above `**Location:**`, because

@@ -31,6 +31,7 @@ settings row — click the page once and they come back. See [[Troubleshooting]]
 | <kbd>1</kbd> | Click an element *(default)* |
 | <kbd>2</kbd> | Select text |
 | <kbd>3</kbd> | Drag across elements |
+| <kbd>4</kbd> | Measure distances |
 
 Mode keys need inspect mode on. <kbd>H</kbd> does not, which is the one asymmetry.
 
@@ -41,11 +42,11 @@ Mode keys need inspect mode on. <kbd>H</kbd> does not, which is the one asymmetr
 | Gesture | Does |
 |---|---|
 | **Click** | Annotate the element |
-| <kbd>C</kbd> | Annotate what the pointer is hovering, **without clicking** |
+| <kbd>C</kbd> | Annotate what the pointer is hovering, **without clicking** — in mode 4, the measured pair |
 | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+**click** | Add to a pick set — click again to remove |
 | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+**drag** | Marquee, without leaving mode 1 |
 | <kbd>Enter</kbd> | Annotate the pick set as it stands |
-| <kbd>Esc</kbd> | Drop the pick set, staying in inspect mode |
+| <kbd>Esc</kbd> | Drop the pick set, or the measuring anchor, staying in inspect mode |
 | **Drag the pill** | Move the toolbar — remembered per page |
 
 **On macOS use <kbd>⌘</kbd>.** <kbd>Ctrl</kbd>+click there is a right-click.
