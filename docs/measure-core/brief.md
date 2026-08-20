@@ -50,7 +50,7 @@ interface BoxModel {
 }
 
 interface GapMeasurement {
-  gap: { x: number; y: number };   // + apart, − overlapping, 0 touching
+  gap: { x: number; y: number };   // + apart, - overlapping, 0 touching
   edges: Sides;                    // B's edge minus A's edge; 0 is aligned
   center: { x: number; y: number };
   containment: "none" | "b-inside-a" | "a-inside-b";
@@ -74,11 +74,12 @@ Report lines, by detail level:
 | `**Measured to:**` and `**Gap:**` | | ✓ | ✓ | ✓ |
 | `**Edges:**` | | | ✓ | ✓ |
 | `**Box:**` | | | ✓ | ✓ |
+| `**Centres:**` | | | | ✓ |
 
 ```markdown
 **Measured to:** button "Cancel" (`.actions > button.secondary`)
 **Gap:** 24px horizontal, 0px vertical
-**Edges:** top aligned, bottom aligned, left +8px, right −12px
+**Edges:** top aligned, bottom aligned, left +8px, right -12px
 **Box:** 320×48px · content 296×32 · padding 8px 12px · margin 0 0 16px · border 1px
 ```
 

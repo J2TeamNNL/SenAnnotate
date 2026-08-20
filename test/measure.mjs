@@ -94,5 +94,106 @@ check("centre delta is computed", shifted.center.x === -2, String(shifted.center
 const hairline = measureGap(rect(0, 0, 100, 40), rect(100.5, 0, 100, 40));
 check("a 0.5px gap is not rounded away", hairline.gap.x === 0.5, String(hairline.gap.x));
 
+// -----------------------------------------------------------------------------
+// Report formatting
+// -----------------------------------------------------------------------------
+
+// `output.ts` is browser code: its forensic header reports the viewport and the user
+// agent. Nothing under test here reads them, but the module would throw on the way past,
+// so `window` is stubbed rather than the header being made to care where it runs.
+// `navigator` is left alone — Node has had one since 21, and it is read-only.
+globalThis.window = { innerWidth: 1280, innerHeight: 800, devicePixelRatio: 2 };
+
+const { formatSides, formatBoxModel, generateOutput } = await load(
+  "src/shared/output.ts",
+  "output.mjs",
+);
+
+const equal = { top: 1, right: 1, bottom: 1, left: 1 };
+const pair = { top: 8, right: 12, bottom: 8, left: 12 };
+const odd = { top: 0, right: 0, bottom: 16, left: 0 };
+check("four equal sides collapse to one", formatSides(equal) === "1px", formatSides(equal));
+check("a vertical/horizontal pair collapses to two", formatSides(pair) === "8px 12px", formatSides(pair));
+check("an odd side keeps all four", formatSides(odd) === "0 0 16px 0", formatSides(odd));
+
+const box = {
+  width: 320,
+  height: 48,
+  content: { width: 296, height: 32 },
+  padding: { top: 8, right: 12, bottom: 8, left: 12 },
+  border: { top: 0, right: 0, bottom: 0, left: 0 },
+  margin: { top: 0, right: 0, bottom: 16, left: 0 },
+  scaled: false,
+};
+check(
+  "the box line reads as one sentence of CSS",
+  formatBoxModel(box) === "320\u00d748px \u00b7 content 296\u00d732 \u00b7 padding 8px 12px \u00b7 margin 0 0 16px 0",
+  formatBoxModel(box),
+);
+check("a zero band is left out entirely", !formatBoxModel(box).includes("border"), formatBoxModel(box));
+check(
+  "a scaled element says so rather than lying",
+  formatBoxModel({ ...box, scaled: true }).endsWith(" \u00b7 scaled"),
+  formatBoxModel({ ...box, scaled: true }),
+);
+
+/** One annotation carrying a measured gap, at whichever detail level. */
+function reportWith(detail) {
+  return generateOutput(
+    [
+      {
+        id: "1",
+        comment: "these two are not aligned",
+        timestamp: 0,
+        element: 'button "Save"',
+        elementPath: ".actions > button",
+        selector: ".actions > button.primary",
+        x: 50,
+        y: 100,
+        isFixed: false,
+        measurements: {
+          box,
+          gap: {
+            gap: { x: 24, y: 0 },
+            edges: { top: 0, right: -12, bottom: 0, left: 8 },
+            center: { x: -2, y: 0 },
+            containment: "none",
+            toElement: 'button "Cancel"',
+            toSelector: ".actions > button.secondary",
+          },
+        },
+      },
+    ],
+    { pathname: "/checkout", href: "https://example.test/checkout", page: null },
+    detail,
+  );
+}
+
+const standard = reportWith("standard");
+check("standard names the second element", standard.includes('**Measured to:** button "Cancel"'), standard.slice(0, 300));
+check("standard prints the gap", standard.includes("**Gap:** 24px horizontal, 0px vertical"), standard.slice(0, 300));
+check("standard withholds the edges", !standard.includes("**Edges:**"), "");
+check("standard withholds the box", !standard.includes("**Box:**"), "");
+
+const detailed = reportWith("detailed");
+check(
+  "detailed prints the edges",
+  detailed.includes("**Edges:** top aligned, right -12px, bottom aligned, left +8px"),
+  detailed.slice(0, 400),
+);
+check("detailed prints the box", detailed.includes("**Box:** 320\u00d748px"), detailed.slice(0, 400));
+check("detailed still withholds the centres", !detailed.includes("**Centres:**"), "");
+
+const forensic = reportWith("forensic");
+check(
+  "forensic prints the centres",
+  forensic.includes("**Centres:** 2px left, aligned vertically"),
+  forensic.slice(0, 400),
+);
+
+const compact = reportWith("compact");
+check("compact appends the gap to the bullet", compact.includes("\u00b7 gap 24\u00d70px"), compact.slice(0, 300));
+check("compact prints no measurement block", !compact.includes("**Gap:**"), "");
+
 console.log(failures ? `\n${failures} failed` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
