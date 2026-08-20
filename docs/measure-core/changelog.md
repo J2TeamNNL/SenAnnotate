@@ -88,7 +88,7 @@ the `data-inspecting` lift and the `data-anchored` release.
 ## Where `index.ts` landed
 
 `docs/measure-core/implementation-plan.md` predicted roughly 60 added lines and treated
-more as evidence that state had leaked out of `measure-overlay.ts`. It came to 172.
+more as evidence that state had leaked out of `measure-overlay.ts`. It came to 186.
 
 The state did not leak — the anchor lives in `MeasureOverlay`, and `index.ts` holds no
 measurement state of its own. The estimate was simply wrong about what the plan itself had
