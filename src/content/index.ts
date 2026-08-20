@@ -85,7 +85,6 @@ import {
 import { Overlay } from "./ui/overlay";
 import { measureGap, readBoxModel, readStyleSummary } from "./measure";
 import { Panel } from "./ui/panel";
-import { MeasureCard } from "./ui/measure-card";
 import { MeasureOverlay } from "./ui/measure-overlay";
 import { SettingsCard } from "./ui/settings";
 import { createUiRoot, type UiRoot } from "./ui/root";
@@ -220,7 +219,6 @@ let markers!: Markers;
 let toolbar!: Toolbar;
 let panel: Panel | null = null;
 let settingsCard: SettingsCard | null = null;
-let measureCard: MeasureCard | null = null;
 let measureOverlay!: MeasureOverlay;
 
 /**
@@ -262,7 +260,6 @@ function createTopUi(): void {
     onToggleFreeze: () => toggleFreeze(),
     onTogglePanel: () => togglePanel(),
     onToggleSettings: () => toggleSettings(),
-    onToggleMeasure: () => toggleMeasureCard(),
     onToggleCollapse: () => toggleCollapsed(),
     onMove: (position) => {
       // Saved on drop rather than per frame — a drag would otherwise write sixty
@@ -274,27 +271,9 @@ function createTopUi(): void {
     // re-clamping a stored position, the `ResizeObserver` after a collapse. The settings
     // card belongs to the pill and has to keep up with the pointer, not with storage —
     // which is why this is not `onMove`.
-    onDockShift: () => {
-      settingsCard?.anchorTo(toolbar.dockBox());
-      measureCard?.anchorTo(toolbar.dockBox());
-    },
+    onDockShift: () => settingsCard?.anchorTo(toolbar.dockBox()),
   });
 }
-
-/**
- * Deliberately not a reuse of `settingsCallbacks.onChange`: that one derives
- * `componentMode` from `detailLevel`, and no control in the Measure card can set
- * either. Sharing it would leave a rule here this card can never reach, which the
- * next reader would have to disprove before touching either file.
- */
-const measureCallbacks = {
-  onClose: () => toggleMeasureCard(false),
-  onChange: (patch: Partial<Settings>) => {
-    settings = { ...settings, ...patch };
-    void saveSettings(settings);
-    render();
-  },
-};
 
 const settingsCallbacks = {
   onClose: () => toggleSettings(false),
@@ -311,6 +290,7 @@ const settingsCallbacks = {
     settings = { ...settings, ...derived, ...patch };
     void saveSettings(settings);
     applyAppearance();
+    enforceMeasureSetting();
     render();
   },
 };
@@ -346,6 +326,21 @@ const panelCallbacks = {
   },
 };
 
+/**
+ * Leave mode 4 if the setting that provides it has just been switched off.
+ *
+ * Without this the mode survives its own button: the toolbar hides the fourth icon, the
+ * hint drops its clause, and clicks keep anchoring elements with nothing on screen to
+ * say why. Called from both places settings can change — this card, and a push from the
+ * popup in another tab.
+ */
+function enforceMeasureSetting(): void {
+  if (settings.measureTools || mode !== "measure") return;
+  mode = "point";
+  measureOverlay.hideAll();
+  broadcastFrameState(active, mode);
+}
+
 function render(): void {
   toolbar.update({
     active,
@@ -353,7 +348,7 @@ function render(): void {
     frozen,
     panelOpen,
     settingsOpen: !!settingsCard,
-    measureOpen: !!measureCard,
+    measureTools: settings.measureTools,
     collapsed: settings.toolbarCollapsed,
     count: annotations.length,
     page,
@@ -361,7 +356,6 @@ function render(): void {
   markers.render(annotations, settings.showMarkers && !!annotations.length);
   panel?.render(annotations, settings.detailLevel);
   settingsCard?.render(settings);
-  measureCard?.render(settings);
   void notifyBadge();
 }
 
@@ -459,7 +453,6 @@ function toggleSettings(force?: boolean): void {
     // The exclusion has to be stated at both doors. Stating it only in
     // `toggleMeasureCard` let Settings open on top of a Measure card already showing,
     // and the two share the eight pixels above the dock.
-    toggleMeasureCard(false);
     settingsCard = new SettingsCard(
       ui.cardLayer,
       settingsCallbacks,
@@ -472,31 +465,6 @@ function toggleSettings(force?: boolean): void {
   } else {
     settingsCard?.destroy();
     settingsCard = null;
-  }
-
-  render();
-}
-
-/**
- * Mirrors `toggleSettings` down to the `force` argument and the trailing `render()`.
- * The two cards hang off the same corner of the dock, so opening either closes the
- * other rather than stacking two anchored panels on the same eight pixels.
- */
-function toggleMeasureCard(force?: boolean): void {
-  const next = force ?? !measureCard;
-  if (next === !!measureCard) return;
-
-  if (next) {
-    toggleSettings(false);
-    togglePanel(false);
-    measureCard = new MeasureCard(ui.cardLayer, measureCallbacks);
-    measureCard.render(settings);
-    // After `render`, for the reason `toggleSettings` gives: a card whose rows are not
-    // filled in yet measures short, and the placement depends on its height.
-    measureCard.anchorTo(toolbar.dockBox());
-  } else {
-    measureCard?.destroy();
-    measureCard = null;
   }
 
   render();
@@ -625,7 +593,7 @@ function drawHover(element: Element): void {
  * when the user asked for it, or when the mode is about nothing else.
  */
 function drawMeasure(element: Element): void {
-  if (mode !== "measure" && !settings.showBoxModel) {
+  if (!settings.measureTools || (mode !== "measure" && !settings.showBoxModel)) {
     measureOverlay.hideBox();
     measureOverlay.hideGap();
     return;
@@ -1692,6 +1660,7 @@ function installTopFrame(): void {
   async function refreshSettings(): Promise<void> {
     settings = await loadSettings();
     applyAppearance();
+    enforceMeasureSetting();
     render();
   }
 
@@ -1937,10 +1906,6 @@ function installTopFrame(): void {
         toggleSettings(false);
         return;
       }
-      if (measureCard) {
-        toggleMeasureCard(false);
-        return;
-      }
       // A half-taken measurement is as likely a target for Escape as a half-built pick
       // set, and for the same reason: it is a gesture the user started and abandoned.
       // Neither leaves the mode — only the gesture.
@@ -2002,6 +1967,9 @@ function installTopFrame(): void {
         render();
         break;
       case "4":
+        // A key for a mode whose button is not on the toolbar would be a key that does
+        // nothing visible, which is worse than a key that does nothing.
+        if (!settings.measureTools) break;
         mode = "measure";
         resetMarquee();
         clearPicked();

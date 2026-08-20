@@ -1,5 +1,10 @@
 # Brief — Measuring, and putting the numbers in the report
 
+> **Superseded in two places, deliberately left as written.** The Measure card described
+> below was built and then removed, and the feature is now off by default behind a
+> *Measuring tools* switch in Settings. This file is the record of what was decided at
+> the time; [`changelog.md`](./changelog.md) says what changed and why.
+
 ## What
 
 A fourth inspect mode and a measurement engine, so an annotation can carry the

@@ -463,21 +463,21 @@ async function main() {
     check(
       "the hint names the default mode and the keys for the others",
       ((await hint.textContent())?.trim() ?? "") ===
-        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
     await marquee.locator('.tool[aria-label^="Select text"]').click();
     check(
       "the hint follows the mode",
-      ((await hint.textContent())?.trim() ?? "") === "Select text · 1 point · 3 area · 4 measure",
+      ((await hint.textContent())?.trim() ?? "") === "Select text · 1 point · 3 area",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
     await marquee.locator('.tool[aria-label^="Drag"]').click();
     check(
       "the hint says the drag mode is a drag",
-      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text · 4 measure",
+      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -591,7 +591,7 @@ async function main() {
 
     check(
       "the hint returns to the mode line after a drag",
-      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text · 4 measure",
+      ((await hint.textContent())?.trim() ?? "") === "Drag across elements · 1 point · 2 text",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -606,6 +606,41 @@ async function main() {
     await measure.goto(`${base}/measure.html`);
     await measure.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
     await measure.locator(".tool--brand").click();
+
+    // Measuring is off by default, so mode 4 is not on the toolbar and `4` does nothing.
+    // Both are asserted before switching it on: the off state is the one every user
+    // meets first, and a feature flag nobody checks the off side of is not a flag.
+    check(
+      "mode 4 is absent until the setting is switched on",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
+    );
+    await measure.keyboard.press("4");
+    check(
+      "the 4 key does nothing while the setting is off",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("Click an element"),
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the box-model row is hidden while measuring is off",
+      !(await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
+    );
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    check(
+      "switching measuring on reveals the box-model row",
+      await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible(),
+    );
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "the hint advertises mode 4 once it exists",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").trim() ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
 
     await measure.locator('.tool[aria-label^="Measure distances"]').click();
     const measureHint = measure.locator(".toolbar-hint");
@@ -779,23 +814,10 @@ async function main() {
     await measure.locator(".panel select").selectOption("standard");
     await measure.locator('.tool[aria-label^="Annotations"]').click();
 
-    // --- the Measure card -----------------------------------------------------
+    // --- the box-model toggle, now a settings row -----------------------------
     //
-    // Its own controls, and the mutual exclusion with the settings card. That last one
-    // shipped broken: `toggleMeasureCard` closed Settings but `toggleSettings` did not
-    // close this one, so the two stacked on the same eight pixels above the dock. The
-    // exclusion has to be asserted from both directions or only one door is guarded.
-    await measure.locator('.tool[aria-label^="Measure tools"]').click();
-    const measureCard = measure.locator(".measure-card");
-    await measureCard.waitFor({ state: "visible", timeout: 5_000 });
-    check(
-      "the Measure card opens from the toolbar",
-      (await measure
-        .locator('.tool[aria-label^="Measure tools"]')
-        .getAttribute("aria-pressed")) === "true",
-    );
-
-    // Back to point mode: the box model is a setting there, not a given.
+    // It used to live on a card of its own with a toolbar button. Both are gone: the
+    // controls moved into Settings behind the same flag that provides the mode.
     await measure.keyboard.press("1");
     await measure.mouse.move(save.x + 8, save.y + 8);
     await measure.mouse.move(...middleOf(save));
@@ -805,7 +827,12 @@ async function main() {
       !(await measure.locator(".measure-badge").isVisible()),
     );
 
-    await measureCard.locator('input[data-setting="showBoxModel"]').click();
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="showBoxModel"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
     await measure.mouse.move(save.x + 8, save.y + 8);
     await measure.mouse.move(...middleOf(save));
     await measure.waitForTimeout(80);
@@ -815,33 +842,32 @@ async function main() {
       `badge read "${((await measure.locator(".measure-badge").textContent()) ?? "").trim()}"`,
     );
 
+    // Switching the whole feature off has to take the mode with it. Stand in mode 4
+    // first: the mode outliving its own button is the failure this guards.
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
     await measure.locator('.tool[aria-label^="Settings"]').click();
-    await measure.waitForTimeout(200);
-    check(
-      "opening Settings closes the Measure card",
-      (await measure.locator(".measure-card:visible").count()) === 0,
-      String(await measure.locator(".measure-card:visible").count()),
-    );
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
     await measure.keyboard.press("Escape");
     await measure.waitForTimeout(200);
 
-    await measure.locator('.tool[aria-label^="Measure tools"]').click();
-    await measureCard.waitFor({ state: "visible", timeout: 5_000 });
-    await measure.keyboard.press("Escape");
-    await measure.waitForTimeout(200);
     check(
-      "Escape closes the Measure card",
-      (await measure.locator(".measure-card:visible").count()) === 0,
-      String(await measure.locator(".measure-card:visible").count()),
+      "switching measuring off takes mode 4 off the toolbar",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
     );
-
-    // Put it back: `showBoxModel` is stored in sync storage, so leaving it on would
-    // paint bands over every page the rest of the suite hovers.
-    await measure.locator('.tool[aria-label^="Measure tools"]').click();
-    await measureCard.waitFor({ state: "visible", timeout: 5_000 });
-    await measureCard.locator('input[data-setting="showBoxModel"]').click();
-    await measure.keyboard.press("Escape");
-    await measure.waitForTimeout(200);
+    check(
+      "switching measuring off drops you back to point mode",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").trim() ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "and takes the box model with it, whatever its own switch says",
+      !(await measure.locator(".measure-badge").isVisible()),
+    );
 
     // -------------------------------------------------------------------------
     // ⌘/Ctrl+drag — the same box without leaving point mode
@@ -855,7 +881,7 @@ async function main() {
     check(
       "the point hint advertises the modifier drag",
       ((await hint.textContent())?.trim() ?? "") ===
-        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
       `hint read "${(await hint.textContent())?.trim() ?? ""}"`,
     );
 
@@ -1011,7 +1037,7 @@ async function main() {
     check(
       "Escape drops the set and stays in inspect mode",
       (await pickHint()) ===
-        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure" &&
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area" &&
         (await pick.locator(".highlight--preview").count()) === 0 &&
         (await pick.locator(".tool--brand").getAttribute("aria-pressed")) === "true",
       `hint read "${await pickHint()}", ${await pick.locator(".highlight--preview").count()} boxes`,

@@ -121,22 +121,30 @@ To get it back: close the tab, or open the page in a new one.
 
 ---
 
-## The Measure card
+## Measuring
 
-One control, and it is **not** in Settings. The ▤ button on the toolbar opens its own
-small card next to the settings one.
+### Measuring tools
+
+**Off by default.** On, it adds mode 4 — click two elements and the report carries the
+gap between them in pixels. See [[Toolbar and Modes]] for how the mode works.
+
+Off is the default because the cost is paid by people who never use it: a fourth
+icon-only button on a toolbar that docks over someone else's page, and a fourth clause
+on the hint line, which is the only thing on screen that explains the modes at all. With
+it off, everything reads exactly as it did before measuring existed.
+
+Switching it off while you are standing in mode 4 drops you back to mode 1 — a mode that
+outlives its own button is a mode you cannot see or leave.
 
 ### Box model on hover
 
-Off by default. On, every hover — in any mode — shades the element's padding and margin
-and puts its border-box size on a badge.
+Only shown when *Measuring tools* is on, and off by default itself. On, every hover — in
+any mode — shades the element's padding and margin, puts its border-box size on a badge,
+and lists the sides, the type and the colours underneath.
 
-It lives in its own card because it is switched *during* a review rather than configured
-once: you turn it on to look at some spacing and off again when it is in the way. A row
-in Settings, under three selects you set on install day, is the wrong shelf for that.
-
-**Mode 4 shows the bands regardless of this setting** — measuring without them would be
-measuring blind.
+Mode 4 draws all of it regardless of this switch: measuring without the bands would be
+measuring blind. The switch is for the other three modes, where the bands are extra
+information rather than the point.
 
 ---
 

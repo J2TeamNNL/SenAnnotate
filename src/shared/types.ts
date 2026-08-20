@@ -392,7 +392,16 @@ export interface Settings {
   theme: ThemePreference;
   /** Show the numbered pins on the page. */
   showMarkers: boolean;
-  /** Draw the box model on the hover highlight. Off: it is a second thing to read. */
+  /**
+   * Show the measuring tools at all: mode 4, the `4` key, and the box-model overlay.
+   *
+   * Off by default, and the default is the argument. Three modes is already the most a
+   * toolbar of icon-only buttons can explain, and most reviews never measure anything —
+   * so the people who do not want it should not have to see it, and the hint line should
+   * not spend a clause advertising it to them.
+   */
+  measureTools: boolean;
+  /** Draw the box model on the hover highlight. Only reachable when `measureTools`. */
   showBoxModel: boolean;
   /** Freeze animations automatically whenever inspect mode turns on. */
   freezeOnInspect: boolean;
@@ -436,6 +445,7 @@ export const DEFAULT_SETTINGS: Settings = {
   componentMode: "filtered",
   theme: "auto",
   showMarkers: true,
+  measureTools: false,
   showBoxModel: false,
   freezeOnInspect: false,
   includeProps: true,

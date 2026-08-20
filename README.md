@@ -141,12 +141,11 @@ the line and column.
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements near each other | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+drag a box around them — or mode <kbd>3</kbd> and drag |
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
-| Measure the gap between two elements | mode <kbd>4</kbd>, click one, then click the other |
-| See an element's size, padding, margin, type and colours | **Box model on hover** in the Measure card — or just enter mode <kbd>4</kbd> |
+| Measure the gap between two elements | switch on **Measuring tools** in settings, then mode <kbd>4</kbd>: click one, then the other |
+| See an element's size, padding, margin, type and colours | **Box model on hover** in settings — or just enter mode <kbd>4</kbd> |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Open settings | the gear on the toolbar |
-| Open the measuring options | the ruler on the toolbar |
 | Hide the overlay on this tab | **Hide until restart** in settings — back on any other tab, or when this one is closed |
 | Collapse the toolbar | <kbd>H</kbd>, or the `»` button — this also leaves inspect mode and closes the open card |
 | Move the toolbar | drag it anywhere |
@@ -166,7 +165,8 @@ without pressing anything, so the menu is still open while you type the note. Fr
 does not help here: it parks timers and animation frames, and those surfaces are driven
 by pointer events rather than by time.
 
-Mode <kbd>4</kbd> is the other one worth knowing. Most UI feedback is a claim about a
+Mode <kbd>4</kbd> is the other one worth knowing, and it is **off by default** —
+switch on *Measuring tools* in settings to get it. Most UI feedback is a claim about a
 number — *too tight*, *not aligned*, *wrong size* — and typing that claim in prose
 leaves the reader to re-derive the geometry from a screenshot. Click one element, hover
 a second, and the gap is drawn between them with the figure on it; click again and the

@@ -12,8 +12,8 @@ export interface ToolbarState {
   frozen: boolean;
   panelOpen: boolean;
   settingsOpen: boolean;
-  /** The Measure card is open. */
-  measureOpen: boolean;
+  /** Mode 4 and its hint clause are hidden entirely when this is off. */
+  measureTools: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -26,7 +26,6 @@ export interface ToolbarCallbacks {
   onToggleFreeze(): void;
   onTogglePanel(): void;
   onToggleSettings(): void;
-  onToggleMeasure(): void;
   onToggleCollapse(): void;
   /** Fired once, on drop — not per frame. The drag itself needs no persistence. */
   onMove(position: { x: number; y: number }): void;
@@ -70,12 +69,26 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
  * mode exists — which is exactly how mode `area` went unused for three releases.
  */
 const MODE_HINTS: Record<InspectMode, string> = {
-  point:
-    "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
-  text: "Select text · 1 point · 3 area · 4 measure",
-  area: "Drag across elements · 1 point · 2 text · 4 measure",
+  point: "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+  text: "Select text · 1 point · 3 area",
+  area: "Drag across elements · 1 point · 2 text",
   measure: "Click two elements · C captures the pair · Esc clears · 1 point · 2 text · 3 area",
 };
+
+/**
+ * Appended only when the measuring tools are switched on.
+ *
+ * The hint line is the only thing on screen that says a mode exists, so advertising a
+ * fourth one to someone who has not enabled it would be advertising a key that does
+ * nothing. With the setting off, all three hints read exactly as they did before
+ * measuring existed.
+ */
+const MEASURE_HINT = " · 4 measure";
+
+function hintFor(mode: InspectMode, measureTools: boolean): string {
+  const base = MODE_HINTS[mode];
+  return measureTools && mode !== "measure" ? base + MEASURE_HINT : base;
+}
 
 export class Toolbar {
   readonly element: HTMLElement;
@@ -85,7 +98,6 @@ export class Toolbar {
   private readonly modeButtons = new Map<InspectMode, HTMLButtonElement>();
   private readonly modeGroup: HTMLElement;
   private readonly freezeButton: HTMLButtonElement;
-  private readonly measureButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
@@ -164,16 +176,6 @@ export class Toolbar {
       icon("snowflake"),
     );
 
-    this.measureButton = h(
-      "button",
-      {
-        class: "tool tool--measure",
-        attrs: { "aria-label": "Measure tools", "aria-pressed": "false" },
-        on: { click: () => callbacks.onToggleMeasure() },
-      },
-      icon("ruler"),
-    );
-
     this.countBadge = h("span", { class: "count", text: "0", style: { display: "none" } });
     this.panelButton = h(
       "button",
@@ -230,7 +232,6 @@ export class Toolbar {
       this.modeGroup,
       h("span", { class: "divider" }),
       this.freezeButton,
-      this.measureButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -249,7 +250,6 @@ export class Toolbar {
       this.brandButton,
       ...this.modeButtons.values(),
       this.freezeButton,
-      this.measureButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -501,7 +501,12 @@ export class Toolbar {
     this.brandLabel.textContent = state.active ? "Inspecting" : "Inspect";
     this.modeGroup.style.display = state.active ? "flex" : "none";
 
-    this.modeHint = MODE_HINTS[state.mode];
+    // The button exists from construction and is hidden rather than rebuilt: the mode
+    // map is what `onModeChange` and the e2e locators both go through.
+    const measureModeButton = this.modeButtons.get("measure");
+    if (measureModeButton) measureModeButton.style.display = state.measureTools ? "" : "none";
+
+    this.modeHint = hintFor(state.mode, state.measureTools);
     this.hintVisible = state.active;
     this.hintElement.style.display = state.active ? "block" : "none";
     if (this.hintOverride === null) this.hintElement.textContent = this.modeHint;
@@ -513,7 +518,6 @@ export class Toolbar {
     this.freezeButton.setAttribute("aria-pressed", String(state.frozen));
     this.panelButton.setAttribute("aria-pressed", String(state.panelOpen));
     this.settingsButton.setAttribute("aria-pressed", String(state.settingsOpen));
-    this.measureButton.setAttribute("aria-pressed", String(state.measureOpen));
 
     this.countBadge.textContent = String(state.count);
     this.countBadge.style.display = state.count > 0 ? "inline-flex" : "none";

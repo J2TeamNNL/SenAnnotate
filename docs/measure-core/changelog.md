@@ -184,12 +184,45 @@ Two things the fix turned up:
   now. Caught by looking at a screenshot, not by any assertion — and no assertion added,
   because "is it opaque" is not a thing this suite can ask.
 
+## The feature moved behind a switch, and the card went with it
+
+Asked for after the second tester build: measuring should live in Settings and be off by
+default, opt-in.
+
+`Settings.measureTools` now gates the whole surface. Off — the default — there is no
+fourth mode button, `4` does nothing, `drawMeasure` returns immediately, and all three
+mode hints read exactly as they did before any of this existed. The six e2e assertions
+that were edited to add ` · 4 measure` are edited back; the suffix is now appended by
+`hintFor()` only when the switch is on, and a new block asserts both sides of the flag.
+
+**`measure-card.ts` is deleted.** Both controls are rows in the settings card, under a
+`Measuring` group, and *Box model on hover* is hidden entirely while *Measuring tools* is
+off — a switch for a surface you have turned off is a puzzle, not a setting.
+
+This reverses an argument I made in `context.md` and in the wiki: that the box-model
+toggle belonged on its own card because it is flipped *during* a review rather than
+configured once. That reasoning was sound and was overruled on purpose — the cost of a
+permanent extra toolbar button, paid by everyone including the people who never measure,
+outweighs the convenience for those who do. Worth recording as a decision rather than
+letting the earlier text quietly rot.
+
+**Turning the switch off has to take the mode with it.** Without that, mode 4 outlives its
+own button: the toolbar hides the icon, the hint drops its clause, and clicks keep
+anchoring elements with nothing on screen to explain why. `enforceMeasureSetting()` runs
+on both paths settings can change — this card, and a push from the popup in another tab.
+
+**A latent bug the deletion took with it.** The card's one row used `class="settings__row"`,
+which does not exist anywhere in `styles.css` — the real class is `.setting-row`. The row
+was unstyled the whole time. Nothing caught it: the e2e asserted the input's behaviour and
+never its appearance, and I never looked at the card in a screenshot, only at the overlay.
+It is the second thing in this release that only a picture would have found.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **294/294** e2e and **9/9** upgrade, run locally with
+- `npm test` — **299/299** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 
