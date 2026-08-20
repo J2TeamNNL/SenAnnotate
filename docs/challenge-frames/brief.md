@@ -32,6 +32,12 @@ intent — *"no annotations, no diagnostics, no badge"*. The MAIN world simply n
 that memo. Every iframe on every page — ad slots, embeds, captcha widgets — was paying
 the cost of a buffer nobody could read.
 
+> **Follow-up:** this fixed diagnostics and missed the other offender in the same bundle.
+> `freeze.ts` was wrapping five native timer functions in every frame for the same reason
+> and with the same consequence — see [`../freeze-frame-scope/`](../freeze-frame-scope/),
+> issue #24. Anything added to `src/inspector/` that touches a page native needs the same
+> top-frame question asked of it.
+
 ## Scope
 
 One line in `src/inspector/index.ts`, plus two e2e assertions.
