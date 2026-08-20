@@ -87,6 +87,8 @@ export class MeasureOverlay {
   private readonly padding: Strips;
   private readonly margin: Strips;
   private readonly badge: HTMLElement;
+  private readonly contentEdge: HTMLElement;
+  private readonly marginEdge: HTMLElement;
   private readonly bandLabels: HTMLElement[] = [];
   private readonly readout: HTMLElement;
   private readonly anchorBox: HTMLElement;
@@ -105,6 +107,17 @@ export class MeasureOverlay {
 
     this.anchorBox = h("div", { class: "measure-anchor", style: { display: "none" } });
     this.badge = h("div", { class: "measure-badge", style: { display: "none" } });
+    // Where each region actually ends. The fills alone are translucent, so on a page
+    // with a strong background colour they wash out and the bands read as a vague tint
+    // rather than as a measured region — which is the whole thing being measured.
+    this.contentEdge = h("div", {
+      class: "measure-edge measure-edge--content",
+      style: { display: "none" },
+    });
+    this.marginEdge = h("div", {
+      class: "measure-edge measure-edge--margin",
+      style: { display: "none" },
+    });
     // Eight: four padding strips and four margin strips, in that order.
     for (let index = 0; index < 8; index++) {
       this.bandLabels.push(h("div", { class: "measure-band-label", style: { display: "none" } }));
@@ -118,6 +131,8 @@ export class MeasureOverlay {
     layer.append(
       this.anchorBox,
       this.badge,
+      this.marginEdge,
+      this.contentEdge,
       ...this.bandLabels,
       this.readout,
       this.lineH,
@@ -163,6 +178,7 @@ export class MeasureOverlay {
       padding: this.paintBand(this.padding, this.paddingBox(rect, box.border), box.padding, "inside", 0),
     };
 
+    this.paintEdges(rect, box);
     this.paintReadout(rect, box, style, drawn);
 
     this.badge.style.display = "block";
@@ -177,7 +193,44 @@ export class MeasureOverlay {
   }
 
   hideBox(): void {
-    hide(...this.margin, ...this.padding, ...this.bandLabels, this.badge, this.readout);
+    hide(
+      ...this.margin,
+      ...this.padding,
+      ...this.bandLabels,
+      this.badge,
+      this.readout,
+      this.contentEdge,
+      this.marginEdge,
+    );
+  }
+
+  /**
+   * The two boundaries the fills cannot draw for themselves.
+   *
+   * Three regions meet at two lines: margin ends where the border box begins, and
+   * padding ends where the content begins. The border box already has a line — the
+   * hover highlight's own accent border — so only these two are missing, and without
+   * them a shaded band on a coloured page is a tint with no edge.
+   *
+   * Drawn even when the band either side is zero: an element with no padding still has
+   * a content edge, and it is the same line either way.
+   */
+  private paintEdges(rect: Box, box: BoxModel): void {
+    const { margin, padding, border } = box;
+    place(
+      this.marginEdge,
+      rect.left - margin.left,
+      rect.top - margin.top,
+      rect.width + margin.left + margin.right,
+      rect.height + margin.top + margin.bottom,
+    );
+    place(
+      this.contentEdge,
+      rect.left + border.left + padding.left,
+      rect.top + border.top + padding.top,
+      rect.width - border.left - border.right - padding.left - padding.right,
+      rect.height - border.top - border.bottom - padding.top - padding.bottom,
+    );
   }
 
   /**

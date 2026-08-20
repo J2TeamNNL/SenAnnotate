@@ -677,6 +677,58 @@ async function main() {
       (await measure.locator(".measure-band--padding:visible").count()) === 4,
       String(await measure.locator(".measure-band--padding:visible").count()),
     );
+    // Counting the nodes is not enough, and this is not a hypothetical: the whole
+    // `.measure-band` / `.measure-badge` / `.measure-anchor` block was once deleted from
+    // the stylesheet by an over-eager slice, and every count-based check here stayed
+    // green while the overlay drew nothing at all. Read the computed style.
+    const painted = await measure.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const of = (selector) => {
+        const node = root.querySelector(selector);
+        if (!node) return null;
+        const style = getComputedStyle(node);
+        return { position: style.position, background: style.backgroundColor, border: style.borderTopWidth };
+      };
+      return {
+        padding: of(".measure-band--padding"),
+        margin: of(".measure-band--margin"),
+        badge: of(".measure-badge"),
+        contentEdge: of(".measure-edge--content"),
+      };
+    });
+    check(
+      "the bands are positioned and actually painted",
+      painted.padding?.position === "fixed" &&
+        painted.padding.background !== "rgba(0, 0, 0, 0)" &&
+        painted.margin?.background !== "rgba(0, 0, 0, 0)" &&
+        painted.badge?.position === "fixed",
+      JSON.stringify(painted),
+    );
+    check(
+      "the content edge carries a visible line",
+      painted.contentEdge?.position === "fixed" && painted.contentEdge.border === "1px",
+      JSON.stringify(painted.contentEdge),
+    );
+
+    // Where the regions actually end. 320x48 border box, 12px padding either side and
+    // 8px top and bottom, so the content is 296x32; margin adds 16px at the bottom only.
+    const edgeSize = async (selector) =>
+      measure.evaluate((sel) => {
+        const node = document
+          .querySelector("[data-senannotate-ui]")
+          .shadowRoot.querySelector(sel);
+        return `${Math.round(parseFloat(node.style.width))}x${Math.round(parseFloat(node.style.height))}`;
+      }, selector);
+    check(
+      "the content edge sits inside the padding",
+      (await edgeSize(".measure-edge--content")) === "296x32",
+      await edgeSize(".measure-edge--content"),
+    );
+    check(
+      "the margin edge sits outside the border box",
+      (await edgeSize(".measure-edge--margin")) === "320x64",
+      await edgeSize(".measure-edge--margin"),
+    );
     check(
       "only the margin side that exists is drawn",
       (await measure.locator(".measure-band--margin:visible").count()) === 1,

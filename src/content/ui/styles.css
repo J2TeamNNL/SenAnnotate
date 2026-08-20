@@ -475,6 +475,69 @@ button {
  * through. See `docs/measure-core/context.md`.
  * ------------------------------------------------------------------------- */
 
+.measure-band {
+  position: fixed;
+  pointer-events: none;
+}
+
+.measure-band--padding {
+  background: rgba(16, 185, 129, 0.28);
+}
+
+.measure-band--margin {
+  background: rgba(249, 115, 22, 0.24);
+}
+
+/*
+ * The boundary lines between the three regions.
+ *
+ * Three regions meet at two lines: margin ends where the border box begins, and padding
+ * ends where the content begins. The border box already has one — the hover highlight's
+ * accent border — so only these two were missing, and without them a shaded band over a
+ * page with its own strong background is a tint with no edge.
+ *
+ * `box-sizing: border-box` so the element occupies exactly the rect it is handed and the
+ * line lands ON the boundary rather than a pixel outside it. Dashed, and at a far higher
+ * alpha than the fills, because surviving a coloured page is the entire job.
+ */
+.measure-edge {
+  position: fixed;
+  pointer-events: none;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.measure-edge--content {
+  border: 1px dashed rgba(4, 120, 87, 0.95);
+}
+
+.measure-edge--margin {
+  border: 1px dashed rgba(194, 65, 12, 0.9);
+}
+
+.measure-badge {
+  position: fixed;
+  pointer-events: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--sa-accent);
+  color: var(--sa-accent-ink);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--sa-mono);
+  white-space: nowrap;
+}
+
+/* The element a gap is measured from. Solid where the live hover is translucent, so the
+   two are never mistaken for each other mid-measurement. */
+.measure-anchor {
+  position: fixed;
+  pointer-events: none;
+  border: 2px solid var(--sa-accent);
+  border-radius: 3px;
+  background: transparent;
+}
+
 /*
  * A figure written on the band it measures. Only drawn on bands thick enough to hold
  * it — see `LABEL_MIN_THICKNESS`; the readout below carries the rest.

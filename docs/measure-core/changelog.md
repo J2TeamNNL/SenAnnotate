@@ -345,12 +345,49 @@ button that is not there. Offering an option with its downside stated is not the
 the downside being understood, and a one-build round trip through a real user was the
 cheaper way to find that out than arguing about it.
 
+## The bands had no stylesheet at all
+
+Reported as "make the boundaries between the boxes clearer", with a screenshot of a
+cream-coloured card showing four `24` labels floating over nothing. I read it as a
+contrast problem. It was not.
+
+`.measure-band`, `.measure-band--padding`, `.measure-band--margin`, `.measure-badge` and
+`.measure-anchor` **had been deleted from `styles.css` entirely**, three commits earlier,
+when the Measure card's rules were removed. That deletion was done by slicing the file
+between two string indices, and the slice ran from the start of the card's block to the
+start of the band-label block — swallowing everything in between. So the bands had no
+background *and* no `position: fixed`; they were unpositioned, unpainted divs.
+
+**Nine assertions covered that overlay and every one stayed green.** They counted nodes,
+read `textContent`, and asked Playwright whether elements were visible — all true of an
+unstyled `div` with inline width and height. Not one of them looked at a computed style.
+
+The check added with the fix does: `position`, `backgroundColor` and `borderTopWidth`
+read off the real nodes. It was verified by deleting `position: fixed` again and watching
+it fail with `"position":"static"`.
+
+Two lessons, and the second is the one that generalises:
+
+- **Never delete code by index slicing between two anchors.** The second anchor is a
+  promise about what lies between them, and this file had grown a block in the middle
+  since the slice was written.
+- **A presence assertion is not a rendering assertion.** Counting `:visible` nodes proves
+  the JavaScript ran. It says nothing about whether anything was drawn, which is the only
+  thing an overlay is for. Every defect found by a human in this release — the unstyled
+  card row, the translucent readout, and this — was invisible to a suite that only ever
+  asked whether elements existed.
+
+The boundaries the report asked for were added in the same commit: a dashed line at the
+content edge and one at the margin edge, in the band colours, at a far higher alpha than
+the fills so they survive a coloured page. The border box already had a line — the hover
+highlight's own accent border.
+
 ## Verification
 
 - `node test/measure.mjs` — 37 checks. New file; also wired into `npm test` ahead of the
   browser suites, because a sign error should not need a browser to find.
 - `npm run typecheck` — clean at every commit.
-- `npm test` — **306/306** e2e and **9/9** upgrade, run locally with
+- `npm test` — **310/310** e2e and **9/9** upgrade, run locally with
   `SENANNOTATE_HEADLESS=1`. Six pre-existing hint assertions were updated in the same
   commit that changed the hints; that was predicted and is not a regression.
 

@@ -190,6 +190,8 @@ things?* Hover reads, click writes — the same contract as mode 1.
 |---|---|
 | The badge, e.g. `320×48` | Border box as painted |
 | A figure on a shaded band | That band's thickness — only where the band is at least 14px, or the number would not be legible |
+| A dashed green line | Where the padding ends and the content begins |
+| A dashed orange line | The outer edge of the margin |
 | The readout under the badge | `padding` and `margin` **side by side** — `T R B L`, each with a dot matching its band's colour — then the type, the colour the element is painted on, and `display` / `border-radius` |
 
 A side whose figure is already drawn on its band is **dimmed** in the readout. What stays
@@ -197,6 +199,10 @@ at full weight is exactly what the page could not tell you — the bands too thi
 number. That is why the sides are spelled out rather than written as a shorthand: being
 told `8px 12px` and left to work out which of two unlabelled bands is which is not being
 shown the value.
+
+Three regions meet at two dashed lines; the border box itself is the solid accent
+outline of the hover highlight. On a page with a strong background of its own the
+translucent bands alone read as a vague tint, so the lines are what make them regions.
 
 The colour line resolves what is **actually** behind the element. Most elements declare no
 background of their own, so it walks up until it finds one and marks the result
