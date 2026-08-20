@@ -269,6 +269,16 @@ and a release that fails before installing anything when its tag has no section.
 `ci-cd/brief.md` and says what changed to justify that.
 
 
+## [`measure-core/`](./measure-core/) — measurement, in the report
+
+A fourth inspect mode that measures the gap between two elements, a box-model overlay,
+and the three report lines that carry the figures. Its `context.md` argues why none of
+it touches the MAIN world — measurement reads the shared DOM, so it needs no bridge and
+no permission — and records the two decisions that look arbitrary: fixed band colours
+instead of accent-derived ones, and why `**Gap:**` prints a detail level earlier than
+`**Box:**`. First of three planned measurement releases; `plan.md` has the ordering.
+
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from
