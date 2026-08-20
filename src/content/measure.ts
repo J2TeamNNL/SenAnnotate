@@ -7,8 +7,10 @@
 // figure has to be exactly as trustworthy on a minified production build as on a dev
 // server, and it is the only part of the report that can promise that.
 //
-// Every figure is a **layout pixel**. See the note above `Sides` in `shared/types.ts`
-// for why mixing in post-transform rects would be wrong.
+// Sizes are **rendered** pixels — the box as it is actually painted — because that is
+// what a reviewer is looking at when they say something is too small. The four bands are
+// layout pixels, because `getComputedStyle` has no other kind. The two agree on every
+// untransformed element, and `BoxModel.scaled` is set on the ones where they do not.
 // =============================================================================
 
 import type { BoxModel, Containment, GapGeometry, Sides } from "../shared/types";
@@ -53,9 +55,14 @@ function sides(style: CSSStyleDeclaration, prefix: string, suffix = ""): Sides {
 /**
  * The four bands, plus whether the element is drawn at these numbers.
  *
- * Chrome's computed `width`/`height` resolve to the **content** box whatever
- * `box-sizing` says, so the border box is derived rather than read — that way one
- * source of truth feeds every figure and they cannot disagree by a rounding step.
+ * The border box is **read from the rect**, not derived from computed `width`. Computed
+ * `width` respects `box-sizing`: it is the content box under `content-box` and the
+ * border box under `border-box`, and Chrome's own UA stylesheet puts `<button>` in the
+ * second group. Deriving from it therefore over-counts the padding on most of the
+ * modern web — measured on a plain `<button>`, a 296px control reported 320px.
+ *
+ * So the rect is the one source of truth for the outside, and the content box is what
+ * is left after the bands are taken off it.
  */
 export function readBoxModel(element: Element): BoxModel {
   const style = getComputedStyle(element);
@@ -63,19 +70,26 @@ export function readBoxModel(element: Element): BoxModel {
   const border = sides(style, "border", "-width");
   const margin = sides(style, "margin");
 
-  const content = {
-    width: roundPx(px(style.width)),
-    height: roundPx(px(style.height)),
-  };
-  const width = roundPx(content.width + padding.left + padding.right + border.left + border.right);
-  const height = roundPx(
-    content.height + padding.top + padding.bottom + border.top + border.bottom,
-  );
+  const rect = element.getBoundingClientRect();
+  const width = roundPx(rect.width);
+  const height = roundPx(rect.height);
 
-  // One comparison catches transforms, page zoom and `scale()` on an ancestor alike,
-  // without walking the tree: if the rendered rect is not the layout box, say so.
-  const rendered = element.getBoundingClientRect();
-  const scaled = Math.abs(rendered.width - width) > 0.5 || Math.abs(rendered.height - height) > 0.5;
+  const content = {
+    width: roundPx(rect.width - padding.left - padding.right - border.left - border.right),
+    height: roundPx(rect.height - padding.top - padding.bottom - border.top - border.bottom),
+  };
+
+  // `offsetWidth` is the layout border box, integer-rounded and immune to transforms;
+  // the rect is the painted one. Comparing them catches a transform, a page zoom and a
+  // scaled ancestor alike, without walking the tree. The 1px tolerance is the rounding
+  // in `offsetWidth`, not slack. SVG has no `offsetWidth`, so it is never flagged.
+  const layout =
+    element instanceof HTMLElement
+      ? { width: element.offsetWidth, height: element.offsetHeight }
+      : null;
+  const scaled =
+    layout !== null &&
+    (Math.abs(rect.width - layout.width) > 1 || Math.abs(rect.height - layout.height) > 1);
 
   return { width, height, content, padding, border, margin, scaled };
 }

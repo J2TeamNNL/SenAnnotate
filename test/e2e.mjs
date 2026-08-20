@@ -596,6 +596,133 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // Measure — box model, and the gap between two elements
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, and nothing else annotates it: `chrome.storage.local` is shared
+    // across this context and annotations are keyed on origin + pathname, so a page
+    // another block has been through opens with that block's leftovers.
+    const measure = await context.newPage();
+    await measure.goto(`${base}/measure.html`);
+    await measure.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await measure.locator(".tool--brand").click();
+
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
+    const measureHint = measure.locator(".toolbar-hint");
+    check(
+      "the hint explains that measuring takes two clicks",
+      ((await measureHint.textContent())?.trim() ?? "") ===
+        "Click two elements \u00b7 C captures the pair \u00b7 Esc clears \u00b7 1 point \u00b7 2 text \u00b7 3 area",
+      `hint read "${(await measureHint.textContent())?.trim() ?? ""}"`,
+    );
+
+    const save = await measure.locator("#save").boundingBox();
+    const cancel = await measure.locator("#cancel").boundingBox();
+    const middleOf = (box) => [box.x + box.width / 2, box.y + box.height / 2];
+
+    // Hovering alone draws the badge — reading a size must not cost an annotation.
+    await measure.mouse.move(...middleOf(save));
+    const badge = measure.locator(".measure-badge");
+    await badge.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the badge reports the layout border box",
+      ((await badge.textContent()) ?? "").trim() === "320\u00d748",
+      `badge read "${((await badge.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "the padding band is drawn on all four sides",
+      (await measure.locator(".measure-band--padding:visible").count()) === 4,
+      String(await measure.locator(".measure-band--padding:visible").count()),
+    );
+    check(
+      "only the margin side that exists is drawn",
+      (await measure.locator(".measure-band--margin:visible").count()) === 1,
+      String(await measure.locator(".measure-band--margin:visible").count()),
+    );
+    check("hovering alone creates no annotation", (await measure.locator(".marker").count()) === 0);
+
+    // The other half of the pair. `getComputedStyle().width` reports the content box
+    // here and the border box on the button above, so an engine that trusts it gets
+    // exactly one of these two wrong — which is what it did before this check existed.
+    const note = await measure.locator("#note").boundingBox();
+    await measure.mouse.move(note.x + note.width / 2, note.y + note.height / 2);
+    await measure.waitForTimeout(50);
+    check(
+      "a content-box element measures its border box too",
+      ((await badge.textContent()) ?? "").trim() === "340\u00d732",
+      `badge read "${((await badge.textContent()) ?? "").trim()}"`,
+    );
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(50);
+
+    // First click anchors.
+    await measure.mouse.click(...middleOf(save));
+    check(
+      "the first click anchors rather than annotating",
+      (await measure.locator(".measure-anchor").isVisible()) &&
+        (await measure.locator(".composer").count()) === 0,
+    );
+
+    // Hovering the second element draws the dimension line.
+    await measure.mouse.move(...middleOf(cancel));
+    const gapLabel = measure.locator(".measure-label").first();
+    await gapLabel.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the dimension line carries the measured gap",
+      ((await gapLabel.textContent()) ?? "").trim() === "24px",
+      `label read "${((await gapLabel.textContent()) ?? "").trim()}"`,
+    );
+
+    // Escape abandons a half-taken measurement without leaving the mode.
+    await measure.keyboard.press("Escape");
+    check("Escape clears the anchor", !(await measure.locator(".measure-anchor").isVisible()));
+    check(
+      "Escape does not leave the mode",
+      (await measure
+        .locator('.tool[aria-label^="Measure distances"]')
+        .getAttribute("aria-pressed")) === "true",
+    );
+
+    // Take it again and commit it.
+    await measure.mouse.click(...middleOf(save));
+    await measure.mouse.click(...middleOf(cancel));
+    const measureComposer = measure.locator(".composer");
+    await measureComposer.waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator(".composer__input").fill("these two are not aligned");
+    await measure.locator(".composer .button--primary").click();
+    await measureComposer.waitFor({ state: "detached", timeout: 5_000 });
+
+    await measure.locator('.tool[aria-label^="Annotations"]').click();
+    await measure.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    // Detailed, so the box and the edges are in scope.
+    await measure.locator(".panel select").selectOption("detailed");
+    await measure.locator(".panel .button--primary").click();
+    const measureReport = await measure.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "the report names the element measured to",
+      measureReport.includes("**Measured to:**") && measureReport.includes("#cancel"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "the report carries the gap",
+      measureReport.includes("**Gap:** 24px horizontal"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "the report carries the box model",
+      measureReport.includes("**Box:** 320\u00d748px \u00b7 content 296\u00d732 \u00b7 padding 8px 12px"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "aligned edges say so rather than printing 0px",
+      measureReport.includes("top aligned"),
+      measureReport.slice(0, 500),
+    );
+
+    await measure.locator(".panel select").selectOption("standard");
+
+    // -------------------------------------------------------------------------
     // ⌘/Ctrl+drag — the same box without leaving point mode
     // -------------------------------------------------------------------------
     //

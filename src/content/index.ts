@@ -639,17 +639,24 @@ function drawMeasure(element: Element): void {
   measureOverlay.showGap(anchorRect, rect, measureGap(anchorRect, rect));
 }
 
-/** What the composer will store. Never `undefined`: the box alone is worth keeping. */
+/**
+ * What the composer will store. Never `undefined`: the box alone is worth keeping.
+ *
+ * `box` describes the **anchor**, not the element just clicked, because `captureDraft`
+ * makes `elements[0]` the subject of the whole annotation — its name, its selector, its
+ * `**Position:**`. A box measured off the second element would sit directly under a
+ * Position line describing the first, and the two would silently disagree. The second
+ * element is not lost: `gap.toElement` names it, which is the line's whole job.
+ */
 function currentMeasurements(target: Element): Measurements {
-  const box = readBoxModel(target);
   const anchor = measureOverlay.anchor;
-  if (!anchor || anchor === target) return { box };
+  if (!anchor || anchor === target) return { box: readBoxModel(target) };
 
   const anchorRect = anchor.getBoundingClientRect();
   const targetRect = target.getBoundingClientRect();
 
   return {
-    box,
+    box: readBoxModel(anchor),
     gap: {
       ...measureGap(anchorRect, targetRect),
       toElement: identifyElement(target).name,
@@ -1686,7 +1693,9 @@ function installTopFrame(): void {
     "pointermove",
     (event) => {
       if (!active || composer || marqueeStart) return;
-      if (mode !== "point") return;
+      // `measure` shares the whole hover path with `point` — it is the same "what is the
+      // pointer over" question, answered with two more things drawn on top.
+      if (mode !== "point" && mode !== "measure") return;
       // Pointer capture retargets the toolbar drag's moves; it does not stop them
       // propagating, and `root.ts` deliberately lets `pointermove` through the host. So
       // during a fast drag the cursor outruns the pill, lands on page content, and this
@@ -1701,6 +1710,10 @@ function installTopFrame(): void {
         // Moving off an element must not erase a set that is still being built.
         if (picked.length) drawPicked();
         else overlay.hideHighlights();
+        // The bands belong to the element under the pointer; the anchor outline does
+        // not, and survives until the measurement is taken or abandoned.
+        measureOverlay.hideBox();
+        measureOverlay.hideGap();
         return;
       }
       if (target === hoveredElement) return;
