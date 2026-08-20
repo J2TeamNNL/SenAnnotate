@@ -10,7 +10,29 @@ matching the tag being released and refuses to publish without one.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.2] — unreleased
+## [0.8.3] — unreleased
+
+[Compare with v0.8.2](https://github.com/thangnm93/SenAnnotate/compare/v0.8.2...v0.8.3)
+
+### Added
+
+- walk the DOM from an open composer to fix a mis-click (3c770e5)
+
+### Fixed
+
+- freeze no longer patches timers inside iframes, so challenge widgets verify (6162c6c)
+- keep the screenshot through a retarget, and stop the walk landing on nothing (726444e)
+
+### Documentation
+
+- point CLAUDE.md at the issue and PR templates (8a22bea)
+- a twenty-page wiki, illustrated from the built extension (77005cc)
+
+### Internal
+
+- issue forms, a PR checklist, and the contributing rules (0e09970)
+
+## [0.8.2] — 2026-08-18
 
 [Compare with v0.8.1](https://github.com/thangnm93/SenAnnotate/compare/v0.8.1...v0.8.2)
 
