@@ -591,6 +591,20 @@ button {
  * row. Without that the eye has to re-find the columns on every row, which is most of
  * what makes a shorthand hard to read in the first place.
  */
+/*
+ * A verdict is the one row here that is not neutral information — it is a pass or a
+ * fail, and colouring it is the difference between reading the row and scanning past it.
+ * Not derived from the accent: a red accent must not make a passing check look failed.
+ */
+.measure-readout__row--pass {
+  color: rgb(4, 150, 105);
+}
+
+.measure-readout__row--fail {
+  color: rgb(220, 38, 38);
+  font-weight: 700;
+}
+
 .measure-readout__key {
   min-width: 48px;
 }

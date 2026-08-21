@@ -803,6 +803,59 @@ async function main() {
       ),
       JSON.stringify(await measure.locator(".measure-readout__row").allTextContents()),
     );
+    // --- contrast --------------------------------------------------------------
+    //
+    // #faint is the pair from the report that prompted this check. It lands at 4.49:1,
+    // a hundredth under the AA bar, which is exactly the kind of call no reviewer makes
+    // by eye.
+    const rowsFor = async (selector) => {
+      const target = await measure.locator(selector).boundingBox();
+      await measure.mouse.move(target.x + 4, target.y + 4);
+      await measure.mouse.move(target.x + target.width / 2, target.y + target.height / 2);
+      await measure.waitForTimeout(120);
+      return measure.evaluate(() =>
+        [
+          ...document
+            .querySelector("[data-senannotate-ui]")
+            .shadowRoot.querySelectorAll(".measure-readout__row"),
+        ].map((node) => `${node.className.replace("measure-readout__row", "").trim()}|${node.textContent.trim()}`),
+      );
+    };
+
+    const faint = await rowsFor("#faint");
+    check(
+      "a failing pair is measured and called out",
+      faint.some((row) => row === "measure-readout__row--fail|4.49:1 · fails AA"),
+      JSON.stringify(faint),
+    );
+    const strong = await rowsFor("#strong");
+    check(
+      "black on white is the maximum and passes both",
+      strong.some((row) => row === "measure-readout__row--pass|21:1 · passes AA and AAA"),
+      JSON.stringify(strong),
+    );
+
+    // An element whose text lives in a child paints no text of its own, so there is no
+    // honest ratio to report. Hover its padding — the centre would land on the span,
+    // which does have text and correctly gets a verdict.
+    const wrapper = await measure.locator("#wrapper").boundingBox();
+    await measure.mouse.move(wrapper.x + wrapper.width / 2, wrapper.y + wrapper.height + 60);
+    await measure.mouse.move(wrapper.x + wrapper.width - 8, wrapper.y + 6);
+    await measure.waitForTimeout(120);
+    const wrapperRows = await measure.evaluate(() =>
+      [
+        ...document
+          .querySelector("[data-senannotate-ui]")
+          .shadowRoot.querySelectorAll(".measure-readout__row"),
+      ].map((node) => node.textContent.trim()),
+    );
+    check(
+      "an element with no text of its own gets no verdict",
+      wrapperRows.some((row) => row.includes(" on ")) &&
+        !wrapperRows.some((row) => row.includes(":1")),
+      JSON.stringify(wrapperRows),
+    );
+
     await measure.mouse.move(...middleOf(save));
     await measure.waitForTimeout(50);
 
@@ -864,6 +917,14 @@ async function main() {
       "the report carries the box model",
       measureReport.includes("**Box:** 320\u00d748px \u00b7 content 296\u00d732 \u00b7 padding 8px 12px"),
       measureReport.slice(0, 500),
+    );
+    // #save is white on #2563eb — 5.17:1, which clears AA and misses AAA. That middle
+    // verdict is the one the two readout checks above do not reach: they cover an
+    // outright fail and a pass of both, so this completes the three.
+    check(
+      "the report carries the contrast verdict with the threshold it missed",
+      measureReport.includes("**Contrast:** 5.17:1 · passes AA, fails AAA (needs 7:1)"),
+      measureReport.slice(0, 600),
     );
     check(
       "aligned edges say so rather than printing 0px",

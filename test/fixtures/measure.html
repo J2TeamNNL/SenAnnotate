@@ -42,6 +42,26 @@
          `content-box` the declared 320x24 is the CONTENT, so the border box is 340x32.
          An engine that reads the border box off computed `width` gets one of these two
          elements wrong whichever way it guesses. Sits 40px below #save (100+48+40). */
+      /* #6c757d on #fffbe0 — the pair from the report that prompted this check. Fails AA.
+         #strong is black on white and passes both. #wrapper has no text of its own, so it
+         must produce no verdict at all. */
+      #faint {
+        box-sizing: border-box;
+        position: absolute; left: 40px; top: 260px; margin: 0;
+        color: #6c757d; background: #fffbe0; font-size: 14px;
+      }
+      #strong {
+        position: absolute; left: 40px; top: 300px; margin: 0;
+        color: #000000; background: #ffffff; font-size: 14px;
+      }
+      /* Padded so there is area belonging to the div itself: hovering the middle would
+         hit the span, which does have text of its own and correctly gets a verdict. */
+      #wrapper {
+        box-sizing: border-box;
+        position: absolute; left: 40px; top: 340px; width: 320px; padding: 24px;
+        color: #6c757d; background: #fffbe0;
+      }
+
       #note {
         box-sizing: content-box;
         position: absolute; left: 40px; top: 188px;
@@ -55,5 +75,8 @@
     <button id="save">Save</button>
     <button id="cancel">Cancel</button>
     <p id="note">Nothing else in the suite annotates this page.</p>
+    <p id="faint">Low contrast text</p>
+    <p id="strong">High contrast text</p>
+    <div id="wrapper"><span>text lives in the child, not here</span></div>
   </body>
 </html>

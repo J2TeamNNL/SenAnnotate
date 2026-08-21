@@ -648,13 +648,23 @@ function drawMeasure(element: Element): void {
  */
 function currentMeasurements(target: Element): Measurements {
   const anchor = measureOverlay.anchor;
-  if (!anchor || anchor === target) return { box: readBoxModel(target) };
+  // `contrast` follows `box` to whichever element is the annotation's subject, for the
+  // same reason: a verdict sitting under a Position line that describes a different
+  // element is two facts quietly disagreeing.
+  const subject = anchor && anchor !== target ? anchor : target;
+  const style = getComputedStyle(subject);
 
-  const anchorRect = anchor.getBoundingClientRect();
+  const base: Measurements = {
+    box: readBoxModel(subject, style),
+    contrast: readStyleSummary(subject, style).contrast,
+  };
+  if (subject === target) return base;
+
+  const anchorRect = subject.getBoundingClientRect();
   const targetRect = target.getBoundingClientRect();
 
   return {
-    box: readBoxModel(anchor),
+    ...base,
     gap: {
       ...measureGap(anchorRect, targetRect),
       toElement: identifyElement(target).name,

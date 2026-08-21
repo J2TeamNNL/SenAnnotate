@@ -52,7 +52,7 @@ function rect(left, top, width, height) {
   return { left, top, width, height, right: left + width, bottom: top + height };
 }
 
-const { roundPx, measureGap, toHex } = await load("src/content/measure.ts", "measure.mjs");
+const { roundPx, measureGap, toHex, parseRgb, contrastRatio, contrastReport } = await load("src/content/measure.ts", "measure.mjs");
 
 // --- roundPx -----------------------------------------------------------------
 check("roundPx trims trailing zeros", roundPx(24.0) === 24, String(roundPx(24.0)));
@@ -202,6 +202,49 @@ check("alpha 1 is not spelled out", toHex("rgba(0, 0, 0, 1)") === "#000000", toH
 check("partial alpha becomes eight digits", toHex("rgba(0, 0, 0, 0.5)") === "#00000080", toHex("rgba(0, 0, 0, 0.5)"));
 check("fully transparent is named, not hexed", toHex("rgba(0, 0, 0, 0)") === "transparent", toHex("rgba(0, 0, 0, 0)"));
 check("an unparseable colour is passed through", toHex("color(srgb 1 0 0)") === "color(srgb 1 0 0)", toHex("color(srgb 1 0 0)"));
+
+// --- contrast ------------------------------------------------------------------
+const near = (a, b) => Math.abs(a - b) < 0.02;
+const rgb = (r, g, b, a = 1) => ({ r, g, b, a });
+
+check("parseRgb reads a computed colour", JSON.stringify(parseRgb("rgb(37, 99, 235)")) === JSON.stringify(rgb(37, 99, 235)), JSON.stringify(parseRgb("rgb(37, 99, 235)")));
+check("parseRgb returns null for what it cannot read", parseRgb("color(srgb 1 0 0)") === null);
+
+check("black on white is the maximum", contrastRatio(rgb(0,0,0), rgb(255,255,255)) === 21, String(contrastRatio(rgb(0,0,0), rgb(255,255,255))));
+check("white on white is the minimum", contrastRatio(rgb(255,255,255), rgb(255,255,255)) === 1, String(contrastRatio(rgb(255,255,255), rgb(255,255,255))));
+check("the ratio is symmetric", contrastRatio(rgb(0,0,0), rgb(255,255,255)) === contrastRatio(rgb(255,255,255), rgb(0,0,0)));
+
+// 50% black over white composites to rgb(127.5) — luminance 0.2139, so 1.05/0.2639.
+// Worked by hand rather than copied from the implementation, or the check would only be
+// asserting that the code agrees with itself.
+const half = contrastRatio(rgb(0, 0, 0, 0.5), rgb(255, 255, 255));
+check("a translucent foreground is composited, not taken at face value", near(half, 3.98), String(half));
+check("compositing lands nowhere near the opaque 21:1", half < 5, String(half));
+
+// --- thresholds -------------------------------------------------------------------
+const report = (fg, bg, size, weight) => contrastReport(fg, bg, size, weight);
+
+const grey = report(rgb(108,117,125), rgb(255,251,224), 14, 400);
+check("a failing pair fails AA", grey.aa === false && grey.aaa === false, JSON.stringify(grey));
+check("and it is not called large text", grey.large === false, JSON.stringify(grey));
+
+const strong = report(rgb(0,0,0), rgb(255,255,255), 14, 400);
+check("black on white passes both", strong.aa && strong.aaa, JSON.stringify(strong));
+
+// WCAG large text: >= 24px, or >= 18.66px when bold. 18px regular is NOT large.
+check("24px regular is large text", report(rgb(0,0,0), rgb(255,255,255), 24, 400).large === true);
+check("18.66px bold is large text", report(rgb(0,0,0), rgb(255,255,255), 18.66, 700).large === true);
+check("18px regular is not large text", report(rgb(0,0,0), rgb(255,255,255), 18, 400).large === false);
+check("18px bold is not large text either", report(rgb(0,0,0), rgb(255,255,255), 18, 700).large === false);
+
+// #8a8a8a on white is 3.45:1 — between the large-text bar of 3 and the body bar of 4.5,
+// which is the only band where `large` changes the answer, and therefore the only band
+// worth testing it in. (#757575, the obvious pick, is 4.61 and passes both.)
+const mid = rgb(138, 138, 138);
+const white = rgb(255, 255, 255);
+check("a mid grey fails AA as body text", report(mid, white, 14, 400).aa === false, JSON.stringify(report(mid, white, 14, 400)));
+check("the same grey passes AA as large text", report(mid, white, 24, 400).aa === true, JSON.stringify(report(mid, white, 24, 400)));
+check("the band is the one where large matters", near(report(mid, white, 14, 400).ratio, 3.45), String(report(mid, white, 14, 400).ratio));
 
 console.log(failures ? `\n${failures} failed` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

@@ -13,7 +13,15 @@
 // untransformed element, and `BoxModel.scaled` is set on the ones where they do not.
 // =============================================================================
 
-import type { BoxModel, Containment, GapGeometry, Sides, StyleSummary } from "../shared/types";
+import type {
+  BoxModel,
+  Containment,
+  ContrastReport,
+  GapGeometry,
+  Rgba,
+  Sides,
+  StyleSummary,
+} from "../shared/types";
 
 /** Everything with a viewport-space box. `DOMRect` satisfies it structurally. */
 export interface RectLike {
@@ -145,27 +153,98 @@ export function measureGap(a: RectLike, b: RectLike): GapGeometry {
 const RGB = /^rgba?\(([^)]+)\)$/;
 
 /**
- * `rgb(37, 99, 235)` → `#2563eb`. Eight digits when it is not opaque, the word
- * `transparent` when it is not there at all.
+ * A computed `rgb()`/`rgba()` string as channels, or `null` when it is neither.
  *
- * Anything this cannot parse is returned unchanged rather than guessed at: Chrome has
- * begun answering some declarations in `color(srgb …)`, and a wrong swatch is worse
- * than an unfamiliar string the reader can still look up.
+ * Lifted out of `toHex` because contrast needs the numbers, not the string. Two callers
+ * parsing the same value two different ways — one of them by parsing the other's output
+ * back — is how they start disagreeing about what `transparent` means.
+ *
+ * Chrome has begun answering some declarations in `color(srgb …)`. Those return `null`
+ * rather than a guess: a wrong swatch, or a wrong contrast figure, is worse than an
+ * unfamiliar string the reader can still look up.
  */
-export function toHex(value: string): string {
+export function parseRgb(value: string): Rgba | null {
   const match = RGB.exec(value.trim());
-  if (!match) return value;
+  if (!match) return null;
 
   const parts = match[1].split(",").map((part) => Number.parseFloat(part));
-  if (parts.length < 3 || parts.some((part) => !Number.isFinite(part))) return value;
+  if (parts.length < 3 || parts.some((part) => !Number.isFinite(part))) return null;
 
-  const alpha = parts.length > 3 ? parts[3] : 1;
-  if (alpha === 0) return "transparent";
+  return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+}
+
+/** `rgb(37, 99, 235)` → `#2563eb`. Eight digits when it is not opaque. */
+export function toHex(value: string): string {
+  const colour = parseRgb(value);
+  if (!colour) return value;
+  if (colour.a === 0) return "transparent";
 
   const pair = (channel: number) =>
     Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, "0");
-  const hex = `#${pair(parts[0])}${pair(parts[1])}${pair(parts[2])}`;
-  return alpha === 1 ? hex : `${hex}${pair(alpha * 255)}`;
+  const hex = `#${pair(colour.r)}${pair(colour.g)}${pair(colour.b)}`;
+  return colour.a === 1 ? hex : `${hex}${pair(colour.a * 255)}`;
+}
+
+// -----------------------------------------------------------------------------
+// Contrast
+// -----------------------------------------------------------------------------
+
+/** WCAG 2.x relative luminance. The 0.03928 knee and the 2.4 exponent are from the spec. */
+function luminance({ r, g, b }: Rgba): number {
+  const channel = (value: number) => {
+    const scaled = value / 255;
+    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+/** Source-over: what the eye actually sees when the foreground is not opaque. */
+function composite(fg: Rgba, bg: Rgba): Rgba {
+  if (fg.a >= 1) return fg;
+  return {
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+    a: 1,
+  };
+}
+
+/**
+ * The WCAG ratio, 1 to 21, rounded to two places.
+ *
+ * The foreground is composited over the background first. Taking the ratio on a
+ * half-transparent black would report 21:1 for text that is visibly grey — a checker
+ * that errs in the *reassuring* direction is worse than no checker at all.
+ */
+export function contrastRatio(foreground: Rgba, background: Rgba): number {
+  const fg = luminance(composite(foreground, background));
+  const bg = luminance(background);
+  const [lighter, darker] = fg > bg ? [fg, bg] : [bg, fg];
+  return roundPx((lighter + 0.05) / (darker + 0.05));
+}
+
+/**
+ * The ratio plus the two verdicts.
+ *
+ * "Large" is WCAG's definition and not the obvious one: **≥ 24px, or ≥ 18.66px when
+ * bold** — not 18px, and bold means weight ≥ 700. Getting it wrong moves the pass mark
+ * by 1.5:1 and quietly passes text that fails.
+ */
+export function contrastReport(
+  foreground: Rgba,
+  background: Rgba,
+  fontSize: number,
+  fontWeight: number,
+): ContrastReport {
+  const ratio = contrastRatio(foreground, background);
+  const large = fontSize >= 24 || (fontSize >= 18.66 && fontWeight >= 700);
+
+  return {
+    ratio,
+    large,
+    aa: ratio >= (large ? 3 : 4.5),
+    aaa: ratio >= (large ? 4.5 : 7),
+  };
 }
 
 /**
@@ -178,23 +257,45 @@ export function toHex(value: string): string {
  * A gradient or an image cannot be reduced to one swatch, so it is reported as a flag
  * rather than sampled. Sampling a pixel is the eyedropper's job, not this one's.
  */
-function effectiveBackground(element: Element): { color: string; inherited: boolean; image: boolean } {
+function effectiveBackground(element: Element): {
+  color: string;
+  rgba: Rgba | null;
+  inherited: boolean;
+  image: boolean;
+} {
   let current: Element | null = element;
   let inherited = false;
 
   while (current) {
     const style = getComputedStyle(current);
     if (style.backgroundImage !== "none") {
-      return { color: toHex(style.backgroundColor), inherited, image: true };
+      return { color: toHex(style.backgroundColor), rgba: null, inherited, image: true };
     }
-    const color = toHex(style.backgroundColor);
-    if (color !== "transparent") return { color, inherited, image: false };
+    const rgba = parseRgb(style.backgroundColor);
+    if (rgba && rgba.a > 0) {
+      return { color: toHex(style.backgroundColor), rgba, inherited, image: false };
+    }
 
     current = current.parentElement;
     inherited = true;
   }
 
-  return { color: "transparent", inherited: false, image: false };
+  return { color: "transparent", rgba: null, inherited: false, image: false };
+}
+
+/**
+ * Does this element paint any text of its own?
+ *
+ * A direct child text node, not `textContent` — that would inherit every descendant's
+ * words and hand back a contrast figure for a whole page section whose wrapper paints
+ * nothing. `color` on a wrapper colours nothing, and a ratio for it is a number with no
+ * referent.
+ */
+function hasOwnText(element: Element): boolean {
+  for (const node of element.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim()) return true;
+  }
+  return false;
 }
 
 /**
@@ -211,6 +312,19 @@ export function readStyleSummary(
   const family = style.fontFamily.split(",")[0].replace(/["']/g, "").trim();
   const radius = style.borderRadius;
 
+  // Withheld rather than guessed at whenever it cannot be taken honestly: no text of its
+  // own, nothing painted behind it, an image behind it, or a colour we could not parse.
+  const foreground = parseRgb(style.color);
+  const contrast =
+    foreground && background.rgba && hasOwnText(element)
+      ? contrastReport(
+          foreground,
+          background.rgba,
+          Number.parseFloat(style.fontSize) || 0,
+          Number.parseInt(style.fontWeight, 10) || 400,
+        )
+      : undefined;
+
   return {
     fontSize: style.fontSize,
     lineHeight: style.lineHeight,
@@ -220,6 +334,7 @@ export function readStyleSummary(
     background: background.color,
     backgroundInherited: background.inherited,
     backgroundIsImage: background.image,
+    contrast,
     display: style.display,
     radius: radius === "0px" ? "" : radius,
   };
