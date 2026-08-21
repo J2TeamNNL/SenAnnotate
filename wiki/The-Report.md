@@ -132,6 +132,7 @@ the same way:
 | `**Edges:**` | | | ✓ | ✓ |
 | `**Box:**` | | | ✓ | ✓ |
 | `**Centres:**` | | | | ✓ |
+| `**Contrast:**` | | | ✓ | ✓ |
 
 ```markdown
 **Measured to:** button "Cancel" (`.actions > button.secondary`)
@@ -144,6 +145,21 @@ the same way:
 clicks in a mode you chose — it is the thing you meant to say, so lowering the detail
 level does not throw it away. The box model is collected alongside without being asked
 for, which puts it at the same level as `**Position:**` and `**Classes:**`.
+
+**Contrast.** Present whenever the element paints text of its own on a background that
+can be resolved:
+
+```markdown
+**Contrast:** 4.49:1 · fails AA (needs 4.5:1)
+```
+
+The threshold it missed is named, because a bare verdict leaves the reader to look up
+which of four numbers applied. A colour that *would* pass is deliberately not suggested —
+that is a design decision, and the reader is better placed to make it.
+
+It is absent, rather than guessed at, when there is no honest figure: an element whose
+text lives in a child paints none of its own, nothing is painted behind it, or what is
+painted is a gradient or an image. A ratio against a guess is worse than no ratio.
 
 **Reading the numbers.**
 

@@ -127,6 +127,7 @@ export interface GapMeasurement extends GapGeometry {
 export interface Measurements {
   box?: BoxModel;
   gap?: GapMeasurement;
+  contrast?: ContrastReport;
 }
 
 /**
@@ -134,6 +135,27 @@ export interface Measurements {
  * report. Overlay-only by design: `Annotation.computedStyles` already carries this
  * ground for the report, and printing both would say everything twice.
  */
+/** Colour channels, 0-255, with straight alpha 0-1. */
+export interface Rgba {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+/**
+ * A WCAG contrast verdict. Absent whenever it cannot be taken honestly — an element with
+ * no text of its own, a background nothing paints, or one painted with an image.
+ */
+export interface ContrastReport {
+  /** 1 to 21, two decimal places. */
+  ratio: number;
+  /** WCAG large text: >= 24px, or >= 18.66px at weight >= 700. Moves the pass mark. */
+  large: boolean;
+  aa: boolean;
+  aaa: boolean;
+}
+
 export interface StyleSummary {
   fontSize: string;
   /** Computed, so `normal` or a px value — never the ratio the stylesheet wrote. */
@@ -149,6 +171,8 @@ export interface StyleSummary {
   backgroundInherited: boolean;
   /** Set when a gradient or image is painted, which no single swatch can honestly show. */
   backgroundIsImage: boolean;
+  /** Absent when no honest ratio exists — see `ContrastReport`. */
+  contrast?: ContrastReport;
   display: string;
   /** Empty when the corners are square. */
   radius: string;

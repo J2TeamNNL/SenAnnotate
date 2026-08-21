@@ -192,6 +192,7 @@ things?* Hover reads, click writes — the same contract as mode 1.
 | A figure on a shaded band | That band's thickness — only where the band is at least 14px, or the number would not be legible |
 | A dashed green line | Where the padding ends and the content begins |
 | A dashed orange line | The outer edge of the margin |
+| A contrast verdict, green or red | The WCAG ratio for this element's own text, and whether it clears AA and AAA |
 | The readout under the badge | `padding` and `margin` **side by side** — `T R B L`, each with a dot matching its band's colour — then the type, the colour the element is painted on, and `display` / `border-radius` |
 
 A side whose figure is already drawn on its band is **dimmed** in the readout. What stays

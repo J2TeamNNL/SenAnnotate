@@ -276,6 +276,19 @@ export class MeasureOverlay {
         : style.background;
     rows.push(this.textRow(`${style.color} on ${on}`));
 
+    // Its own row rather than tacked onto the colour line above: the pair of colours and
+    // the verdict on them are two facts, and one long line hides the second.
+    if (style.contrast) {
+      const verdict = style.contrast.aaa
+        ? "passes AA and AAA"
+        : style.contrast.aa
+          ? "passes AA"
+          : "fails AA";
+      const row = this.textRow(`${style.contrast.ratio}:1 · ${verdict}`);
+      row.classList.add(style.contrast.aa ? "measure-readout__row--pass" : "measure-readout__row--fail");
+      rows.push(row);
+    }
+
     const shape = [style.display, style.radius && `radius ${style.radius}`].filter(Boolean);
     rows.push(this.textRow(shape.join(" · ")));
 

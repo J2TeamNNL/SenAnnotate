@@ -23,6 +23,7 @@ import {
   type ActionEntry,
   type Annotation,
   type BoxModel,
+  type ContrastReport,
   type Diagnostics,
   type Measurements,
   type OutputDetailLevel,
@@ -177,8 +178,32 @@ function measurementLines(measurements: Measurements, detail: OutputDetailLevel)
   }
 
   if (wantsDetail && box) lines.push(`**Box:** ${formatBoxModel(box)}`);
+  // Same level as `**Box:**`: passive data collected alongside, not something the
+  // reviewer spent a gesture asking for.
+  if (wantsDetail && measurements.contrast) {
+    lines.push(`**Contrast:** ${formatContrast(measurements.contrast)}`);
+  }
 
   return lines;
+}
+
+/**
+ * `3.45:1 · fails AA (needs 4.5:1)`.
+ *
+ * The threshold it missed is named, because a bare verdict leaves the reader — often an
+ * agent about to change a colour — to look up which of four numbers applied. What is
+ * deliberately *not* here is a suggested replacement colour: that is a design decision,
+ * and the person reading is better placed to make it than this line is.
+ */
+function formatContrast(contrast: ContrastReport): string {
+  const size = contrast.large ? " on large text" : "";
+  const ratio = `${contrast.ratio}:1`;
+
+  if (contrast.aaa) return `${ratio} · passes AA and AAA${size}`;
+  if (contrast.aa) {
+    return `${ratio} · passes AA, fails AAA (needs ${contrast.large ? "4.5" : "7"}:1)${size}`;
+  }
+  return `${ratio} · fails AA (needs ${contrast.large ? "3" : "4.5"}:1)${size}`;
 }
 
 /** `gap 24×0px`, for the one-line bullet in a compact report. */
