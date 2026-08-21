@@ -35,14 +35,22 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CHANGELOG = join(ROOT, "CHANGELOG.md");
 const COMPARE = "https://github.com/thangnm93/SenAnnotate/compare";
 
-// Section order is the reading order: what breaks you, then what you gain, then
-// what got repaired, then the rest. `Other` catches anything that does not parse
-// as a Conventional Commit — it should stay empty, and if it does not, that is a
-// commit message worth fixing rather than a case worth handling silently.
+// Section order is the reading order: what breaks you, then what you gain, then what
+// got repaired, then the rest.
+//
+// `Other` catches two things, and the second one is easy to miss: a subject that does
+// not parse as a Conventional Commit at all, *and* one that parses into a type no row
+// below claims. Both should stay empty. The first means a commit message worth fixing;
+// the second means this table is missing a type, which is how `revert:` — a type the
+// Conventional Commits spec defines — spent a release landing in `Other` and reading
+// like a malformed subject.
 const SECTIONS = [
   { title: "Breaking changes", types: [] }, // filled by the `!` / BREAKING CHANGE rule
   { title: "Added", types: ["feat"] },
   { title: "Fixed", types: ["fix"] },
+  // Beside `Fixed` because that is what a revert is to a reader: something that was in
+  // a release, or on its way to one, and is not any more.
+  { title: "Reverted", types: ["revert"] },
   { title: "Changed", types: ["refactor", "perf", "style"] },
   { title: "Documentation", types: ["docs"] },
   { title: "Internal", types: ["chore", "test", "ci", "build"] },
