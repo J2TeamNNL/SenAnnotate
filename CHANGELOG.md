@@ -10,7 +10,50 @@ matching the tag being released and refuses to publish without one.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.3] — unreleased
+## [0.8.4] — unreleased
+
+[Compare with v0.8.3](https://github.com/thangnm93/SenAnnotate/compare/v0.8.3...v0.8.4)
+
+### Added
+
+- group the measurement readout into an inspector panel (f185980)
+- report the WCAG contrast ratio and its verdict (e312ddf)
+- mode 4 loses its toolbar button and lives on the 4 key (3535187)
+- measure distances gets its own switch under the master (e2c2fd9)
+- put the measuring tools behind an off-by-default setting (20c0bed)
+- spell out each side in the readout and dim the ones already drawn (6246cb4)
+- label the box-model bands and show type and colours on hover (ee98b27)
+- a measure mode that reports the gap between two elements (7445024)
+- draw box-model bands and dimension lines (d4b3b65)
+- report the measured gap and box model (27dfbf4)
+- measure the box model and the gap between two rects (fab4311)
+
+### Fixed
+
+- the changelog generator knows the revert type (b71db39)
+- restore the band styles and draw the box boundaries (da338f9)
+- switching measuring on brings the distance mode with it (c09a0f8)
+- leaving inspect mode leaves no marks on the page (987180b)
+- opening settings must close the measure card (9783290)
+- read the border box from the rect, not from computed width (011d947)
+
+### Reverted
+
+- mode 4 keeps its toolbar button (3c1031e)
+
+### Documentation
+
+- design record for the contrast check (97f7575)
+- correct the measured line count in the changelog (e971af6)
+- measure mode in the wiki and the readme (2fdad89)
+- implementation plan for measure core (0f20b1c)
+- design record for measuring gaps and box model (da2bcb7)
+
+### Internal
+
+- stop tracking the pack staging directory (96564f8)
+
+## [0.8.3] — 2026-08-20
 
 [Compare with v0.8.2](https://github.com/thangnm93/SenAnnotate/compare/v0.8.2...v0.8.3)
 
