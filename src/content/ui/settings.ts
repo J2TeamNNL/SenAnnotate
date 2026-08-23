@@ -55,6 +55,18 @@ export class SettingsCard {
 
   private readonly selects = new Map<keyof Settings, HTMLSelectElement>();
   private readonly switches = new Map<keyof Settings, HTMLInputElement>();
+  private readonly numbers = new Map<keyof Settings, HTMLInputElement>();
+  /** Shown only while `showGrid` is on — three numbers for a grid nobody is drawing. */
+  private readonly gridRows: HTMLElement[];
+  /**
+   * The two rows that only exist under `measureTools`, kept so `render` can take them
+   * away together.
+   *
+   * They are the only rows in this card that depend on another one. A switch for a
+   * surface the user has turned off is not a setting, it is a puzzle — and leaving one
+   * visible but inert is worse than either showing or hiding it.
+   */
+  private readonly measureRows: HTMLElement[];
   private readonly swatches = new Map<string, HTMLButtonElement>();
   private readonly accentCustom: HTMLInputElement;
 
@@ -78,6 +90,43 @@ export class SettingsCard {
       // nothing. Lifted verbatim from the popup, along with the reason.
       on: { input: () => this.emit({ accentColor: this.accentCustom.value }) },
     });
+
+    this.gridRows = [
+      this.number("gridColumns", "Columns", "How many columns the grid draws.", { min: 1, max: 24 }),
+      this.number("gridGutter", "Gutter", "The gap between columns, in pixels.", { min: 0, max: 200 }),
+      this.number("gridMargin", "Page margin", "The inset from each side of the viewport, in pixels.", { min: 0, max: 400 }),
+    ];
+
+
+    this.measureRows = [
+      this.toggle(
+        "measureDistances",
+        "Measure distances",
+        "Adds mode 4 to the toolbar: click two elements and the report carries the gap between them in pixels.",
+      ),
+      this.toggle(
+        "showRulers",
+        "Screen rulers and guides",
+        "Rulers down the top and left edges; drag out of one to place a guide, drag a guide back onto it to remove it. The strips and the guides take the pointer, so the page cannot be clicked through them — which is why this is off unless you want it.",
+      ),
+      this.toggle(
+        "showGrid",
+        "Layout grid",
+        "A column grid over the viewport, for checking whether things line up with anything at all.",
+      ),
+      // The grid's three numbers belong directly under the switch that draws them, not
+      // after the next unrelated toggle. They are in `measureRows` for the master's sake
+      // and in `gridRows` for their own — `render` applies the narrower rule second.
+      ...this.gridRows,
+      this.toggle(
+        "showBoxModel",
+        "Box model on hover",
+        "Shades padding and margin on whatever the pointer is over, and puts the border-box size on a badge. Mode 4 shows them regardless of this.",
+      ),
+    ];
+    for (const row of this.measureRows) row.classList.add("setting-row--child");
+    // A second indent level, because these three are children of a child.
+    for (const row of this.gridRows) row.classList.add("setting-row--grandchild");
 
     this.element = h(
       "div",
@@ -147,6 +196,21 @@ export class SettingsCard {
         ),
         this.hideUntilRestartRow(),
 
+        this.group("Editing"),
+        this.toggle(
+          "cssEditor",
+          "Live CSS editor",
+          "Adds mode 5: click an element and change its CSS on the page, with a Changes tab that records every override so you can copy or revert it. This is the switch that lets this extension write to a page instead of only reading one — off by default for that reason.",
+        ),
+
+        this.group("Measuring"),
+        this.toggle(
+          "measureTools",
+          "Measuring tools",
+          "Off by default. On, it reveals the two switches below — measuring adds a fourth button to the toolbar and a fourth clause to the hint line, which is a cost paid by everyone who never measures anything.",
+        ),
+        ...this.measureRows,
+
         this.group("Appearance"),
         this.select("theme", "Theme", "The overlay's own colours. Match system follows your browser.", THEME_OPTIONS),
         this.accentRow(),
@@ -211,6 +275,38 @@ export class SettingsCard {
 
     this.selects.set(key, select);
     return this.row(label, help, select);
+  }
+
+  /**
+   * A bounded number. Clamped here rather than trusted: `min`/`max` on the element stop
+   * the spinner going out of range but not a typed value, and a grid of zero columns
+   * divides by zero two files away.
+   */
+  private number(
+    key: keyof Settings,
+    label: string,
+    help: string,
+    range: { min: number; max: number },
+  ): HTMLElement {
+    const input = h("input", {
+      class: "select setting-row__control setting-row__number",
+      attrs: {
+        type: "number",
+        min: String(range.min),
+        max: String(range.max),
+        "data-setting": String(key),
+      },
+      on: {
+        change: () => {
+          const value = Math.min(range.max, Math.max(range.min, Number(input.value) || range.min));
+          input.value = String(value);
+          this.emit({ [key]: value } as unknown as Partial<Settings>);
+        },
+      },
+    });
+
+    this.numbers.set(key, input);
+    return this.row(label, help, input);
   }
 
   private toggle(key: keyof Settings, label: string, help: string): HTMLElement {
@@ -292,6 +388,17 @@ export class SettingsCard {
   render(settings: Settings): void {
     for (const [key, select] of this.selects) select.value = String(settings[key]);
     for (const [key, input] of this.switches) input.checked = Boolean(settings[key]);
+
+    for (const [key, input] of this.numbers) input.value = String(settings[key]);
+
+    for (const row of this.measureRows) {
+      row.style.display = settings.measureTools ? "" : "none";
+    }
+    // The three grid numbers need both: a grid nobody is drawing has no columns to set,
+    // and neither does a measuring surface that is switched off entirely.
+    for (const row of this.gridRows) {
+      row.style.display = settings.measureTools && settings.showGrid ? "" : "none";
+    }
 
     this.accentCustom.value = settings.accentColor;
     for (const [value, button] of this.swatches) {

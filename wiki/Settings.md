@@ -121,6 +121,89 @@ To get it back: close the tab, or open the page in a new one.
 
 ---
 
+## Editing
+
+### Live CSS editor
+
+**Off by default.** On, it adds mode 5: click an element and change its CSS on the page,
+with a Changes tab recording every override so you can copy or revert. See
+[[Toolbar and Modes]].
+
+This is the switch that turns a tool which reads a page into one that changes it — which
+is why it is off, and why it is a switch at all rather than simply present.
+
+---
+
+## Measuring
+
+Three switches: a master, and two indented under it that only appear once it is on.
+
+### Measuring tools
+
+**Off by default**, and the only one of the three you see until you turn it on.
+
+Off is the default because the cost is paid by people who never measure anything: a
+fourth icon-only button on a toolbar that docks over someone else's page, and a fourth
+clause on the hint line, which is the only thing on screen that explains the modes at
+all. With it off, everything reads exactly as it did before measuring existed.
+
+### Measure distances
+
+**Switched on whenever the master is.** Turning *Measuring tools* on and watching nothing
+happen would make it look broken, and this is the mode it is named after — so the master
+brings it along every time, not just on a fresh profile.
+
+It is a suggestion, not a lock: turn this row straight back off and it stays off until
+the master is cycled again.
+
+Adds mode 4: click two elements and the report carries the gap between them in pixels.
+See [[Toolbar and Modes]].
+
+Switching it off while you are standing in mode 4 drops you back to mode 1. A mode that
+outlives its own button is a mode you can neither see nor leave.
+
+### Screen rulers and guides
+
+Off by default. On, rulers run down the top and left edges, labelled in **document**
+coordinates — so the numbers still mean something after you scroll. Drag out of a ruler
+to place a guide, drag a guide to move it, drag it back onto the ruler to throw it away.
+The coordinate follows the pointer while you drag.
+
+**This is the one setting that takes part of the page away from the page.** A guide has
+to receive the pointer to be draggable, and anything that receives the pointer cannot be
+clicked through — so the two 20px strips and each guide are holes the page never sees a
+click in. In mode 4 that matters: a guide lying across a button means that button cannot
+be anchored while the guide is there. It is off by default for that reason alone, and
+switching *Measuring tools* off takes it with it.
+
+Guides live in the tab's session storage, keyed on the path. They survive a reload and
+disappear when the tab closes — a guide is a pencil line on one page, not a preference.
+
+### Layout grid
+
+Off by default. Draws **Columns** bands across the viewport, inset by **Page margin** on
+each side with **Gutter** between them. The three numbers appear only while the grid is
+on.
+
+Viewport-relative, deliberately — a page grid is a property of the window the design was
+drawn for, so it does not scroll. That is the opposite of a guide, which is aligned to
+content and therefore does.
+
+Nothing here reaches the report.
+
+### Box model on hover
+
+Off by default. On, every hover — in any mode — shades the element's padding and margin,
+puts its border-box size on a badge, and lists the sides, the type and the colours
+underneath.
+
+Mode 4 draws all of it regardless of this switch: measuring without the bands would be
+measuring blind. The switch is for the other three modes, where the bands are extra
+information rather than the point. That is also why the two are separate switches — you
+can read spacing all day without ever wanting a fourth mode button.
+
+---
+
 ## Appearance
 
 ### Theme

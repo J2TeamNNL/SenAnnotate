@@ -166,6 +166,10 @@ const PATHS: Record<string, string> = {
   bug: "M9 7a3 3 0 016 0M8 7h8v6a4 4 0 01-8 0zM4 11h4M16 11h4M5 6l2 2M19 6l-2 2M5 17l2.5-1.5M19 17l-2.5-1.5",
   chevron: "M6 9l6 6 6-6",
   download: "M12 4v11M8 11l4 4 4-4M5 19h14",
+  // A double-headed arrow: this button measures the distance between two things.
+  arrows: "M3 12h18M3 12l4-4M3 12l4 4M21 12l-4-4M21 12l-4 4",
+  // An eyedropper: barrel on the diagonal, bulb at the top right.
+  eyedropper: "M4 20h3l9.5-9.5M4 20v-3l9.5-9.5M16.5 10.5l3-3a2.1 2.1 0 00-3-3l-3 3M13.5 7.5l3 3",
 };
 
 export function icon(name: keyof typeof PATHS | string, size = 16): SVGSVGElement {
