@@ -596,6 +596,937 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // Measure — box model, and the gap between two elements
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, and nothing else annotates it: `chrome.storage.local` is shared
+    // across this context and annotations are keyed on origin + pathname, so a page
+    // another block has been through opens with that block's leftovers.
+    const measure = await context.newPage();
+    await measure.goto(`${base}/measure.html`);
+    await measure.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await measure.locator(".tool--brand").click();
+
+    // Measuring is off by default, so mode 4 is not on the toolbar and `4` does nothing.
+    // Both are asserted before switching it on: the off state is the one every user
+    // meets first, and a feature flag nobody checks the off side of is not a flag.
+    check(
+      "mode 4 is absent until the setting is switched on",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
+    );
+    await measure.keyboard.press("4");
+    check(
+      "the 4 key does nothing while the setting is off",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("Click an element"),
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "both dependent rows are hidden while measuring is off",
+      !(await measure.locator('.settings input[data-setting="measureDistances"]').isVisible()) &&
+        !(await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
+    );
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    check(
+      "switching measuring on reveals both rows",
+      (await measure.locator('.settings input[data-setting="measureDistances"]').isVisible()) &&
+        (await measure.locator('.settings input[data-setting="showBoxModel"]').isVisible()),
+    );
+    // The master doing nothing on its own would be a broken switch, so the mode it is
+    // named after is on underneath it from the start.
+    check(
+      "the mode is on under the master rather than waiting for a second click",
+      await measure.locator('.settings input[data-setting="measureDistances"]').isChecked(),
+    );
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "the hint advertises mode 4 once it exists",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").trim() ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area · 4 measure",
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
+    const measureHint = measure.locator(".toolbar-hint");
+    check(
+      "the hint explains that measuring takes two clicks",
+      ((await measureHint.textContent())?.trim() ?? "") ===
+        "Click two elements \u00b7 C captures the pair \u00b7 Esc clears \u00b7 1 point \u00b7 2 text \u00b7 3 area",
+      `hint read "${(await measureHint.textContent())?.trim() ?? ""}"`,
+    );
+
+    const save = await measure.locator("#save").boundingBox();
+    const cancel = await measure.locator("#cancel").boundingBox();
+    const middleOf = (box) => [box.x + box.width / 2, box.y + box.height / 2];
+
+    // Hovering alone draws the badge — reading a size must not cost an annotation.
+    await measure.mouse.move(...middleOf(save));
+    const badge = measure.locator(".measure-badge");
+    await badge.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the badge reports the layout border box",
+      ((await badge.textContent()) ?? "").trim() === "320\u00d748",
+      `badge read "${((await badge.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "the padding band is drawn on all four sides",
+      (await measure.locator(".measure-band--padding:visible").count()) === 4,
+      String(await measure.locator(".measure-band--padding:visible").count()),
+    );
+    // Counting the nodes is not enough, and this is not a hypothetical: the whole
+    // `.measure-band` / `.measure-badge` / `.measure-anchor` block was once deleted from
+    // the stylesheet by an over-eager slice, and every count-based check here stayed
+    // green while the overlay drew nothing at all. Read the computed style.
+    const painted = await measure.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const of = (selector) => {
+        const node = root.querySelector(selector);
+        if (!node) return null;
+        const style = getComputedStyle(node);
+        return { position: style.position, background: style.backgroundColor, border: style.borderTopWidth };
+      };
+      return {
+        padding: of(".measure-band--padding"),
+        margin: of(".measure-band--margin"),
+        badge: of(".measure-badge"),
+        contentEdge: of(".measure-edge--content"),
+      };
+    });
+    check(
+      "the bands are positioned and actually painted",
+      painted.padding?.position === "fixed" &&
+        painted.padding.background !== "rgba(0, 0, 0, 0)" &&
+        painted.margin?.background !== "rgba(0, 0, 0, 0)" &&
+        painted.badge?.position === "fixed",
+      JSON.stringify(painted),
+    );
+    check(
+      "the content edge carries a visible line",
+      painted.contentEdge?.position === "fixed" && painted.contentEdge.border === "1px",
+      JSON.stringify(painted.contentEdge),
+    );
+
+    // Where the regions actually end. 320x48 border box, 12px padding either side and
+    // 8px top and bottom, so the content is 296x32; margin adds 16px at the bottom only.
+    const edgeSize = async (selector) =>
+      measure.evaluate((sel) => {
+        const node = document
+          .querySelector("[data-senannotate-ui]")
+          .shadowRoot.querySelector(sel);
+        return `${Math.round(parseFloat(node.style.width))}x${Math.round(parseFloat(node.style.height))}`;
+      }, selector);
+    check(
+      "the content edge sits inside the padding",
+      (await edgeSize(".measure-edge--content")) === "296x32",
+      await edgeSize(".measure-edge--content"),
+    );
+    check(
+      "the margin edge sits outside the border box",
+      (await edgeSize(".measure-edge--margin")) === "320x64",
+      await edgeSize(".measure-edge--margin"),
+    );
+    check(
+      "only the margin side that exists is drawn",
+      (await measure.locator(".measure-band--margin:visible").count()) === 1,
+      String(await measure.locator(".measure-band--margin:visible").count()),
+    );
+    check("hovering alone creates no annotation", (await measure.locator(".marker").count()) === 0);
+
+    // The readout is the half of the box model the bands cannot say. Padding of 8px is
+    // too thin to hold a legible figure, so it is deliberately NOT labelled on the band
+    // — which is exactly why these two checks are a pair.
+    check(
+      "only bands thick enough to read are labelled",
+      (await measure.locator(".measure-band-label:visible").allTextContents()).join(",") === "16",
+      JSON.stringify(await measure.locator(".measure-band-label:visible").allTextContents()),
+    );
+    // The panel is `key`/`value` spans now, so read the pairs rather than the row's
+    // concatenated text — `background` and `#fffbe0` have no separator between them in
+    // `textContent`.
+    const pairs = async () =>
+      measure.evaluate(() =>
+        Object.fromEntries(
+          [
+            ...document
+              .querySelector("[data-senannotate-ui]")
+              .shadowRoot.querySelectorAll(".measure-readout__row"),
+          ]
+            .map((row) => [
+              row.querySelector(".measure-readout__key")?.textContent?.trim(),
+              row.querySelector(".measure-readout__value")?.textContent?.trim(),
+            ])
+            .filter(([key]) => key),
+        ),
+      );
+    const readout = await pairs();
+    // The cells are separate spans laid out by a flex gap, so the row's text content
+    // runs them together — read the cells, not the row.
+    const sideCells = (await measure.locator(".measure-readout__side").allTextContents()).map(
+      (cell) => cell.trim(),
+    );
+    check(
+      "the readout names every side rather than a shorthand",
+      sideCells.join(" ") === "T 8 R 12 B 8 L 12 T 0 R 0 B 16 L 0",
+      JSON.stringify(sideCells),
+    );
+    check(
+      "the panel is grouped, not a flat list",
+      (await measure.locator(".measure-readout__section").allTextContents()).join(",") ===
+        "Box Model,Appearance,Text",
+      JSON.stringify(await measure.locator(".measure-readout__section").allTextContents()),
+    );
+    check(
+      "the panel header names the element in CSS terms",
+      ((await measure.locator(".measure-readout__head").textContent()) ?? "").trim() === "button#save",
+      (await measure.locator(".measure-readout__head").textContent()) ?? "",
+    );
+    check(
+      "the box model group reports the border box",
+      readout.width === "320px" && readout.height === "48px" && readout["box-sizing"] === "border-box",
+      JSON.stringify(readout),
+    );
+    // The dimming is the whole mechanism: full weight means "the page could not tell you
+    // this". Only the 16px margin band was thick enough to label itself.
+    check(
+      "sides already drawn on their band are dimmed, and only those",
+      (await measure.locator(".measure-readout__side--drawn").allTextContents())
+        .map((cell) => cell.replace(/\s+/g, " ").trim())
+        .join(",") === "B 16",
+      JSON.stringify(
+        await measure.locator(".measure-readout__side--drawn").allTextContents(),
+      ),
+    );
+    check(
+      "the text group names the type",
+      readout["font-family"] === "system-ui" && readout["font-size"] === "14px",
+      JSON.stringify(readout),
+    );
+    check(
+      "the appearance group resolves the colour it is painted on",
+      readout.color === "#ffffff" && readout.background === "#2563eb",
+      JSON.stringify(readout),
+    );
+    check(
+      "a colour row carries a swatch of that colour",
+      (await measure.locator(".measure-readout__swatch").count()) === 2,
+      String(await measure.locator(".measure-readout__swatch").count()),
+    );
+
+    // The other half of the pair. `getComputedStyle().width` reports the content box
+    // here and the border box on the button above, so an engine that trusts it gets
+    // exactly one of these two wrong — which is what it did before this check existed.
+    const note = await measure.locator("#note").boundingBox();
+    await measure.mouse.move(note.x + note.width / 2, note.y + note.height / 2);
+    await measure.waitForTimeout(50);
+    check(
+      "a content-box element measures its border box too",
+      ((await badge.textContent()) ?? "").trim() === "340\u00d732",
+      `badge read "${((await badge.textContent()) ?? "").trim()}"`,
+    );
+    check(
+      "an element with no background of its own walks up to the one that is painted",
+      (await pairs()).background === "#ffffff (inherited)",
+      JSON.stringify(await pairs()),
+    );
+    // --- contrast --------------------------------------------------------------
+    //
+    // #faint is the pair from the report that prompted this check. It lands at 4.49:1,
+    // a hundredth under the AA bar, which is exactly the kind of call no reviewer makes
+    // by eye.
+    const contrastRow = async (selector) => {
+      const target = await measure.locator(selector).boundingBox();
+      await measure.mouse.move(target.x + 4, target.y + 4);
+      await measure.mouse.move(target.x + target.width / 2, target.y + target.height / 2);
+      await measure.waitForTimeout(120);
+      return measure.evaluate(() => {
+        const row = [
+          ...document
+            .querySelector("[data-senannotate-ui]")
+            .shadowRoot.querySelectorAll(".measure-readout__row"),
+        ].find((node) => node.querySelector(".measure-readout__key")?.textContent === "contrast");
+        if (!row) return null;
+        return {
+          value: row.querySelector(".measure-readout__value").textContent.trim(),
+          verdict: row.className.replace("measure-readout__row", "").trim(),
+        };
+      });
+    };
+
+    const faint = await contrastRow("#faint");
+    check(
+      "a failing pair is measured and called out",
+      faint?.value === "4.49:1 fails AA" && faint.verdict === "measure-readout__row--fail",
+      JSON.stringify(faint),
+    );
+    const strong = await contrastRow("#strong");
+    check(
+      "black on white is the maximum and passes both",
+      strong?.value === "21:1 passes AA and AAA" && strong.verdict === "measure-readout__row--pass",
+      JSON.stringify(strong),
+    );
+
+    // An element whose text lives in a child paints no text of its own, so there is no
+    // honest ratio to report. Hover its padding — the centre would land on the span,
+    // which does have text and correctly gets a verdict.
+    const wrapper = await measure.locator("#wrapper").boundingBox();
+    await measure.mouse.move(wrapper.x + wrapper.width / 2, wrapper.y + wrapper.height + 60);
+    await measure.mouse.move(wrapper.x + wrapper.width - 8, wrapper.y + 6);
+    await measure.waitForTimeout(120);
+    const wrapperPairs = await pairs();
+    check(
+      "an element with no text of its own gets no verdict",
+      // Both colours are still reported — they are facts about the element. Only the
+      // verdict is withheld, because a ratio for text this element does not paint would
+      // describe nothing.
+      wrapperPairs.color === "#6c757d" &&
+        wrapperPairs.background === "#fffbe0" &&
+        wrapperPairs.contrast === undefined,
+      JSON.stringify(wrapperPairs),
+    );
+
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(50);
+
+    // First click anchors.
+    await measure.mouse.click(...middleOf(save));
+    check(
+      "the first click anchors rather than annotating",
+      (await measure.locator(".measure-anchor").isVisible()) &&
+        (await measure.locator(".composer").count()) === 0,
+    );
+
+    // Hovering the second element draws the dimension line.
+    await measure.mouse.move(...middleOf(cancel));
+    const gapLabel = measure.locator(".measure-label").first();
+    await gapLabel.waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the dimension line carries the measured gap",
+      ((await gapLabel.textContent()) ?? "").trim() === "24px",
+      `label read "${((await gapLabel.textContent()) ?? "").trim()}"`,
+    );
+
+    // Escape abandons a half-taken measurement without leaving the mode.
+    await measure.keyboard.press("Escape");
+    check("Escape clears the anchor", !(await measure.locator(".measure-anchor").isVisible()));
+    check(
+      "Escape does not leave the mode",
+      (await measure
+        .locator('.tool[aria-label^="Measure distances"]')
+        .getAttribute("aria-pressed")) === "true",
+    );
+
+    // Take it again and commit it.
+    await measure.mouse.click(...middleOf(save));
+    await measure.mouse.click(...middleOf(cancel));
+    const measureComposer = measure.locator(".composer");
+    await measureComposer.waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator(".composer__input").fill("these two are not aligned");
+    await measure.locator(".composer .button--primary").click();
+    await measureComposer.waitFor({ state: "detached", timeout: 5_000 });
+
+    await measure.locator('.tool[aria-label^="Annotations"]').click();
+    await measure.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    // Detailed, so the box and the edges are in scope.
+    await measure.locator(".panel select").selectOption("detailed");
+    await measure.locator(".panel .button--primary").click();
+    const measureReport = await measure.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "the report names the element measured to",
+      measureReport.includes("**Measured to:**") && measureReport.includes("#cancel"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "the report carries the gap",
+      measureReport.includes("**Gap:** 24px horizontal"),
+      measureReport.slice(0, 500),
+    );
+    check(
+      "the report carries the box model",
+      measureReport.includes("**Box:** 320\u00d748px \u00b7 content 296\u00d732 \u00b7 padding 8px 12px"),
+      measureReport.slice(0, 500),
+    );
+    // #save is white on #2563eb — 5.17:1, which clears AA and misses AAA. That middle
+    // verdict is the one the two readout checks above do not reach: they cover an
+    // outright fail and a pass of both, so this completes the three.
+    check(
+      "the report carries the contrast verdict with the threshold it missed",
+      measureReport.includes("**Contrast:** 5.17:1 · passes AA, fails AAA (needs 7:1)"),
+      measureReport.slice(0, 600),
+    );
+    check(
+      "aligned edges say so rather than printing 0px",
+      measureReport.includes("top aligned"),
+      measureReport.slice(0, 500),
+    );
+
+    await measure.locator(".panel select").selectOption("standard");
+    await measure.locator('.tool[aria-label^="Annotations"]').click();
+
+    // --- the box-model toggle, now a settings row -----------------------------
+    //
+    // It used to live on a card of its own with a toolbar button. Both are gone: the
+    // controls moved into Settings behind the same flag that provides the mode.
+    await measure.keyboard.press("1");
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "the box model is off by default outside mode 4",
+      !(await measure.locator(".measure-badge").isVisible()),
+    );
+
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="showBoxModel"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "the toggle turns the badge on in point mode",
+      ((await measure.locator(".measure-badge").textContent()) ?? "").trim() === "320\u00d748",
+      `badge read "${((await measure.locator(".measure-badge").textContent()) ?? "").trim()}"`,
+    );
+
+    // Leaving inspect mode has to take every mark off the page with it. The bands, the
+    // badge and the readout are drawn on hover and nothing else was clearing them, so
+    // switching off left them painted over the page with no way to dismiss them.
+    //
+    // Leaving via Escape, with the pointer still on the element, is the repro that
+    // matters: clicking the toolbar moves the pointer off first, and `pointermove`
+    // clears the bands on its way past — which is how this passed against a broken
+    // build the first time it was written.
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(100);
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(150);
+    const leftovers = await measure.evaluate(() => {
+      const root = document.querySelector("[data-senannotate-ui]")?.shadowRoot;
+      if (!root) return ["no shadow root"];
+      const selectors = [
+        ".measure-badge",
+        ".measure-band",
+        ".measure-band-label",
+        ".measure-readout",
+        ".measure-anchor",
+        ".measure-line",
+        ".measure-label",
+        ".highlight",
+      ];
+      return selectors.filter((selector) =>
+        [...root.querySelectorAll(selector)].some(
+          (node) => getComputedStyle(node).display !== "none",
+        ),
+      );
+    });
+    check(
+      "leaving inspect mode wipes every mark off the page",
+      leftovers.length === 0,
+      `still drawn: ${JSON.stringify(leftovers)}`,
+    );
+    check(
+      "no probe attribute is left stranded on the page",
+      (await measure.locator("[data-senannotate-probe]").count()) === 0,
+    );
+    await measure.locator(".tool--brand").click();
+    await measure.waitForTimeout(100);
+
+    // Turning off just the mode has to leave the box model alone — that is the whole
+    // point of them being two switches rather than one.
+    await measure.locator('.tool[aria-label^="Measure distances"]').click();
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="measureDistances"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "turning off just the mode removes its button",
+      (await measure.locator('.tool[aria-label^="Measure distances"]:visible').count()) === 0,
+    );
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "but leaves the box model, which is the other switch",
+      await measure.locator(".measure-badge").isVisible(),
+    );
+
+    // The dead state this three-switch shape allows, and the rule that closes it:
+    // with the mode left off, cycling the master has to bring it back — otherwise the
+    // master is a switch you can turn on and watch do nothing.
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "the mode is genuinely off before the master is cycled",
+      !(await measure.locator('.settings input[data-setting="measureDistances"]').isChecked()),
+    );
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    check(
+      "switching the master back on brings the mode with it",
+      await measure.locator('.settings input[data-setting="measureDistances"]').isChecked(),
+    );
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+    check(
+      "and the hint advertises it again",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").includes("4 measure"),
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    // Then the master, which has to take everything with it.
+    await measure.locator('.tool[aria-label^="Settings"]').click();
+    await measure.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await measure.locator('.settings input[data-setting="measureTools"]').click();
+    await measure.keyboard.press("Escape");
+    await measure.waitForTimeout(200);
+
+    check(
+      "switching the master off drops you back to point mode",
+      ((await measure.locator(".toolbar-hint").textContent()) ?? "").trim() ===
+        "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
+      `hint read "${(await measure.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+    await measure.mouse.move(save.x + 8, save.y + 8);
+    await measure.mouse.move(...middleOf(save));
+    await measure.waitForTimeout(80);
+    check(
+      "and takes the box model with it, whatever its own switch says",
+      !(await measure.locator(".measure-badge").isVisible()),
+    );
+
+    // -------------------------------------------------------------------------
+    // Live CSS editing
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, carrying the two cases a revert has to tell apart: an element
+    // whose padding comes from a stylesheet (revert must REMOVE the property) and one
+    // that already had an inline padding (revert must PUT THAT BACK). Getting the second
+    // wrong leaves the page in a state it was never in, and looks correct on the first.
+    const edit = await context.newPage();
+    await edit.goto(`${base}/css-edit.html`);
+    await edit.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await edit.locator(".tool--brand").click();
+
+    const padding = (id) =>
+      edit.evaluate((target) => {
+        const node = document.getElementById(target);
+        return `${getComputedStyle(node).padding} | ${node.style.padding || "-"}`;
+      }, id);
+
+    check(
+      "mode 5 is absent until the editor is switched on",
+      (await edit.locator('.tool[aria-label^="Edit CSS"]:visible').count()) === 0,
+    );
+    await edit.keyboard.press("5");
+    await edit.waitForTimeout(80);
+    check(
+      "the 5 key does nothing while it is off",
+      !((await edit.locator(".toolbar-hint").textContent()) ?? "").includes("edit its CSS"),
+      `hint read "${(await edit.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await edit.locator('.tool[aria-label^="Settings"]').click();
+    await edit.locator('.settings input[data-setting="cssEditor"]').click();
+    await edit.keyboard.press("Escape");
+    await edit.waitForTimeout(200);
+    check(
+      "the hint advertises mode 5 once it exists",
+      ((await edit.locator(".toolbar-hint").textContent()) ?? "").includes("5 edit"),
+      `hint read "${(await edit.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await edit.keyboard.press("5");
+    const plainBox = await edit.locator("#plain").boundingBox();
+    await edit.mouse.click(plainBox.x + 40, plainBox.y + 10);
+    await edit.locator(".css-card").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "clicking an element opens the card on it",
+      ((await edit.locator(".css-card .card__title").textContent()) ?? "").trim() === "div#plain",
+      (await edit.locator(".css-card .card__title").textContent()) ?? "",
+    );
+    check("and the page is untouched so far", (await padding("plain")) === "8px 12px | -", await padding("plain"));
+
+    // Typing a digit into our own field must not reach the mode keys. `event.target` is
+    // retargeted to the shadow host for anything inside the overlay, so the guard used to
+    // see `DIV` and miss every input we own — typing `15px` switched to mode 1, then
+    // mode 5, and the repaint threw the keystrokes away.
+    const field = edit.locator('.css-card input[data-property="padding"]');
+    await field.click();
+    await field.fill("");
+    await edit.keyboard.type("15px");
+    await edit.waitForTimeout(120);
+    check(
+      "digits typed into a CSS value stay in the field",
+      (await field.inputValue()) === "15px",
+      await field.inputValue(),
+    );
+    check(
+      "and do not switch mode behind the card",
+      ((await edit.locator(".toolbar-hint").textContent()) ?? "").includes("edit its CSS"),
+      `hint read "${(await edit.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    await field.fill("24px 30px");
+    await field.press("Enter");
+    await edit.waitForTimeout(200);
+    check("editing applies immediately", (await padding("plain")) === "24px 30px | 24px 30px", await padding("plain"));
+    check(
+      "the Changes tab counts it",
+      ((await edit.locator('.css-card__tab[data-tab="changes"]').textContent()) ?? "").trim() === "Changes (1)",
+      (await edit.locator('.css-card__tab[data-tab="changes"]').textContent()) ?? "",
+    );
+
+    await edit.locator('.css-card__tab[data-tab="changes"]').click();
+    await edit.waitForTimeout(120);
+    check(
+      "the change records both values",
+      ((await edit.locator(".css-card__change").first().textContent()) ?? "").replace(/\s+/g, "") ===
+        "padding8px 12px→24px 30px".replace(/\s+/g, ""),
+      (await edit.locator(".css-card__change").first().textContent()) ?? "",
+    );
+
+    // --- arrow stepping ---------------------------------------------------------
+    //
+    // The caret decides which number moves, which is the only thing that makes this
+    // usable on a shorthand. And the field is replaced on every edit, so three presses
+    // in a row is the check that matters: it fails if focus is not carried across the
+    // repaint, and one press alone would pass against that bug.
+    await edit.locator('.css-card__tab[data-tab="styles"]').click();
+    const stepper = edit.locator('.css-card input[data-property="padding"]');
+    await stepper.click();
+    await edit.keyboard.press("End");
+    await edit.keyboard.press("ArrowUp");
+    await edit.waitForTimeout(100);
+    check("Up steps the number at the caret", (await stepper.inputValue()) === "24px 31px", await stepper.inputValue());
+    check(
+      "and applies it to the page as it goes",
+      (await padding("plain")).startsWith("24px 31px"),
+      await padding("plain"),
+    );
+
+    await edit.keyboard.press("ArrowUp");
+    await edit.keyboard.press("ArrowUp");
+    await edit.waitForTimeout(100);
+    check(
+      "focus survives the repaint, so holding Up keeps stepping",
+      (await stepper.inputValue()) === "24px 33px",
+      await stepper.inputValue(),
+    );
+
+    await edit.keyboard.down("Shift");
+    await edit.keyboard.press("ArrowUp");
+    await edit.keyboard.up("Shift");
+    await edit.waitForTimeout(100);
+    check("Shift steps by ten", (await stepper.inputValue()) === "24px 43px", await stepper.inputValue());
+
+    await edit.keyboard.press("Home");
+    await edit.keyboard.press("ArrowDown");
+    await edit.waitForTimeout(100);
+    check(
+      "the caret picks which number moves",
+      (await stepper.inputValue()) === "23px 43px",
+      await stepper.inputValue(),
+    );
+
+    await edit.locator('.css-card__tab[data-tab="changes"]').click();
+    await edit.locator('.css-card [data-action="revert-all"]').click();
+    await edit.waitForTimeout(200);
+    check(
+      "reverting an element that had no inline style removes the property",
+      (await padding("plain")) === "8px 12px | -",
+      await padding("plain"),
+    );
+
+    // The case that looks the same and is not.
+    await edit.locator('.css-card__tab[data-tab="styles"]').click();
+    const inlinedBox = await edit.locator("#inlined").boundingBox();
+    await edit.mouse.click(inlinedBox.x + 40, inlinedBox.y + 10);
+    await edit.waitForTimeout(150);
+    const field2 = edit.locator('.css-card input[data-property="padding"]');
+    await field2.fill("40px");
+    await field2.press("Enter");
+    await edit.waitForTimeout(200);
+    check("it applies there too", (await padding("inlined")) === "40px | 40px", await padding("inlined"));
+
+    await edit.locator('.css-card__tab[data-tab="changes"]').click();
+    await edit.locator('.css-card [data-action="revert-all"]').click();
+    await edit.waitForTimeout(200);
+    check(
+      "reverting an element that HAD an inline style puts that value back",
+      (await padding("inlined")) === "4px 6px | 4px 6px",
+      await padding("inlined"),
+    );
+
+    // Into the report. Needs a note, because the report is built from the panel.
+    await edit.keyboard.press("Escape");
+    await edit.waitForTimeout(150);
+    await edit.keyboard.press("5");
+    await edit.mouse.click(plainBox.x + 40, plainBox.y + 10);
+    await edit.waitForTimeout(150);
+    const field3 = edit.locator('.css-card input[data-property="padding"]');
+    await field3.fill("18px");
+    await field3.press("Enter");
+    await edit.waitForTimeout(150);
+    await edit.keyboard.press("Escape");
+    await edit.waitForTimeout(150);
+    await edit.keyboard.press("1");
+    await edit.mouse.click(plainBox.x + 40, plainBox.y + 10);
+    await edit.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    await edit.locator(".composer__input").fill("padding was too tight");
+    await edit.locator(".composer .button--primary").click();
+    await edit.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+    await edit.locator('.tool[aria-label^="Annotations"]').click();
+    await edit.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await edit.locator(".panel .button--primary").click();
+    const editReport = await edit.evaluate(() => navigator.clipboard.readText());
+    check(
+      "the report carries the CSS changes section",
+      editReport.includes("## CSS changes") &&
+        editReport.includes("- `padding`: `8px 12px` \u2192 `18px`"),
+      editReport.slice(-400),
+    );
+
+    // Switching the editor off must close the card and leave the mode — but must NOT
+    // undo the edits, which are the user's work rather than the mode's.
+    await edit.locator('.tool[aria-label^="Annotations"]').click();
+    await edit.locator('.tool[aria-label^="Settings"]').click();
+    await edit.locator('.settings input[data-setting="cssEditor"]').click();
+    await edit.keyboard.press("Escape");
+    await edit.waitForTimeout(250);
+    check(
+      "switching the editor off takes mode 5 with it",
+      (await edit.locator('.tool[aria-label^="Edit CSS"]:visible').count()) === 0 &&
+        (await edit.locator(".css-card:visible").count()) === 0,
+    );
+    check(
+      "but leaves the edits alone — they are the user's, not the mode's",
+      (await padding("plain")) === "18px | 18px",
+      await padding("plain"),
+    );
+
+    // -------------------------------------------------------------------------
+    // Rulers, guides and the layout grid
+    // -------------------------------------------------------------------------
+    //
+    // Its own fixture, and a tall one: guides are stored in document coordinates and the
+    // only way to show that is to scroll.
+    const ruled = await context.newPage();
+    await ruled.goto(`${base}/rulers.html`);
+    await ruled.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await ruled.locator(".tool--brand").click();
+
+    const drawn = async () =>
+      ruled.evaluate(() => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        // `getClientRects()`, not the node's own `display`: the grid hides by hiding its
+        // container, so every band underneath still computes to `display: block` and a
+        // check that reads the band alone reports twelve of them on a blank screen. It
+        // did, until this line changed.
+        const visible = (selector) =>
+          [...root.querySelectorAll(selector)].filter((node) => node.getClientRects().length > 0);
+        return {
+          rulers: visible(".ruler").length,
+          bands: visible(".grid-overlay__band").length,
+          guides: visible(".guide").length,
+          labelsY: visible(".ruler--left .ruler__label")
+            .slice(0, 2)
+            .map((node) => node.textContent),
+        };
+      });
+
+    // The off state is the one every user meets first, and the one that decides whether
+    // any region of the page stops taking clicks.
+    check(
+      "nothing is drawn while the master is off",
+      JSON.stringify(await drawn()) === JSON.stringify({ rulers: 0, bands: 0, guides: 0, labelsY: [] }),
+      JSON.stringify(await drawn()),
+    );
+
+    await ruled.locator('.tool[aria-label^="Settings"]').click();
+    await ruled.locator(".settings").waitFor({ state: "visible", timeout: 5_000 });
+    await ruled.locator('.settings input[data-setting="measureTools"]').click();
+    check(
+      "the grid numbers stay hidden until the grid is on",
+      !(await ruled.locator('.settings input[data-setting="gridColumns"]').isVisible()),
+    );
+    await ruled.locator('.settings input[data-setting="showRulers"]').click();
+    await ruled.locator('.settings input[data-setting="showGrid"]').click();
+    check(
+      "the grid numbers sit under the switch that draws them",
+      await ruled.evaluate(() => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        const group = [...root.querySelectorAll(".settings__group")].find(
+          (node) => node.textContent === "Measuring",
+        );
+        const labels = [];
+        for (let n = group.nextElementSibling; n && !n.classList.contains("settings__group"); n = n.nextElementSibling) {
+          if (n.getClientRects().length === 0) continue;
+          labels.push(n.querySelector(".setting-row__label span")?.textContent ?? "");
+        }
+        return labels.join(",");
+      }) ===
+        "Measuring tools,Measure distances,Screen rulers and guides,Layout grid,Columns,Gutter,Page margin,Box model on hover",
+      await ruled.evaluate(() => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        const group = [...root.querySelectorAll(".settings__group")].find(
+          (node) => node.textContent === "Measuring",
+        );
+        const labels = [];
+        for (let n = group.nextElementSibling; n && !n.classList.contains("settings__group"); n = n.nextElementSibling) {
+          if (n.getClientRects().length === 0) continue;
+          labels.push(n.querySelector(".setting-row__label span")?.textContent ?? "");
+        }
+        return labels.join(",");
+      }),
+    );
+    check(
+      "switching the grid on reveals its three numbers",
+      (await ruled.locator('.settings input[data-setting="gridColumns"]').isVisible()) &&
+        (await ruled.locator('.settings input[data-setting="gridGutter"]').isVisible()) &&
+        (await ruled.locator('.settings input[data-setting="gridMargin"]').isVisible()),
+    );
+    await ruled.keyboard.press("Escape");
+    await ruled.waitForTimeout(250);
+
+    // --- the colour picker -----------------------------------------------------
+    //
+    // Only the surface is testable. `EyeDropper` opens browser chrome that Playwright
+    // cannot click, and in headless it aborts before drawing — which is exactly why
+    // `content/eyedropper.ts` is four lines and everything else lives where it can be
+    // checked. Headless taking the abort path is the same path Escape takes.
+    check(
+      "the picker is on the pill once measuring is on",
+      await ruled.locator('.tool[aria-label^="Pick a colour"]').isVisible(),
+    );
+    await ruled.locator('.tool[aria-label^="Pick a colour"]').click();
+    await ruled.waitForTimeout(400);
+    check(
+      "a dismissed pick says nothing",
+      (await ruled.locator(".toast").count()) === 0,
+      String(await ruled.locator(".toast").count()),
+    );
+
+    const on = await drawn();
+    check("both rulers are drawn", on.rulers === 2, JSON.stringify(on));
+    check("the grid draws one band per column", on.bands === 12, JSON.stringify(on));
+    check(
+      "the strips take the pointer, which is what makes them draggable",
+      (await ruled.evaluate(() => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        return getComputedStyle(root.querySelector(".ruler--top")).pointerEvents;
+      })) === "auto",
+    );
+
+    // Drag a vertical guide out of the left strip.
+    await ruled.mouse.move(10, 300);
+    await ruled.mouse.down();
+    await ruled.mouse.move(240, 300, { steps: 8 });
+    await ruled.mouse.up();
+    await ruled.waitForTimeout(200);
+    check("dragging out of a ruler creates a guide", (await drawn()).guides === 1);
+    check(
+      "the guide is stored in document coordinates, in this tab only",
+      (await ruled.evaluate(() =>
+        window.sessionStorage.getItem("senannotate:guides:/rulers.html"),
+      )) === '[{"id":"g0","axis":"x","at":240}]',
+      (await ruled.evaluate(() =>
+        window.sessionStorage.getItem("senannotate:guides:/rulers.html"),
+      )) ?? "null",
+    );
+
+    // Scroll: the vertical ruler must relabel, and the guide must stay where it was put.
+    await ruled.evaluate(() => window.scrollTo(0, 120));
+    await ruled.waitForTimeout(250);
+    const scrolled = await drawn();
+    check(
+      "the vertical ruler labels document coordinates, not viewport ones",
+      scrolled.labelsY[0] === "200",
+      JSON.stringify(scrolled.labelsY),
+    );
+    check("the guide survives the scroll", scrolled.guides === 1, JSON.stringify(scrolled));
+    check(
+      "the vertical label fits inside its 20px strip",
+      await ruled.evaluate(() => {
+        const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+        const strip = root.querySelector(".ruler--left").getBoundingClientRect();
+        const label = root.querySelector(".ruler--left .ruler__label")?.getBoundingClientRect();
+        return Boolean(label) && label.left >= strip.left - 0.5 && label.right <= strip.right + 0.5;
+      }),
+    );
+
+    // Drag it back onto the ruler to throw it away.
+    await ruled.evaluate(() => window.scrollTo(0, 0));
+    await ruled.waitForTimeout(150);
+    await ruled.mouse.move(243, 300);
+    await ruled.mouse.down();
+    await ruled.mouse.move(6, 300, { steps: 8 });
+    await ruled.mouse.up();
+    await ruled.waitForTimeout(200);
+    check("dragging a guide back onto the ruler removes it", (await drawn()).guides === 0);
+
+    // Changing a number redraws without a reload.
+    await ruled.locator('.tool[aria-label^="Settings"]').click();
+    // Typed, not filled: a digit typed here used to reach the mode keys as well as the
+    // field, because the retargeted event looked like it came from a plain `DIV`.
+    const columns = ruled.locator('.settings input[data-setting="gridColumns"]');
+    await columns.click();
+    await columns.fill("");
+    await ruled.keyboard.type("6");
+    await ruled.keyboard.press("Enter");
+    await ruled.waitForTimeout(250);
+    check("changing the column count redraws the grid", (await drawn()).bands === 6, JSON.stringify(await drawn()));
+    check(
+      "and typing it did not switch mode behind the card",
+      ((await ruled.locator(".toolbar-hint").textContent()) ?? "").startsWith("Click an element"),
+      `hint read "${(await ruled.locator(".toolbar-hint").textContent())?.trim() ?? ""}"`,
+    );
+
+    // The master has to take the rulers with it while their own switch is still on.
+    // This is the state that matters: rulers cost the page two dead bands, and a user
+    // who switches measuring off and keeps them is left unable to click their own page
+    // with nothing on screen explaining why.
+    //
+    // Asserting it needed this exact order. Turning the rulers off first — the tidy
+    // way — leaves `showRulers` false, and then the check passes whether or not the
+    // master is wired in at all. Verified by deleting `settings.measureTools &&` from
+    // the gate: the suite stayed green until this block was reordered.
+    await ruled.locator('.settings input[data-setting="gridColumns"]').fill("12");
+    await ruled.locator('.settings input[data-setting="gridColumns"]').press("Enter");
+    await ruled.locator('.settings input[data-setting="measureTools"]').click();
+    await ruled.keyboard.press("Escape");
+    await ruled.waitForTimeout(250);
+    check(
+      "the master takes the picker off the pill too",
+      (await ruled.locator('.tool[aria-label^="Pick a colour"]:visible').count()) === 0,
+    );
+    check(
+      "the master takes the rulers and the grid with it, both still switched on",
+      JSON.stringify(await drawn()) ===
+        JSON.stringify({ rulers: 0, bands: 0, guides: 0, labelsY: [] }),
+      JSON.stringify(await drawn()),
+    );
+
+    // Now put their own switches back, so `chrome.storage.sync` reaches every later page
+    // in the state it started in.
+    await ruled.locator('.tool[aria-label^="Settings"]').click();
+    await ruled.locator('.settings input[data-setting="measureTools"]').click();
+    await ruled.locator('.settings input[data-setting="showGrid"]').click();
+    await ruled.locator('.settings input[data-setting="showRulers"]').click();
+    await ruled.locator('.settings input[data-setting="measureTools"]').click();
+    await ruled.keyboard.press("Escape");
+    await ruled.waitForTimeout(200);
+
+    // -------------------------------------------------------------------------
     // ⌘/Ctrl+drag — the same box without leaving point mode
     // -------------------------------------------------------------------------
     //
@@ -1741,6 +2672,48 @@ async function main() {
     );
 
     // -------------------------------------------------------------------------
+    // A page whose CSS reaches our shadow host
+    // -------------------------------------------------------------------------
+    // Page declarations beat every `:host` rule, so a site styling `[data-theme]` or
+    // `div` — daisyUI does the first — used to paint our fixed, full-viewport host
+    // opaque and hide the whole site behind it.
+    const themed = await context.newPage();
+    await themed.goto(`${base}/themed-host.html`);
+    await themed.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const hostPaint = await themed.evaluate(() => {
+      const host = document.querySelector("[data-senannotate-ui]");
+      const shadowText = getComputedStyle(host.shadowRoot.querySelector(".layer"));
+      return {
+        background: getComputedStyle(host).backgroundColor,
+        color: shadowText.color,
+        font: shadowText.fontFamily,
+      };
+    });
+    check(
+      "page CSS cannot paint our host over the site",
+      hostPaint.background === "rgba(0, 0, 0, 0)",
+      hostPaint.background,
+    );
+    check(
+      "page CSS cannot recolour the overlay through the host",
+      hostPaint.color !== "rgb(255, 0, 0)" && !hostPaint.font.includes("Comic Sans"),
+      `${hostPaint.color} / ${hostPaint.font}`,
+    );
+
+    // The page is still annotatable with all that in its stylesheet.
+    await themed.locator(".tool--brand").click();
+    await themed.locator(".cta").click();
+    await themed.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    const themedComposer = (await themed.locator(".composer").textContent()) ?? "";
+    check(
+      "a themed page still annotates",
+      themedComposer.includes('button "Click me"'),
+      themedComposer.slice(0, 200),
+    );
+    await themed.keyboard.press("Escape");
+
+    // -------------------------------------------------------------------------
     // React, Svelte, Angular
     // -------------------------------------------------------------------------
     //
@@ -2835,6 +3808,37 @@ async function main() {
       "a child frame's natives are left unpatched, so a captcha can still verify",
       innerNative === true,
       `innerNative=${innerNative}`,
+    );
+
+    // Same argument, second offender: `freeze.ts` wrapped the four scheduling functions
+    // plus `clearTimeout`/`cancelAnimationFrame` at module load in *every* frame, and
+    // `freeze()` can only ever run in the top frame — the bridge is a same-window
+    // `postMessage` and `toggleFreeze` lives in `installTopFrame()`. So every iframe on
+    // every page had its timers monkey-patched for a `frozen` flag that could never
+    // become true there, which is the same `Function.prototype.toString` tampering
+    // Turnstile refuses to verify through. Issue #24.
+    const TIMER_SOURCES = () =>
+      [
+        window.setTimeout.toString(),
+        window.clearTimeout.toString(),
+        window.setInterval.toString(),
+        window.requestAnimationFrame.toString(),
+        window.cancelAnimationFrame.toString(),
+      ].every((source) => source.includes("[native code]"));
+
+    const innerTimersNative = await innerFrame?.evaluate(TIMER_SOURCES);
+    check(
+      "a child frame's timers are left unwrapped — freeze never reaches it anyway",
+      innerTimersNative === true,
+      `innerTimersNative=${innerTimersNative}`,
+    );
+
+    // And the top frame must still be wrapped, or the guard above took freeze with it.
+    const topTimersNative = await framed.evaluate(TIMER_SOURCES);
+    check(
+      "the top frame's timers are still wrapped, so freeze still parks callbacks",
+      topTimersNative === false,
+      `topTimersNative=${topTimersNative}`,
     );
 
     await framed.locator(".tool--brand").click();
