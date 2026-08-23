@@ -30,13 +30,16 @@ empty ad slots on a news page cost nothing.
 | A pin inside a frame does not follow that frame's **own** scrolling | Visual only — the report is unaffected. |
 | A frame nested **inside another frame** falls back to annotating the outer `<iframe>` | You get the outer element rather than the inner one. |
 | **Drag-select stops at the frame boundary** | Click and text selection work inside frames; the marquee does not. |
+| **Freeze does not reach inside a frame** | <kbd>F</kbd> holds the top document still; a carousel running inside an iframe keeps moving. |
 
 ### Challenge frames are left alone
 
 Cloudflare Turnstile, hCaptcha and similar widgets render in an iframe and **refuse to
-verify if they see the page's natives patched**. The extension therefore does not
-instrument inside those frames — a user who cannot get past a challenge because a
-feedback tool was installed is a worse outcome than an un-annotatable widget.
+verify if they see the page's natives patched**. The extension therefore patches no
+natives inside a frame at all — not the network capture behind the diagnostics report,
+and not the timer wrap behind freeze. A user who cannot get past a challenge because a
+feedback tool was installed is a worse outcome than an un-annotatable widget, and it is
+also why the freeze limit in the table above is a limit rather than a bug.
 
 ---
 
@@ -99,7 +102,8 @@ is driven by pointer events, so there is nothing on a timer to park.
 carousel, a toast on a timer or a mid-flight transition stops where it is.
 
 Freeze has to run in the page's own world to work at all — patching `setTimeout` from an
-isolated content script patches only that script's own timers. See [[Architecture]].
+isolated content script patches only that script's own timers. That patch is confined to
+the **top document**, so motion inside an iframe carries on. See [[Architecture]].
 
 *Freeze animations on inspect* in [[Settings]] makes it automatic.
 
