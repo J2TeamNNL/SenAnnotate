@@ -1,5 +1,5 @@
 // =============================================================================
-// Freeze motion — MAIN world only
+// Freeze motion — MAIN world, and (4) in the top frame only
 // =============================================================================
 //
 // Holding a page still long enough to annotate a transient state means stopping four
@@ -14,6 +14,10 @@
 // (4) is why this file has to run in the MAIN world. Patching `window.setTimeout` from
 // an isolated content script patches only that script's own timers; the page's animation
 // loops keep running in their own heap, untouched.
+//
+// It is also the one part restricted to the top frame — patching natives in a third-party
+// widget's iframe reads as tampering to the widget. The reasoning is at the `wrapTimers()`
+// call at the foot of this file.
 //
 // Our own overlay is excluded throughout: the toolbar and markers must stay responsive
 // while the page under them is held still.
@@ -271,8 +275,25 @@ function replayParked(): void {
 }
 
 // Wrapped immediately: this module is evaluated at document_start, before any page
-// script runs, so no timer can be scheduled behind the wrapper's back.
-wrapTimers();
+// script runs, so no timer can be scheduled behind the wrapper's back. Deferring the
+// wrap to the first `freeze()` call is not an option — an interval or a rAF loop the
+// page started before that moment would keep ticking straight through the freeze.
+//
+// Top frame only, for the same reason `installDiagnostics()` is (see
+// `inspector/index.ts`): the wrapper replaces five natives in the page's own heap, and a
+// browser-integrity check reading `setTimeout.toString()` sees tampering. Turnstile and
+// friends render in exactly the iframes this was patching.
+//
+// Nothing is lost, because `freeze()` can never run in a child frame today: the bridge
+// is a same-window `postMessage` (`content/bridge.ts`), and its only caller —
+// `toggleFreeze` — lives in the top-frame branch of `content/index.ts`. So every iframe
+// on every page was having its timers patched for a `frozen` flag that stayed false for
+// the life of the document.
+//
+// Freezing motion *inside* a frame therefore remains unsolved rather than regressed. It
+// needs freeze routed down FRAME_CHANNEL first; when that lands, this guard is where the
+// child-frame wrap belongs — driven by the arriving command, not by module load.
+if (window.top === window) wrapTimers();
 
 // -----------------------------------------------------------------------------
 // Public API
@@ -282,7 +303,8 @@ export function freeze(): void {
   if (frozen) return;
   frozen = true;
 
-  // Timers were wrapped at module load; the flag alone is what parks their callbacks.
+  // Timers were wrapped at module load (top frame only); the flag alone is what parks
+  // their callbacks. In a child frame this call still does 1-3 and simply skips 4.
   injectFreezeStyles();
   pauseWebAnimations();
   pauseVideos();

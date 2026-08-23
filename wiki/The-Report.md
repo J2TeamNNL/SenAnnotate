@@ -120,6 +120,84 @@ A multi-element note says so, and the forensic block covers the first element:
 
 ---
 
+## Measurements
+
+Only present on annotations taken in **mode 4**. The figures are deliberately not gated
+the same way:
+
+| Line | Compact | Standard | Detailed | Forensic |
+|---|:-:|:-:|:-:|:-:|
+| ` · gap 24×0px` on the one-line bullet | ✓ | | | |
+| `**Measured to:**` and `**Gap:**` | | ✓ | ✓ | ✓ |
+| `**Edges:**` | | | ✓ | ✓ |
+| `**Box:**` | | | ✓ | ✓ |
+| `**Centres:**` | | | | ✓ |
+| `**Contrast:**` | | | ✓ | ✓ |
+
+```markdown
+**Measured to:** button "Cancel" (`.actions > button.secondary`)
+**Gap:** 24px horizontal, 0px vertical
+**Edges:** top aligned, right -12px, bottom aligned, left +8px
+**Box:** 320×48px · content 296×32 · padding 8px 12px · margin 0 0 16px 0
+```
+
+**Why `**Gap:**` appears a level earlier than `**Box:**`.** A gap costs two deliberate
+clicks in a mode you chose — it is the thing you meant to say, so lowering the detail
+level does not throw it away. The box model is collected alongside without being asked
+for, which puts it at the same level as `**Position:**` and `**Classes:**`.
+
+**Contrast.** Present whenever the element paints text of its own on a background that
+can be resolved:
+
+```markdown
+**Contrast:** 4.49:1 · fails AA (needs 4.5:1)
+```
+
+The threshold it missed is named, because a bare verdict leaves the reader to look up
+which of four numbers applied. A colour that *would* pass is deliberately not suggested —
+that is a design decision, and the reader is better placed to make it.
+
+It is absent, rather than guessed at, when there is no honest figure: an element whose
+text lives in a child paints none of its own, nothing is painted behind it, or what is
+painted is a gradient or an image. A ratio against a guess is worse than no ratio.
+
+**Reading the numbers.**
+
+- `**Gap:**` is the clear space on each axis. `12px overlap` means they overlap by that
+  much; `0px` means the edges touch. When one element is wholly inside the other the
+  line reads `none` and `**Edges:**` is the real answer.
+- `**Edges:**` is the second element's edge minus the first's, so `aligned` means 0 and
+  the sign tells you which way to move.
+- Figures keep two decimal places. A `0.5px` gap prints as `0.5px` rather than being
+  rounded to nothing — a half-pixel seam is a real defect and the usual integer
+  rounding is what hides it.
+- `**Box:**` describes the **anchor** — the first element you clicked — because every
+  other line in the annotation does. `320×48px` is the border box as painted.
+
+---
+
+## CSS changes
+
+Present whenever anything was overridden in mode 5, as a section of its own rather than
+attached to a note — an override is not a comment about an element, it is an instruction
+about one, and it exists whether or not anybody wrote a sentence beside it.
+
+```markdown
+## CSS changes
+
+### `.actions > button.primary`
+
+- `padding`: `8px 12px` → `12px 20px`
+```
+
+The heading is the **selector**, not the friendly label: this is the one part of the
+report meant to be acted on mechanically, and `button.primary` is not something you can
+paste into a stylesheet. `from` is the value the page computed before you touched it, not
+the previous edit — someone following the report needs the stylesheet's value, not your
+intermediate step.
+
+---
+
 ## Frames
 
 An element inside an iframe carries a `**Frame:**` line above `**Location:**`, because
