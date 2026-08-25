@@ -295,7 +295,8 @@ in the file moves onto the origin in the current tab, path kept.
 every note and every screenshot embedded, no script and nothing loaded from the network —
 a content security policy inside the file says so, so the recipient's browser enforces it
 rather than taking our word — which opens in any browser. Screenshots only travel when **Screenshots** is set to embed —
-a path points at *your* Downloads folder, not theirs.
+a path points at *your* Downloads folder, not theirs. A pasted **reference** always
+travels, because it is already stored as image data.
 
 Paste an image into the composer — a Figma frame, a design review screenshot, anything —
 and it travels with the note as a **reference**: what the element should look like

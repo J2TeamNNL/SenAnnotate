@@ -112,7 +112,8 @@ them, and all of them through Chrome's ordinary download flow to your own disk:
   refiles the notes under the site open in the current tab, since notes are stored per site.
 - **Save .html** — the same notes as one self-contained document for someone who does not
   have the extension. If your screenshots are set to be embedded, they are inside that file
-  as image data. It contains no script and loads nothing from the network, and it says so
+  as image data. A reference image you pasted always travels, because it is already stored
+  that way. It contains no script and loads nothing from the network, and it says so
   in its own content security policy.
 - **Download report** — the Markdown report as an `.md` file.
 

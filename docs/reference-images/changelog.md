@@ -211,3 +211,11 @@ conclude it is unhandled. And the rule this review produced has its own bullet: 
 UI handles must be stopped before it reaches `document`, and `preventDefault` is not that** —
 named as the shape behind `modal-click-leak/`, `modal-focus-leak/` and this paste, with the
 instruction to assume the next input surface in the overlay has it too.
+
+## After share-export landed
+
+`#13` merged first, so the shared `.html` review had the photograph of *now* and nothing
+of *instead*. `share.ts` now renders each `referenceImages` URI that `isEmbeddable`
+accepts, under the same heading the Markdown report uses, after the screenshot. A
+hand-edited export still cannot smuggle an SVG into the document — the gate is the same
+one screenshots already pass.
