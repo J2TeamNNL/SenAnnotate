@@ -6,6 +6,7 @@
 // both the MAIN-world inspector and the service worker.
 // =============================================================================
 
+import { downloadBlob } from "../shared/download";
 import { formatCssChanges, formatSource, generateOutput } from "../shared/output";
 import { HIDDEN_KEY } from "../shared/protocol";
 import type { RuntimeMessage, RuntimeResponse } from "../shared/protocol";
@@ -49,14 +50,7 @@ import {
   requestFrameHoverCapture,
 } from "./frames";
 import { buildSelector, identifyElement, isAnnotatable, isOurUi } from "./identify";
-import {
-  canvasToBlob,
-  cropToCanvas,
-  downloadBlob,
-  downloadPath,
-  encodeForEmbed,
-  encodeSuppliedImage,
-} from "./screenshot";
+import { canvasToBlob, cropToCanvas, downloadPath, encodeForEmbed, encodeSuppliedImage } from "./screenshot";
 import { resolveSource } from "./source";
 import {
   loadAnnotations,
