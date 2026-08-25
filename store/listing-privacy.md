@@ -46,12 +46,11 @@ as a file.
 ```
 Two local stores, both via chrome.storage. (1) chrome.storage.local holds the user's
 annotations — the note text plus a description of the annotated element, its DOM ancestry and
-a re-resolvable CSS selector — keyed by the page's origin and path, so that reloading the page
-under review brings the notes back instead of silently losing the user's work. A note may also
-carry images: the optional screenshot of the annotated element, and up to three reference
-images the user pastes or attaches to show what the element should look like instead. Both are
-downscaled and stored as data URIs beside the note, and a size ceiling sheds them rather than
-let a write fail and lose the notes themselves. (2)
+a re-resolvable CSS selector — keyed by origin and path so a reload brings the notes back.
+A note may also carry images: an optional screenshot, and up to three reference images the
+user pastes or attaches to show what the element should look like instead. Both are
+downscaled and stored as data URIs beside the note; a size ceiling sheds them rather than
+let a write fail and lose the notes. (2)
 chrome.storage.sync holds preferences only: report detail level, theme, whether diagnostics
 capture is enabled, and whether the toolbar is collapsed, so they follow the user's Chrome
 profile between machines. Annotation content is never written to sync storage. Nothing in
