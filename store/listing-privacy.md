@@ -98,20 +98,17 @@ is what opens the annotation composer.
 ### Host permission (`<all_urls>`)
 
 ```
-The extension annotates whichever page the user is already reviewing, and that can be any URL
-— a localhost dev server, a staging host, or production — so it cannot know the hosts in
-advance and declares its two content scripts for <all_urls>. What runs on every page is small
-and local: a floating toolbar inside a shadow root, and a capped in-memory record of console
-errors, failed requests and coarse interaction steps, which exists so a bug report can say
-what led to the problem. That record holds at most 60 entries of each kind, is never written
-to disk, and is discarded when the page reloads. Values typed into fields are never recorded
-and credential-like query parameters are redacted. On a right-click the content script also
-notes which element the pointer was over, so the extension's context-menu entry can act on it;
-that note is a reference to an element and is replaced by the next right-click. The page's DOM
-is read in detail only when the user actually annotates an element — by clicking it with
-inspect mode on, or by choosing the context-menu entry. The extension makes no network request
-of its own, so nothing from any page is transmitted anywhere; the notes go to the user's own
-disk only when the user saves them as a file.
+The extension annotates whichever page the user is already reviewing — localhost, staging or
+production — so it cannot know the hosts in advance and declares its two content scripts for
+<all_urls>. What runs on every page is small and local: a floating toolbar in a shadow root,
+and a capped in-memory record of console errors, failed requests and coarse interaction
+steps (at most 60 of each kind), discarded on reload, never written to disk. Field values
+are never recorded and credential-like query parameters are redacted. A right-click notes
+which element the pointer was over so the context-menu entry can act on it; that note is
+replaced by the next right-click. The page's DOM is read in detail only when the user
+annotates an element — by clicking it with inspect mode on, or by choosing the context-menu
+entry. The extension makes no network request of its own; notes go to the user's own disk
+only when the user saves them as a file.
 ```
 
 ---
