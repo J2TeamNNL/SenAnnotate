@@ -35,7 +35,8 @@ assistant or a colleague without anyone guessing which element was meant.
 
 That is its only function. It does not modify, block or inject anything into the pages it
 inspects beyond its own floating toolbar, and it has no server: everything it produces stays
-on the user's device until the user copies the report or saves a screenshot.
+on the user's device until the user copies the report, saves a screenshot, or saves the notes
+as a file.
 ```
 
 ---
@@ -109,7 +110,8 @@ notes which element the pointer was over, so the extension's context-menu entry 
 that note is a reference to an element and is replaced by the next right-click. The page's DOM
 is read in detail only when the user actually annotates an element — by clicking it with
 inspect mode on, or by choosing the context-menu entry. The extension makes no network request
-of its own, so nothing from any page ever leaves the browser.
+of its own, so nothing from any page is transmitted anywhere; the notes go to the user's own
+disk only when the user saves them as a file.
 ```
 
 ---
