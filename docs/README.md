@@ -222,6 +222,17 @@ button that also cleared was designed and then cut, and the argument is recorded
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
 
+## [`share-export/`](./share-export/) — unreleased
+
+A review two people could not previously receive: someone without the extension, and
+someone on a different machine. A self-contained `.html` export answers the first — every
+screenshot inlined, no script, no network reference — and an origin remap on import answers
+the second, since annotations are keyed on `origin + pathname` and a staging capture lands
+on a key no dev server will open. Its `context.md` states the rule for the project's **only
+HTML sink**: `share.ts` builds every string through one `html` tagged template that escapes
+as it interpolates, and the document carries a CSP that makes "nothing loads from the
+network" a property of the file rather than a habit of this repo.
+
 ## [`composer-retarget/`](./composer-retarget/) — unreleased
 
 Clicking picks whatever is under the pointer, which is routinely one level off what you
@@ -296,6 +307,48 @@ instead of accent-derived ones, and why `**Gap:**` prints a detail level earlier
 `**Box:**`. First of three planned measurement releases; `plan.md` has the ordering.
 
 
+## [`host-style-leak/`](./host-style-leak/) — unreleased
+
+Why goaffpro.com/signup went blank the moment the overlay loaded: page CSS cannot reach
+*into* a shadow tree, but it can style the **host**, and there outer-tree declarations beat
+`:host` rules — so daisyUI's `:root, [data-theme] { background-color: … }` matched the
+`data-theme` we set for our own dark mode and painted our full-viewport, top-of-the-z-order
+host opaque white over the site. Its `context.md` explains the asymmetry and why
+`:host { all: initial }` was never the guarantee its comment claimed; its `changelog.md`
+records the two false leads (freeze CSS, the `console.error` patch) and the one that
+matters for next time — enumerating page stylesheets from the isolated world finds no match
+for the host, while `CSS.getMatchedStylesForNode` over CDP answers in one call.
+
+
+## [`measure-contrast/`](./measure-contrast/) — 0.8.5
+
+A WCAG contrast ratio on the hover panel and in the report, built almost entirely out of
+what `measure-core/` had already paid for — resolving what colour an element is *actually*
+painted on needs an ancestor walk, and that walk already existed. Its `changelog.md` is
+the one to read for a pattern rather than a fact: **three test expectations were wrong
+while the code was right**, each because a number was guessed instead of derived.
+
+## [`measure-guides/`](./measure-guides/) — 0.8.5
+
+Screen rulers, guides dragged out of them, and a layout grid. Its `context.md` argues the
+one architectural cost in the project: these are the only surfaces that take pointer
+events, and therefore the only ones that make a region of the page unclickable. Its
+`changelog.md` records a check that **stayed green against a deliberately broken build**,
+and the reordering that fixed it — an off-by-default feature has to be tested from the
+*on* state, because the starting state passes for free.
+
+## [`css-editor/`](./css-editor/) — live CSS editing
+
+The release where this stopped being a tool that only reads a page. Mode 5, a card of
+editable declarations, a Changes tab, and a `## CSS changes` section in the report.
+
+Read its `context.md` before proposing `@media` support or pseudo-state forcing: both were
+measured and are blocked on a permission decision, not on effort. Its `changelog.md`
+carries the distinction the feature turns on — `from` is the *computed* value a reader
+needs, `priorInline` is the *inline* value a revert needs, and confusing them looks
+correct on every element that had no inline style.
+
+
 ## [`history/vuetation/`](./history/vuetation/) — the predecessor
 
 Where the three-world architecture, the port map from
@@ -311,6 +364,16 @@ Then `context.md` here for what the 0.2.0 rebrand changed.
 Debugging source resolution: `history/vuetation/context.md` has the four strategies
 ranked best-to-worst, and the note about measuring the installed package rather than
 trusting blog posts — that one cost a detour.
+
+Working on anything that draws on the page: `measure-core/context.md` for why none of it
+touches the MAIN world, then `measure-guides/context.md` for what taking pointer events
+costs. Then `css-editor/context.md`, which is where the project stopped being read-only.
+
+**If you are about to write a test for any of it**, the four changelogs in those folders
+are worth twenty minutes. Between them they record five checks that passed against builds
+that were deliberately broken — the recurring shape is an assertion that is true of the
+bug because it never reaches the state that fails.
+
 
 ## Provenance
 

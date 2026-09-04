@@ -53,7 +53,7 @@
   display: none !important;
 }
 
-:host([data-theme="dark"]) {
+:host([data-sa-theme="dark"]) {
   --sa-bg: rgba(22, 27, 34, 0.88);
   --sa-bg-solid: #161b22;
   --sa-bg-sunken: #0d1117;
@@ -61,6 +61,26 @@
   --sa-fg-muted: #8b949e;
   --sa-border: rgba(240, 246, 252, 0.14);
   --sa-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+/*
+ * Declarations from the page that match our host element out-rank every `:host` rule —
+ * the outer tree wins the cascade on a shadow host — so `all: initial` above is a
+ * best-effort, not a guarantee. daisyUI's base rule is the case that proved it:
+ * `:root, [data-theme] { background-color: ...; color: ... }` matched the host and
+ * painted the whole viewport opaque (goaffpro.com/signup went blank). The attribute is
+ * namespaced now, but a page rule as broad as `div` would land the same way, so the
+ * inherited properties are re-declared here, on the layers *inside* the shadow tree,
+ * which page CSS has no way to reach. The host's own background is pinned inline in
+ * `root.ts` for the same reason.
+ */
+.layer,
+.markers {
+  font-family: var(--sa-font);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--sa-fg);
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -425,7 +445,7 @@ button {
   margin-right: 4px;
 }
 
-:host([data-theme="dark"]) .stack-badge[data-warn="true"] {
+:host([data-sa-theme="dark"]) .stack-badge[data-warn="true"] {
   color: #fbbf24;
 }
 
@@ -495,6 +515,347 @@ button {
   border: 1.5px dashed var(--sa-accent);
   border-radius: 4px;
   background: color-mix(in srgb, var(--sa-accent) 12%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Rulers and guides
+ *
+ * The only `pointer-events: auto` in this overlay that is not a card. Every rule below
+ * that opts in is a region the page cannot be clicked through — see the header of
+ * `ui/rulers.ts`. Nothing here renders unless the user switched rulers on.
+ * ------------------------------------------------------------------------- */
+
+.ruler {
+  position: fixed;
+  pointer-events: auto;
+  background: var(--sa-bg-solid);
+  color: var(--sa-fg-muted);
+  font-size: 8px;
+  font-family: var(--sa-mono);
+  line-height: 1;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.ruler--top {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  border-bottom: 1px solid var(--sa-border);
+}
+
+.ruler--left {
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 20px;
+  border-right: 1px solid var(--sa-border);
+}
+
+/* The square where the strips cross, so two sets of labels cannot collide in it. */
+.ruler-corner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  pointer-events: auto;
+  background: var(--sa-bg-solid);
+  border-right: 1px solid var(--sa-border);
+  border-bottom: 1px solid var(--sa-border);
+  z-index: 1;
+}
+
+.ruler__tick {
+  position: absolute;
+  background: var(--sa-fg-muted);
+  opacity: 0.45;
+}
+
+.ruler--top .ruler__tick {
+  bottom: 0;
+  width: 1px;
+  height: 4px;
+}
+
+.ruler--left .ruler__tick {
+  right: 0;
+  height: 1px;
+  width: 4px;
+}
+
+.ruler__tick--major {
+  opacity: 0.8;
+}
+
+.ruler--top .ruler__tick--major {
+  height: 8px;
+}
+
+.ruler--left .ruler__tick--major {
+  width: 8px;
+}
+
+.ruler__label {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.ruler--top .ruler__label {
+  left: 2px;
+  top: -12px;
+}
+
+/*
+ * Turned on its side so a four-digit document coordinate fits in a 20px strip.
+ *
+ * `rotate(90deg)` about the left-top corner sends the text *downward* and its own line
+ * height *leftward*, so the origin has to sit near the strip's right edge for the glyphs
+ * to land inside it. The first attempt used `-90deg` at `left: -12px`, which put the box
+ * at x −1 and let `overflow: hidden` eat it — measured, not eyeballed.
+ */
+.ruler--left .ruler__label {
+  left: -1px;
+  top: 3px;
+  transform: rotate(90deg);
+  transform-origin: left top;
+}
+
+/*
+ * The hit area is 7px and transparent; the 1px line inside it is what the guide claims
+ * to be. A drag target the width of the thing it points at would be unusable, and a
+ * 7px-wide painted line would be a lie about where the guide is.
+ */
+.guide {
+  position: fixed;
+  pointer-events: auto;
+  background: transparent;
+}
+
+.guide--x {
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+}
+
+.guide--y {
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+}
+
+.guide::after {
+  content: "";
+  position: absolute;
+  background: rgba(56, 189, 248, 0.95);
+}
+
+.guide--x::after {
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+}
+
+.guide--y::after {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 1px;
+}
+
+.guide--dragging::after {
+  background: rgba(14, 165, 233, 1);
+}
+
+.guide-readout {
+  position: fixed;
+  pointer-events: none;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(14, 165, 233, 1);
+  color: #fff;
+  font-size: 10px;
+  font-family: var(--sa-mono);
+  white-space: nowrap;
+  z-index: 2;
+}
+
+/* ---------------------------------------------------------------------------
+ * CSS editor card
+ *
+ * Monospace throughout, and laid out as `name value` pairs in a fixed column, because
+ * everything in it is CSS and the reader is about to go and write more of it.
+ * ------------------------------------------------------------------------- */
+
+.css-card {
+  bottom: 72px;
+  right: 20px;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 92px);
+  animation: vt-rise 0.16s ease;
+}
+
+.toolbar-dock[data-inspecting="true"] ~ .css-card {
+  bottom: 104px;
+}
+
+.toolbar-dock[data-floating="true"] ~ .css-card[data-anchored="true"] {
+  bottom: auto;
+  right: auto;
+}
+
+.css-card[data-leaving="true"] {
+  animation: vt-fall 0.14s ease forwards;
+  pointer-events: none;
+}
+
+.css-card__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--sa-border);
+}
+
+.css-card__tab {
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--sa-fg-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.css-card__tab[aria-pressed="true"] {
+  color: var(--sa-fg);
+  border-bottom-color: var(--sa-accent);
+}
+
+.css-card__body {
+  padding: 6px 0;
+  overflow-y: auto;
+  font-family: var(--sa-mono);
+  font-size: 11px;
+}
+
+.css-card__row,
+.css-card__change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 10px;
+}
+
+/* Fixed, so every value starts at the same x and the column can be scanned. */
+.css-card__name {
+  min-width: 104px;
+  color: var(--sa-fg-muted);
+}
+
+.css-card__value {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--sa-fg);
+  font: inherit;
+}
+
+.css-card__value:hover {
+  border-color: var(--sa-border);
+}
+
+.css-card__value:focus {
+  outline: none;
+  border-color: var(--sa-accent);
+  background: var(--sa-bg);
+}
+
+/* An overridden declaration is the one thing in this list that is not the page's. */
+.css-card__row--overridden .css-card__name {
+  color: var(--sa-accent);
+  font-weight: 700;
+}
+
+.css-card__row--new {
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid var(--sa-border);
+}
+
+.css-card__row--new .css-card__name {
+  flex: none;
+  padding: 1px 4px;
+  border: 1px solid var(--sa-border);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--sa-fg);
+  font: inherit;
+}
+
+.css-card__group {
+  padding: 8px 10px 2px;
+  color: var(--sa-fg-muted);
+  font-size: 10px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.css-card__from {
+  color: var(--sa-fg-muted);
+  text-decoration: line-through;
+}
+
+.css-card__arrow {
+  color: var(--sa-fg-muted);
+}
+
+.css-card__to {
+  color: var(--sa-accent);
+}
+
+.css-card__revert {
+  flex: none;
+}
+
+.css-card__empty {
+  margin: 0;
+  padding: 14px 10px;
+  color: var(--sa-fg-muted);
+  font-family: var(--sa-sans, inherit);
+}
+
+.css-card__actions {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--sa-border);
+  margin-top: 6px;
+}
+
+/*
+ * The layout grid. Fixed to the viewport, full height, behind everything else this
+ * overlay draws — it is a backdrop to check alignment against, not a thing to read.
+ */
+.grid-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.grid-overlay__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(236, 72, 153, 0.12);
 }
 
 /* ---------------------------------------------------------------------------
@@ -925,7 +1286,7 @@ button {
   font-weight: 600;
 }
 
-:host([data-theme="dark"]) .meta-row__value--accent {
+:host([data-sa-theme="dark"]) .meta-row__value--accent {
   color: var(--sa-accent);
 }
 
@@ -1097,7 +1458,7 @@ kbd {
   font-weight: 600;
 }
 
-:host([data-theme="dark"]) .capture-summary {
+:host([data-sa-theme="dark"]) .capture-summary {
   color: var(--sa-accent);
 }
 
@@ -1159,7 +1520,7 @@ kbd {
   text-overflow: ellipsis;
 }
 
-:host([data-theme="dark"]) .entry__source {
+:host([data-sa-theme="dark"]) .entry__source {
   color: var(--sa-accent);
 }
 
@@ -1548,6 +1909,11 @@ kbd {
  */
 .setting-row--child {
   padding-left: 16px;
+}
+
+/* Children of a child — the grid's numbers under the switch that draws them. */
+.setting-row--grandchild {
+  padding-left: 32px;
 }
 
 .setting-row {
