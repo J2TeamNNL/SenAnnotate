@@ -9,6 +9,12 @@
 // A tester filling in a login form, a customer address, or a card number must not
 // have those values end up in a ticket. We record that a field was edited and
 // which field it was — never its value.
+//
+// SPA navigation: history.pushState lives in the page's heap and cannot be
+// patched from ISOLATED. Polling `location.href` is the only reliable hook.
+// When a URL change is detected, `urlChangeCallback` fires first — before the
+// navigate action is recorded — so the orchestrator (`index.ts`) can flush the
+// old page's annotations and load the new page's before the trail is reset.
 // =============================================================================
 
 import type { ActionEntry, ActionKind } from "../shared/types";
@@ -23,8 +29,23 @@ const actions: ActionEntry[] = [];
 const startedAt = Date.now();
 
 let installed = false;
+let urlWatcherInstalled = false;
 let paused = false;
 let lastUrl = location.href;
+
+/**
+ * Fires when `location.href` (origin+pathname) changes without a full reload.
+ *
+ * Called with the previous href so the handler can save the old page's state
+ * before loading the new page's. Fires **before** the navigate action is
+ * appended to the trail, so the trail the handler clears does not include the
+ * navigate entry — that entry belongs to the new page's trail.
+ */
+let urlChangeCallback: ((fromHref: string, toHref: string) => void) | null = null;
+
+export function onUrlChange(callback: (fromHref: string, toHref: string) => void): void {
+  urlChangeCallback = callback;
+}
 
 /**
  * Suspend recording while inspect mode is on.
@@ -91,9 +112,42 @@ function describeField(element: Element): string {
   );
 }
 
+/**
+ * Start polling for SPA URL changes.
+ *
+ * Separated from `installActionTrail` because SPA-navigation state hygiene
+ * (save page A, load page B) must happen whether or not the user has
+ * "Capture diagnostics" turned on — the action trail is optional, the
+ * annotation isolation is not. `installActionTrail` calls this first, so
+ * the watcher is installed exactly once regardless of call order.
+ */
+export function installUrlWatcher(): void {
+  if (urlWatcherInstalled) return;
+  urlWatcherInstalled = true;
+
+  // SPA route changes go through history.pushState, which lives in the page's
+  // heap — patching it from here would intercept nothing. Polling the URL is
+  // crude but costs nothing and cannot miss a transition.
+  //
+  // `urlChangeCallback` is called BEFORE the navigate entry is recorded so the
+  // orchestrator can flush the old page and reset this trail first — the navigate
+  // step then opens a clean trail for the new page rather than tagging on to the
+  // previous page's steps.
+  window.setInterval(() => {
+    if (location.href === lastUrl) return;
+    const from = lastUrl;
+    lastUrl = location.href;
+    urlChangeCallback?.(from, location.href);
+    record("navigate", location.pathname + location.search, `from ${new URL(from).pathname}`);
+  }, 400);
+}
+
 export function installActionTrail(): void {
   if (installed) return;
   installed = true;
+
+  // URL watching is a prerequisite of the full trail; idempotent if already running.
+  installUrlWatcher();
 
   listen(
     document,
@@ -171,16 +225,6 @@ export function installActionTrail(): void {
     },
     { capture: true, passive: true },
   );
-
-  // SPA route changes go through history.pushState, which lives in the page's
-  // heap — patching it from here would intercept nothing. Polling the URL is
-  // crude but costs nothing and cannot miss a transition.
-  window.setInterval(() => {
-    if (location.href === lastUrl) return;
-    const from = lastUrl;
-    lastUrl = location.href;
-    record("navigate", location.pathname + location.search, `from ${new URL(from).pathname}`);
-  }, 400);
 }
 
 export function readActions(): ActionEntry[] {

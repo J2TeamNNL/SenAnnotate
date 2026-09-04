@@ -25,6 +25,8 @@ import {
 import {
   clearActions,
   installActionTrail,
+  installUrlWatcher,
+  onUrlChange,
   readActions,
   setActionTrailPaused,
 } from "./actions";
@@ -62,6 +64,7 @@ import {
   loadSettings,
   onSettingsChanged,
   saveAnnotations,
+  saveAnnotationsForUrl,
   saveDockPosition,
   saveSettings,
 } from "./storage";
@@ -1639,6 +1642,12 @@ async function boot(): Promise<void> {
     render();
   });
 
+  // The URL watcher must run regardless of `captureDiagnostics` — SPA navigation
+  // state hygiene (save page A's annotations, load page B's) is always needed.
+  // `installActionTrail` calls this too, so calling both is safe (idempotent guard
+  // inside `installUrlWatcher`).
+  installUrlWatcher();
+
   if (settings.captureDiagnostics) {
     installActionTrail();
     onDiagnostics((diagnostics) => {
@@ -1689,6 +1698,40 @@ function installTopFrame(): void {
     // Screenshots are a top-frame flow; the honest child capture never sets this, so a
     // value here is fabricated. Drop it rather than let it into the report or storage.
     openComposer({ ...draft, screenshotData: undefined }, frameAnchor(draft), null);
+  });
+
+  // SPA navigation: persist page A's annotations, then load page B's.
+  //
+  // The action-trail poller fires this before appending the "navigate" step, so
+  // `clearActions()` here wipes only page A's trail; the navigate entry that
+  // follows opens a fresh trail that belongs to page B.
+  //
+  // `saveAnnotationsForUrl` targets the *old* href explicitly because
+  // `location.href` has already advanced to page B by the time this fires, and
+  // `saveAnnotations()` would write to the wrong key.
+  //
+  // The diagnostics cache is intentionally left alone: it is a running buffer of
+  // network activity that spans the whole tab session (not scoped per page), and
+  // clearing it here would drop entries that happened between the last push and
+  // the navigation — a bigger privacy surprise than retaining them.
+  onUrlChange(async (fromHref) => {
+    // Save page A's annotations under page A's key before the URL key changes.
+    await saveAnnotationsForUrl(annotations, fromHref);
+
+    // Load page B's annotations (pageKey() now resolves to the new pathname).
+    annotations = await loadAnnotations();
+
+    // Clear the action trail so page B's report does not contain page A's steps.
+    // The "navigate" entry that `actions.ts` records next will be the first entry
+    // in the new trail, giving page B's report its own clean history.
+    clearActions();
+
+    // Close any in-flight composer — it was started on page A's elements, whose
+    // selectors may not resolve on page B, and leaving it open would let the user
+    // submit a note that `persist()` stores under page B's key.
+    closeComposer();
+
+    render();
   });
 
   chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
