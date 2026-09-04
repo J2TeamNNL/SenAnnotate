@@ -9,6 +9,13 @@ on — the console errors, failed requests and steps that led there. No
 `npm install`, no code in your bundle: it works against local dev, staging and
 production, on any stack.
 
+It also **measures** and, since the CSS editor, **changes** the page. Neither is the
+point on its own — both exist to make the report less vague. A note that says *"too
+tight"* becomes `**Gap:** 24px horizontal`; a note that says *"try more padding"* becomes
+`- \`padding\`: \`8px 12px\` → \`12px 20px\``, which is the instruction with the
+guessing already removed. Everything beyond annotating is **off by default**, behind two
+switches in settings.
+
 When the page is built with **Vue, React, Svelte or Angular**, the report gains two
 more lines for free: the component ancestry, and the source file that rendered the
 element — as precisely as `src/components/BaseButton.vue:12:5` where the framework
@@ -143,6 +150,12 @@ the line and column.
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
 | Measure the gap between two elements | switch on **Measuring tools** in settings, then mode <kbd>4</kbd>: click one, then the other |
 | See an element's size, padding, margin, type and colours | **Box model on hover** in settings — or just enter mode <kbd>4</kbd> |
+| Check a contrast ratio | hover anything with text once measuring is on — the verdict is on the panel and in the report |
+| Rulers, guides and a column grid | **Screen rulers and guides** / **Layout grid** in settings. Drag out of a ruler to place a guide |
+| Sample a colour anywhere on screen | the ⬥ button, once measuring is on — the hex is copied for you |
+| Change an element's CSS on the page | switch on **Live CSS editor** in settings, then mode <kbd>5</kbd> and click it |
+| Nudge a CSS number | <kbd>↑</kbd>/<kbd>↓</kbd> in a value — <kbd>Shift</kbd> by 10, <kbd>Alt</kbd> by 0.1 |
+| See or undo everything you changed | the **Changes** tab on the CSS card — copy it, or revert one property or all of them |
 | Freeze animations | <kbd>F</kbd> |
 | Open the list | <kbd>A</kbd> |
 | Open settings | the gear on the toolbar |
@@ -272,6 +285,16 @@ Notes are only in `chrome.storage.local` until you move them, so the popup offer
 **Export** and **Import**: every page's notes as one JSON file, for a backup before
 *Clear all*, for handing a review to someone else, or for moving between machines.
 Import merges — it never replaces what is already there.
+
+Notes are filed under the site they were taken on, so a review captured on staging would
+land on a key your dev server never opens. Tick **Import onto this site** and every page
+in the file moves onto the origin in the current tab, path kept.
+
+**Save .html** is the third format, for a reader who has no extension: one document with
+every note and every screenshot embedded, no script and nothing loaded from the network —
+a content security policy inside the file says so, so the recipient's browser enforces it
+rather than taking our word — which opens in any browser. Screenshots only travel when **Screenshots** is set to embed —
+a path points at *your* Downloads folder, not theirs.
 
 ## Screenshots
 

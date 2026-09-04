@@ -6,7 +6,8 @@
 // both the MAIN-world inspector and the service worker.
 // =============================================================================
 
-import { formatSource, generateOutput } from "../shared/output";
+import { downloadBlob } from "../shared/download";
+import { formatCssChanges, formatSource, generateOutput } from "../shared/output";
 import { HIDDEN_KEY } from "../shared/protocol";
 import type { RuntimeMessage, RuntimeResponse } from "../shared/protocol";
 import {
@@ -38,6 +39,7 @@ import {
 } from "./bridge";
 import { captureDraft, resolveElement, viewportBoxes, type Draft } from "./capture";
 import { copyText } from "./clipboard";
+import { pickColour } from "./eyedropper";
 import {
   broadcastFrameState,
   installChildFrame,
@@ -48,13 +50,7 @@ import {
   requestFrameHoverCapture,
 } from "./frames";
 import { buildSelector, identifyElement, isAnnotatable, isOurUi } from "./identify";
-import {
-  canvasToBlob,
-  cropToCanvas,
-  downloadBlob,
-  downloadPath,
-  encodeForEmbed,
-} from "./screenshot";
+import { canvasToBlob, cropToCanvas, downloadPath, encodeForEmbed } from "./screenshot";
 import { resolveSource } from "./source";
 import {
   loadAnnotations,
@@ -85,7 +81,11 @@ import {
 import { Overlay } from "./ui/overlay";
 import { measureGap, readBoxModel, readStyleSummary } from "./measure";
 import { Panel } from "./ui/panel";
+import { applyOverride, listOverrides, overridesFor, revertAll, revertOverride } from "./css-edit";
+import { CssCard, EDITABLE } from "./ui/css-card";
+import { GridOverlay } from "./ui/grid";
 import { MeasureOverlay } from "./ui/measure-overlay";
+import { Rulers, type Guide } from "./ui/rulers";
 import { SettingsCard } from "./ui/settings";
 import { createUiRoot, type UiRoot } from "./ui/root";
 import { hideTooltip, installTooltips, isFocusTooltipVisible } from "./ui/tooltip";
@@ -222,6 +222,10 @@ let toolbar!: Toolbar;
 let panel: Panel | null = null;
 let settingsCard: SettingsCard | null = null;
 let measureOverlay!: MeasureOverlay;
+let cssCard: CssCard | null = null;
+let editTarget: Element | null = null;
+let rulers!: Rulers;
+let grid!: GridOverlay;
 
 /**
  * Build the chrome. Top frame only — a second toolbar inside every iframe is both
@@ -232,6 +236,9 @@ function createTopUi(): void {
   installTooltips(ui.cardLayer);
   overlay = new Overlay(ui.overlayLayer);
   measureOverlay = new MeasureOverlay(ui.overlayLayer);
+  grid = new GridOverlay(ui.overlayLayer);
+  rulers = new Rulers(ui.overlayLayer, { onGuidesChanged: (next) => saveGuides(next) });
+  rulers.setGuides(loadGuides());
 
   markers = new Markers(ui.markerLayer, {
     onClick: (annotation) => openEditor(annotation),
@@ -262,6 +269,7 @@ function createTopUi(): void {
     onToggleFreeze: () => toggleFreeze(),
     onTogglePanel: () => togglePanel(),
     onToggleSettings: () => toggleSettings(),
+    onPickColour: () => void pickAndCopy(),
     onToggleCollapse: () => toggleCollapsed(),
     onMove: (position) => {
       // Saved on drop rather than per frame — a drag would otherwise write sixty
@@ -301,6 +309,7 @@ const settingsCallbacks = {
     void saveSettings(settings);
     applyAppearance();
     enforceMeasureSetting();
+    enforceCssSetting();
     render();
   },
 };
@@ -354,6 +363,20 @@ function measureModeAvailable(): boolean {
  * say why. Called from both places settings can change — this card, and a push from the
  * popup in another tab.
  */
+/**
+ * Leave mode 5 if the setting that provides it has just been switched off — and take the
+ * card with it. Overrides already applied are deliberately *not* reverted: they are the
+ * user's edits, not the mode's, and throwing away someone's work because they closed a
+ * panel would be the worst possible reading of a settings toggle.
+ */
+function enforceCssSetting(): void {
+  if (settings.cssEditor) return;
+  if (cssCard) toggleCssCard(false);
+  if (mode !== "edit") return;
+  mode = "point";
+  broadcastFrameState(active, mode);
+}
+
 function enforceMeasureSetting(): void {
   if (measureModeAvailable() || mode !== "measure") return;
   // Return to all-mode rather than point: "all" is the entry point, so disabling
@@ -361,6 +384,86 @@ function enforceMeasureSetting(): void {
   mode = "all";
   measureOverlay.hideAll();
   broadcastFrameState(active, mode);
+}
+
+/**
+ * Pick a colour, put it on the clipboard, and say so.
+ *
+ * The hex is copied rather than shown-and-left, because a six-character string in a
+ * toast that vanishes is a string you have to pick again. `copyText` falls back to
+ * `execCommand` when `navigator.clipboard` refuses — which it may here, since awaiting
+ * the picker has already spent the click's transient activation.
+ *
+ * A dismissed picker returns `null` and says nothing. Pressing Escape out of a colour
+ * picker is a decision, not a failure, and a toast for it would be noise.
+ */
+async function pickAndCopy(): Promise<void> {
+  const hex = await pickColour();
+  if (!hex) return;
+
+  const copied = await copyText(hex, ui.shadow);
+  ui.toast(copied ? `${hex} copied` : hex);
+}
+
+/** What the card shows for the element in hand: computed values plus its overrides. */
+function cssSubject(): { label: string; selector: string; values: Record<string, string>; overrides: ReturnType<typeof overridesFor> } | null {
+  if (!editTarget?.isConnected) return null;
+  const computed = getComputedStyle(editTarget);
+  const values: Record<string, string> = {};
+  for (const property of EDITABLE) values[property] = computed.getPropertyValue(property).trim();
+
+  return {
+    label: elementTag(editTarget),
+    selector: buildSelector(editTarget),
+    values,
+    overrides: overridesFor(editTarget),
+  };
+}
+
+function renderCssCard(): void {
+  cssCard?.render(cssSubject(), listOverrides());
+}
+
+const cssCallbacks = {
+  onClose: () => toggleCssCard(false),
+  onEdit: (property: string, value: string) => {
+    if (!editTarget?.isConnected) return;
+    applyOverride(editTarget, elementTag(editTarget), property, value);
+    renderCssCard();
+  },
+  onRevert: (property: string) => {
+    if (!editTarget?.isConnected) return;
+    revertOverride(editTarget, property);
+    renderCssCard();
+  },
+  onRevertAll: () => {
+    revertAll();
+    renderCssCard();
+  },
+  onCopy: () => {
+    // Same shape the report uses, so what you paste and what you file agree.
+    const text = formatCssChanges(listOverrides()).join("\n");
+    void copyText(text, ui.shadow).then((ok) =>
+      ui.toast(ok ? "CSS changes copied" : "Copy failed", ok ? "success" : "error"),
+    );
+  },
+};
+
+/** Mirrors `toggleSettings`, down to the `force` argument and the trailing `render()`. */
+function toggleCssCard(force?: boolean): void {
+  const next = force ?? !cssCard;
+  if (next === !!cssCard) return;
+
+  if (next) {
+    toggleSettings(false);
+    cssCard = new CssCard(ui.cardLayer, cssCallbacks);
+    renderCssCard();
+    cssCard.anchorTo(toolbar.dockBox());
+  } else {
+    cssCard?.destroy();
+    cssCard = null;
+  }
+  render();
 }
 
 function render(): void {
@@ -371,13 +474,29 @@ function render(): void {
     panelOpen,
     settingsOpen: !!settingsCard,
     measureMode: measureModeAvailable(),
+    colourPicker: settings.measureTools,
+    cssEditor: settings.cssEditor,
     collapsed: settings.toolbarCollapsed,
     count: annotations.length,
     page,
   });
+  // Both hang off the same master as everything else measuring. Rulers are the only
+  // surface here that costs the page a region, so `showRulers` alone is not enough.
+  rulers.show(settings.measureTools && settings.showRulers);
+  if (settings.measureTools && settings.showGrid) {
+    grid.render({
+      columns: settings.gridColumns,
+      gutter: settings.gridGutter,
+      margin: settings.gridMargin,
+    });
+  } else {
+    grid.hide();
+  }
+
   markers.render(annotations, settings.showMarkers && !!annotations.length);
   panel?.render(annotations, settings.detailLevel);
   settingsCard?.render(settings);
+  renderCssCard();
   void notifyBadge();
 }
 
@@ -436,6 +555,61 @@ async function toggleFreeze(force?: boolean): Promise<void> {
   await setFrozen(frozen);
   ui.toast(frozen ? "Animations frozen" : "Animations resumed");
   render();
+}
+
+/**
+ * Guides for this page, in this tab.
+ *
+ * `sessionStorage`, not `chrome.storage`: a guide is a pencil line on one page, and the
+ * three options were losing them on reload (a reload is the most common thing that
+ * happens during a review), a `chrome.storage.local` key with a quota and cross-tab
+ * collisions on the same URL, or this — survives a reload, dies with the tab.
+ *
+ * Wrapped, because `sessionStorage` throws in a sandboxed frame and with storage
+ * disabled. Same treatment `isHiddenThisSession()` gives it.
+ */
+const GUIDES_KEY = "senannotate:guides";
+
+function guidesKey(): string {
+  return `${GUIDES_KEY}:${window.location.pathname}`;
+}
+
+function loadGuides(): Guide[] {
+  try {
+    const raw = window.sessionStorage.getItem(guidesKey());
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(parsed) ? (parsed as Guide[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGuides(guides: Guide[]): void {
+  try {
+    window.sessionStorage.setItem(guidesKey(), JSON.stringify(guides));
+  } catch {
+    // Sandboxed frame, or storage disabled. The guides stay on screen either way.
+  }
+}
+
+/**
+ * Would this element have taken the keystroke as text?
+ *
+ * Narrower than "is it a form control", and the difference matters. A checkbox holds
+ * focus after you click it, and swallowing every key while it does would make the mode
+ * keys feel dead for the rest of the session — you clicked a switch, you did not start
+ * typing. A checkbox takes no text, so a digit pressed on one is a mode key.
+ *
+ * `select` stays in: letters jump between its options and arrows move the selection.
+ */
+function isTextEntry(node: HTMLElement | null | undefined): boolean {
+  if (!node) return false;
+  if (node.isContentEditable) return true;
+  if (node.tagName === "TEXTAREA" || node.tagName === "SELECT") return true;
+  if (node.tagName !== "INPUT") return false;
+  return !/^(checkbox|radio|button|submit|reset|color|range|file|image)$/i.test(
+    (node as HTMLInputElement).type,
+  );
 }
 
 /** Whether this tab was asked to hide the overlay for the rest of its session. */
@@ -1090,6 +1264,7 @@ function buildReport(): string {
       page,
       diagnostics: settings.captureDiagnostics ? diagnosticsCache : null,
       actions: settings.captureDiagnostics ? readActions() : [],
+      cssChanges: listOverrides(),
     },
     settings.detailLevel,
   );
@@ -1568,6 +1743,14 @@ function queueSync(): void {
     // containing block for our fixed host — and a resize changes the viewport we fit to.
     ui.syncPlacement();
     markers.syncPositions();
+    rulers.sync();
+    if (settings.measureTools && settings.showGrid) {
+      grid.render({
+        columns: settings.gridColumns,
+        gutter: settings.gridGutter,
+        margin: settings.gridMargin,
+      });
+    }
     if (composer || !active) return;
     if (mode === "measure") {
       // The anchor outline and the bands are both viewport-space, so a scroll leaves
@@ -1719,6 +1902,7 @@ function installTopFrame(): void {
     settings = await loadSettings();
     applyAppearance();
     enforceMeasureSetting();
+    enforceCssSetting();
     render();
   }
 
@@ -1784,6 +1968,19 @@ function installTopFrame(): void {
 
       event.preventDefault();
       event.stopPropagation();
+
+      if (mode === "edit") {
+        const picked = document.elementFromPoint(event.clientX, event.clientY);
+        if (!picked || !eligible(picked)) return;
+        editTarget = picked;
+        // Opening on the first click rather than requiring the card first: the mode is
+        // reached by pressing 5, and a mode whose first click does nothing visible is
+        // the mistake mode 4 already made once.
+        if (!cssCard) toggleCssCard(true);
+        else renderCssCard();
+        overlay.showHighlights([picked.getBoundingClientRect()], { primary: elementTag(picked) });
+        return;
+      }
 
       if (mode === "measure") {
         const picked = document.elementFromPoint(event.clientX, event.clientY);
@@ -1983,6 +2180,10 @@ function installTopFrame(): void {
         toggleSettings(false);
         return;
       }
+      if (cssCard) {
+        toggleCssCard(false);
+        return;
+      }
       // A half-taken measurement is as likely a target for Escape as a half-built pick
       // set, and for the same reason: it is a gesture the user started and abandoned.
       // Neither leaves the mode — only the gesture.
@@ -2010,10 +2211,16 @@ function installTopFrame(): void {
 
     if (composer) return;
 
-    // Never hijack a key the user is typing into the page.
-    const target = keyboard.target as HTMLElement | null;
-    if (target?.isContentEditable) return;
-    if (target && /^(input|textarea|select)$/i.test(target.tagName)) return;
+    // Never hijack a key the user is typing — into the page, or into our own UI.
+    //
+    // `event.target` is **retargeted to the shadow host** for anything inside our shadow
+    // root, so it reports `DIV` and every guard below silently misses: typing `15px`
+    // into a CSS value switched to mode 1 and then mode 5, and typing a column count
+    // into Settings switched modes behind the card. `composedPath()[0]` is the element
+    // actually focused, on both sides of the boundary.
+    const target = (keyboard.composedPath()[0] as HTMLElement | undefined) ??
+      (keyboard.target as HTMLElement | null);
+    if (isTextEntry(target)) return;
     if (keyboard.metaKey || keyboard.ctrlKey || keyboard.altKey) return;
 
     // Above the `active` guard on purpose: the pill covers the bottom-right corner
@@ -2046,6 +2253,15 @@ function installTopFrame(): void {
         break;
       case "2":
         mode = "text";
+        resetMarquee();
+        clearPicked();
+        overlay.hideAll();
+        measureOverlay.hideAll();
+        render();
+        break;
+      case "5":
+        if (!settings.cssEditor) break;
+        mode = "edit";
         resetMarquee();
         clearPicked();
         overlay.hideAll();

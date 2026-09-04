@@ -17,6 +17,14 @@ export interface ToolbarState {
    * has no business knowing that the switch it obeys is really two.
    */
   measureMode: boolean;
+  /**
+   * Whether the colour picker sits on the pill. Separate from `measureMode`: the picker
+   * belongs to the measuring master, not to the distance mode, so switching mode 4 off
+   * must not take it away.
+   */
+  colourPicker: boolean;
+  /** Whether mode 5 exists. Its own master, independent of the measuring one. */
+  cssEditor: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -29,6 +37,7 @@ export interface ToolbarCallbacks {
   onToggleFreeze(): void;
   onTogglePanel(): void;
   onToggleSettings(): void;
+  onPickColour(): void;
   onToggleCollapse(): void;
   /** Fired once, on drop — not per frame. The drag itself needs no persistence. */
   onMove(position: { x: number; y: number }): void;
@@ -67,6 +76,7 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
   { mode: "text", iconName: "text", title: "Select text (2)" },
   { mode: "area", iconName: "marquee", title: "Drag across elements (3)" },
   { mode: "measure", iconName: "arrows", title: "Measure distances (4)" },
+  { mode: "edit", iconName: "pencil", title: "Edit CSS (5)" },
 ];
 
 /**
@@ -84,6 +94,7 @@ const MODE_HINTS: Record<InspectMode, string> = {
   text: "Select text · 1 point · 3 area",
   area: "Drag across elements · 1 point · 2 text",
   measure: "Click two elements · C captures the pair · Esc clears · 1 point · 2 text · 3 area",
+  edit: "Click an element to edit its CSS · Esc closes · 1 point · 2 text · 3 area",
 };
 
 /**
@@ -95,10 +106,13 @@ const MODE_HINTS: Record<InspectMode, string> = {
  * measuring existed.
  */
 const MEASURE_HINT = " · 4 measure";
+const EDIT_HINT = " · 5 edit";
 
-function hintFor(mode: InspectMode, measureMode: boolean): string {
-  const base = MODE_HINTS[mode];
-  return measureMode && mode !== "measure" ? base + MEASURE_HINT : base;
+function hintFor(mode: InspectMode, measureMode: boolean, cssEditor: boolean): string {
+  let hint = MODE_HINTS[mode];
+  if (measureMode && mode !== "measure") hint += MEASURE_HINT;
+  if (cssEditor && mode !== "edit") hint += EDIT_HINT;
+  return hint;
 }
 
 export class Toolbar {
@@ -109,6 +123,7 @@ export class Toolbar {
   private readonly modeButtons = new Map<InspectMode, HTMLButtonElement>();
   private readonly modeGroup: HTMLElement;
   private readonly freezeButton: HTMLButtonElement;
+  private readonly pickerButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
@@ -187,6 +202,18 @@ export class Toolbar {
       icon("snowflake"),
     );
 
+    this.pickerButton = h(
+      "button",
+      {
+        class: "tool tool--picker",
+        attrs: { "aria-label": "Pick a colour" },
+        // Straight through, nothing awaited in front of it: `EyeDropper` needs the
+        // click's transient activation and an `await` on the way would spend it.
+        on: { click: () => callbacks.onPickColour() },
+      },
+      icon("eyedropper"),
+    );
+
     this.countBadge = h("span", { class: "count", text: "0", style: { display: "none" } });
     this.panelButton = h(
       "button",
@@ -243,6 +270,7 @@ export class Toolbar {
       this.modeGroup,
       h("span", { class: "divider" }),
       this.freezeButton,
+      this.pickerButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -261,6 +289,7 @@ export class Toolbar {
       this.brandButton,
       ...this.modeButtons.values(),
       this.freezeButton,
+      this.pickerButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -517,7 +546,12 @@ export class Toolbar {
     const measureModeButton = this.modeButtons.get("measure");
     if (measureModeButton) measureModeButton.style.display = state.measureMode ? "" : "none";
 
-    this.modeHint = hintFor(state.mode, state.measureMode);
+    this.pickerButton.style.display = state.colourPicker ? "" : "none";
+
+    const editButton = this.modeButtons.get("edit");
+    if (editButton) editButton.style.display = state.cssEditor ? "" : "none";
+
+    this.modeHint = hintFor(state.mode, state.measureMode, state.cssEditor);
     this.hintVisible = state.active;
     this.hintElement.style.display = state.active ? "block" : "none";
     if (this.hintOverride === null) this.hintElement.textContent = this.modeHint;
