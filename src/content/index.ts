@@ -112,6 +112,16 @@ let page: PageFrameworkInfo | null = null;
 /** Mirror of the MAIN world's buffers, kept current by pushed events. */
 let diagnosticsCache: Diagnostics | null = null;
 
+/**
+ * Dismissed via the toolbar X for this page-load.
+ *
+ * In-memory only — a reload restores the overlay. This is the "step out of the way
+ * for a screenshot" control; "Hide until restart" (`HIDDEN_KEY` in sessionStorage)
+ * is the separate tab-session control in Settings that survives reloads on this tab.
+ * The two cannot fight: `HIDDEN_KEY` causes an early return from `installTopFrame()`,
+ * so the UI (and therefore this flag) is never set up at all when that one is active.
+ */
+let hidden = false;
 let active = false;
 let mode: InspectMode = "point";
 let frozen = false;
@@ -261,6 +271,7 @@ function createTopUi(): void {
     onTogglePanel: () => togglePanel(),
     onToggleSettings: () => toggleSettings(),
     onToggleCollapse: () => toggleCollapsed(),
+    onClose: () => setHidden(true),
     onMove: (position) => {
       // Saved on drop rather than per frame — a drag would otherwise write sixty
       // times a second for as long as the button is held.
@@ -460,6 +471,33 @@ function hideUntilRestart(): void {
     // the more useful half of what was asked.
   }
   ui.host.style.setProperty("display", "none", "important");
+}
+
+/**
+ * Take the whole overlay off screen via the toolbar X, or restore it.
+ *
+ * In-memory state only — distinct from `hideUntilRestart()` (Settings, sessionStorage)
+ * in two ways: a reload restores the overlay, and clicking the extension icon also
+ * brings it back (`toggle-inspect` handler unhides before acting, so the first icon
+ * click is always a restore when this flag is set).
+ *
+ * Closing deactivates inspect mode, dismisses the panel and the composer so nothing
+ * continues running behind the curtain; restoring does not re-enable inspect — the
+ * user picks up where they left off with the toolbar visible.
+ */
+function setHidden(next: boolean): void {
+  if (hidden === next) return;
+  hidden = next;
+
+  if (hidden) {
+    setActive(false);
+    togglePanel(false);
+    if (composer) closeComposer();
+    overlay.hideAll();
+  }
+
+  ui.setHidden(hidden);
+  render();
 }
 
 /**
@@ -1693,6 +1731,14 @@ function installTopFrame(): void {
 
   chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
     if (message.kind === "toggle-inspect") {
+      // The extension icon and the keyboard shortcut are the way back from X-dismiss.
+      // Unhide first so the user sees the overlay before inspect mode toggles on top.
+      // If already visible this is a no-op and the rest of the toggle proceeds normally.
+      if (hidden) {
+        setHidden(false);
+        sendResponse({ ok: true, active });
+        return true;
+      }
       setActive(!active);
       sendResponse({ ok: true, active });
       return true;
@@ -1936,6 +1982,10 @@ function installTopFrame(): void {
 
   listen(document, "keydown", (event) => {
     const keyboard = event as KeyboardEvent;
+
+    // Nothing on screen to act on while X-dismissed. Guard before any key, because
+    // `H` in particular would silently toggle a collapse behind the curtain.
+    if (hidden) return;
 
     if (keyboard.key === "Escape") {
       if (composer) {

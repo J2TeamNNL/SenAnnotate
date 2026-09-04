@@ -26,6 +26,14 @@ export interface UiRoot {
   /** Toolbar, composer, panel. */
   cardLayer: HTMLElement;
   setTheme(preference: ThemePreference): void;
+  /**
+   * Take the whole overlay off screen (X close), or put it back.
+   *
+   * An attribute, not an inline `display`, because `captureScreenshot` already owns the
+   * inline property — it hides the host for the duration of a shot and then removes it,
+   * which would silently undo an X-hide it knew nothing about.
+   */
+  setHidden(hidden: boolean): void;
   /** Recolour the overlay. `#rrggbb`; anything else falls back to the default. */
   setAccent(color: string): void;
   toast(message: string, tone?: "success" | "error"): void;
@@ -300,6 +308,9 @@ export function createUiRoot(): UiRoot {
     setTheme(next) {
       preference = next;
       applyTheme();
+    },
+    setHidden(hidden) {
+      host.toggleAttribute("data-hidden", hidden);
     },
     setAccent: applyAccent,
     toast,

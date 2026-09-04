@@ -30,6 +30,13 @@ export interface ToolbarCallbacks {
   onTogglePanel(): void;
   onToggleSettings(): void;
   onToggleCollapse(): void;
+  /**
+   * Take the whole overlay off screen for this page-load.
+   *
+   * In-memory state only — a reload restores the overlay, and "Hide until restart"
+   * in Settings is the separate, `sessionStorage`-backed control for a longer pause.
+   */
+  onClose(): void;
   /** Fired once, on drop — not per frame. The drag itself needs no persistence. */
   onMove(position: { x: number; y: number }): void;
   /**
@@ -104,6 +111,8 @@ export class Toolbar {
   private readonly panelButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
+  /** X button — in-memory hide, reversed by a reload or by clicking the extension icon. */
+  private readonly closeButton: HTMLButtonElement;
   private readonly countBadge: HTMLElement;
   /**
    * The count again, on the collapsed handle. A separate node rather than a moved
@@ -225,6 +234,19 @@ export class Toolbar {
       this.handleCount,
     );
 
+    // Last in the pill — reads as the window-chrome X it imitates and is never the
+    // button you reach for by accident. Muted at rest, red on hover: conspicuous only
+    // when reached for, not competing with the controls you use constantly.
+    this.closeButton = h(
+      "button",
+      {
+        class: "tool tool--close",
+        attrs: { "aria-label": "Hide overlay until page is reloaded" },
+        on: { click: () => callbacks.onClose() },
+      },
+      icon("close", 17),
+    );
+
     this.hintElement = h("div", { class: "toolbar-hint", style: { display: "none" } });
 
     const bar = h(
@@ -238,6 +260,7 @@ export class Toolbar {
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
+      this.closeButton,
     );
 
     // The dock owns the fixed position; `.toolbar` stays the pill so the e2e
@@ -256,6 +279,7 @@ export class Toolbar {
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
+      this.closeButton,
     ]) {
       // Read at show time, not now: the collapse button's label carries the count.
       attachTooltip(button, () => button.getAttribute("aria-label") ?? "");
