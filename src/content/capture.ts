@@ -2,7 +2,7 @@
 // Turning DOM elements into an annotation
 // =============================================================================
 
-import type { Annotation, Rect, Settings } from "../shared/types";
+import type { Annotation, Measurements, Rect, Settings } from "../shared/types";
 import { inspectElement } from "./bridge";
 import {
   buildSelector,
@@ -24,6 +24,12 @@ export type Draft = Omit<Annotation, "id" | "comment" | "timestamp">;
 export interface CaptureOptions {
   settings: Settings;
   selectedText?: string;
+  /**
+   * Figures taken in `measure` mode. Passed in rather than computed here: capture runs
+   * for every annotation, and re-measuring on each one would charge every mode for a
+   * feature only one of them uses.
+   */
+  measurements?: Measurements;
 }
 
 /** Document-space rect, so it stays correct after scrolling. */
@@ -84,6 +90,7 @@ export async function captureDraft(
     boundingBox: documentRect(subject),
     elementBoundingBoxes: isMultiSelect ? elements.map(documentRect) : undefined,
     isMultiSelect: isMultiSelect || undefined,
+    measurements: options.measurements,
 
     selectedText: options.selectedText,
     cssClasses: getElementClasses(subject) || undefined,

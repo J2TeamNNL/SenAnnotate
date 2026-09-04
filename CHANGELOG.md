@@ -10,7 +10,133 @@ matching the tag being released and refuses to publish without one.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.8.1] — unreleased
+## [0.8.6] — unreleased
+
+[Compare with v0.8.5](https://github.com/thangnm93/SenAnnotate/compare/v0.8.5...v0.8.6)
+
+### Added
+
+- edit an element's CSS on the page and record every override (eab2d73)
+
+### Fixed
+
+- keys typed into the overlay's own fields no longer switch mode (5c50f61)
+
+### Documentation
+
+- index the measurement and CSS-editor design records (79143bc)
+- design record for live CSS editing (8df3699)
+
+## [0.8.5] — 2026-08-21
+
+[Compare with v0.8.4](https://github.com/thangnm93/SenAnnotate/compare/v0.8.4...v0.8.5)
+
+### Added
+
+- pick a colour from anywhere on screen (db9ffa0)
+- screen rulers, draggable guides and a layout grid (119050c)
+
+### Fixed
+
+- a page's own CSS can no longer paint the overlay host opaque and hide the site (221db11)
+
+### Changed
+
+- the colour picker moves to the toolbar (0d5dfbe)
+
+### Documentation
+
+- design record for rulers, guides and the grid (3513c27)
+
+## [0.8.4] — 2026-08-21
+
+[Compare with v0.8.3](https://github.com/thangnm93/SenAnnotate/compare/v0.8.3...v0.8.4)
+
+### Added
+
+- group the measurement readout into an inspector panel (f185980)
+- report the WCAG contrast ratio and its verdict (e312ddf)
+- mode 4 loses its toolbar button and lives on the 4 key (3535187)
+- measure distances gets its own switch under the master (e2c2fd9)
+- put the measuring tools behind an off-by-default setting (20c0bed)
+- spell out each side in the readout and dim the ones already drawn (6246cb4)
+- label the box-model bands and show type and colours on hover (ee98b27)
+- a measure mode that reports the gap between two elements (7445024)
+- draw box-model bands and dimension lines (d4b3b65)
+- report the measured gap and box model (27dfbf4)
+- measure the box model and the gap between two rects (fab4311)
+
+### Fixed
+
+- the changelog generator knows the revert type (b71db39)
+- restore the band styles and draw the box boundaries (da338f9)
+- switching measuring on brings the distance mode with it (c09a0f8)
+- leaving inspect mode leaves no marks on the page (987180b)
+- opening settings must close the measure card (9783290)
+- read the border box from the rect, not from computed width (011d947)
+
+### Reverted
+
+- mode 4 keeps its toolbar button (3c1031e)
+
+### Documentation
+
+- design record for the contrast check (97f7575)
+- correct the measured line count in the changelog (e971af6)
+- measure mode in the wiki and the readme (2fdad89)
+- implementation plan for measure core (0f20b1c)
+- design record for measuring gaps and box model (da2bcb7)
+
+### Internal
+
+- stop tracking the pack staging directory (96564f8)
+
+## [0.8.3] — 2026-08-20
+
+[Compare with v0.8.2](https://github.com/thangnm93/SenAnnotate/compare/v0.8.2...v0.8.3)
+
+### Added
+
+- walk the DOM from an open composer to fix a mis-click (3c770e5)
+
+### Fixed
+
+- freeze no longer patches timers inside iframes, so challenge widgets verify (6162c6c)
+- keep the screenshot through a retarget, and stop the walk landing on nothing (726444e)
+
+### Documentation
+
+- point CLAUDE.md at the issue and PR templates (8a22bea)
+- a twenty-page wiki, illustrated from the built extension (77005cc)
+
+### Internal
+
+- issue forms, a PR checklist, and the contributing rules (0e09970)
+
+## [0.8.2] — 2026-08-18
+
+[Compare with v0.8.1](https://github.com/thangnm93/SenAnnotate/compare/v0.8.1...v0.8.2)
+
+### Added
+
+- the settings card follows the pill wherever it is dragged (a2fcb4c)
+
+### Fixed
+
+- keep an unsaved draft when a copy clears the page (7d25e18)
+- clear only the annotations the copy actually took (c673311)
+
+### Documentation
+
+- scrub the local playwright path out of the checked-in docs (d443657)
+- say why the popup's Copy session does not clear either (93d2968)
+- record clear-after-copy, modal support, toolbar tooltips and the headless flag (1aa644a)
+
+### Internal
+
+- pin clear-after-copy — the default path, the clear, the trail and what must not (1da1d1a)
+
+## [0.8.1] — 2026-08-18
 
 [Compare with v0.8.0](https://github.com/thangnm93/SenAnnotate/compare/v0.8.0...v0.8.1)
 

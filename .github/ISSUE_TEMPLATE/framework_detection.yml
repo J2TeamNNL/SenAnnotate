@@ -1,0 +1,149 @@
+name: Framework detection
+description: The component chain or source line is missing, wrong, or a framework is unsupported
+labels: ["framework", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Check the matrix first —
+        [Framework Support](https://github.com/thangnm93/SenAnnotate/wiki/Framework-Support).**
+        Several gaps are upstream and not fixable here:
+
+        | Symptom | Cause |
+        |---|---|
+        | No source line on **React 19** | React removed `fiber._debugSource`. |
+        | No source line on **Angular**, ever | Angular records no authoring positions, even in dev. |
+        | No props on **Svelte** | Svelte exposes none anywhere. |
+        | Nothing at all on a **production build** | Names and paths are stripped. The badge turns amber to say so. |
+        | Vue filename but no `:line:col` | The tracer is not running — `devtools: { enabled: true }`. |
+        | Was working, now filename only | Sourcemaps turned off. The tracer needs them and fails **silently**. |
+
+        Still wrong after that? This is the right form.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem
+      options:
+        - Component chain is missing
+        - Component chain is wrong (names the wrong components)
+        - Source line is missing
+        - Source line is wrong (points at the wrong file or line)
+        - Props are missing or wrong
+        - A framework that is not supported at all
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: framework
+    attributes:
+      label: Framework and exact version
+      description: >
+        From `package.json`. The major version decides the answer more often than anything
+        else on this form.
+      placeholder: "Vue 3.5.35 via Nuxt 4.0.1 — or: React 19.0.0 via Next.js 15.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Development or production build
+      options:
+        - Development build (`nuxt dev`, `vite dev`, `next dev`, …)
+        - Production build
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: badge
+    attributes:
+      label: What the stack badge says
+      description: >
+        The left-hand chip on the toolbar. Say **"no badge"** if there is none, and
+        **"amber"** if it is the production-build colour — those are two different
+        answers.
+      placeholder: "Vue 3 3.5.35 — or: no badge — or: amber, says production build"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the report says, and what it should say
+      description: Paste the `**Source:**` and `**Components:**` lines, then what you expected.
+      placeholder: |
+        Report says:
+        **Components:** <App> <Anonymous> <Anonymous>
+
+        Expected:
+        **Components:** <App> <TheSidebar> <BaseButton>
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: build-config
+    attributes:
+      label: Relevant build config
+      description: >
+        `nuxt.config.ts` / `vite.config.ts` / `next.config.js` — the plugins, `devtools`
+        and `sourcemap` settings. For Vue, whether `vite-plugin-vue-tracer` or
+        `vite-plugin-vue-inspector` is in play, and whether `__VUE_PROD_DEVTOOLS__` is
+        defined.
+      render: typescript
+
+  - type: textarea
+    id: probe
+    attributes:
+      label: What the page actually exposes
+      description: >
+        The single most useful thing you can attach. In the **page's** DevTools console —
+        not the extension's — select the element in the Elements panel, then run this
+        against `$0` and paste the output.
+      value: |
+        ```js
+        // Paste into the PAGE's console with the element selected as $0
+        ({
+          vue:    !!$0.__vueParentComponent || !!$0.__vnode,
+          vueFile: $0.__vueParentComponent?.type?.__file ?? null,
+          vueName: $0.__vueParentComponent?.type?.__name ?? null,
+          inspector: $0.dataset?.vInspector ?? null,
+          scopeIds: [...$0.attributes].map(a => a.name).filter(n => n.startsWith('data-v-')),
+          tracer: !!globalThis.__vue_tracer__,
+          react:  Object.keys($0).filter(k => k.startsWith('__react')),
+          svelte: !!$0.__svelte_meta,
+          svelteLoc: $0.__svelte_meta?.loc ?? null,
+          angular: typeof window.ng?.getComponent === 'function',
+        })
+        ```
+
+        Output:
+      render: markdown
+
+  - type: input
+    id: repro
+    attributes:
+      label: Somewhere this can be reproduced
+      description: >
+        A public URL, a minimal repo, or a StackBlitz. A detector cannot be fixed against
+        a description of a page — this is usually what decides whether the issue moves.
+      placeholder: "https://stackblitz.com/edit/… — or: I can put a repo together"
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        **Adding a detector yourself?** It should be one new file implementing
+        `FrameworkDetector` plus one line in `src/inspector/detectors/index.ts`. If it
+        forces edits to `shared/output.ts`, `content/ui/toolbar.ts` or
+        `content/source.ts`, the abstraction has leaked — say so in the PR and we fix
+        that instead.
+
+        `detect()` and `inspect()` must not throw, and must return `null` when the
+        framework does not own the element, so the dispatcher can try the next one.
+        Returning a mostly-empty object stops the search — that is what would break a Vue
+        island inside a React page.

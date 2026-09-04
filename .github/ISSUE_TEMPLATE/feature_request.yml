@@ -1,0 +1,71 @@
+name: Feature request
+description: Suggest something the extension should do
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [wiki](https://github.com/thangnm93/SenAnnotate/wiki) is worth a search first —
+        several things people ask for exist under a name they did not guess: <kbd>C</kbd>
+        captures a hover-only menu without clicking it, ⌘/Ctrl+click collects elements that
+        are nowhere near each other, and *Hide until restart* clears the overlay from one
+        tab for a demo.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What you were trying to do, and where it went wrong. Describe the situation rather
+        than the feature — the best version of a request is often not the one that was
+        asked for.
+      placeholder: >
+        Reviewing a checkout flow across four pages, I want one report per *flow* rather
+        than per page, and I keep pasting four reports and losing the order I found things
+        in.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: If you have a shape for it. Skip this if you would rather describe the problem and leave the design open.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do instead today
+      description: >
+        Including "nothing, I gave up". How painful the workaround is says more about
+        priority than any other line on this form.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Roughly where does this live
+      options:
+        - Selecting elements (click, hover, text, marquee, multi-pick)
+        - The composer or the annotation itself
+        - Screenshots and markup
+        - The report format or detail levels
+        - The panel, triage, or the popup
+        - Settings
+        - Framework or source detection
+        - Somewhere else / not sure
+      default: 7
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Worth knowing
+      options:
+        - label: >
+            I have read that the extension has **zero runtime dependencies** and adds
+            nothing to the annotated page's bundle — a request that needs a library in the
+            page is out of scope by design.
+        - label: >
+            I understand a request needing a **new Chrome permission** restarts the Web
+            Store manual review (days), so it has to earn that on its own.

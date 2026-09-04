@@ -6,7 +6,8 @@
 // both the MAIN-world inspector and the service worker.
 // =============================================================================
 
-import { formatSource, generateOutput } from "../shared/output";
+import { downloadBlob } from "../shared/download";
+import { formatCssChanges, formatSource, generateOutput } from "../shared/output";
 import { HIDDEN_KEY } from "../shared/protocol";
 import type { RuntimeMessage, RuntimeResponse } from "../shared/protocol";
 import {
@@ -17,6 +18,7 @@ import {
   type AnnotationKind,
   type Diagnostics,
   type InspectMode,
+  type Measurements,
   type OutputDetailLevel,
   type PageFrameworkInfo,
   type Settings,
@@ -37,6 +39,7 @@ import {
 } from "./bridge";
 import { captureDraft, resolveElement, viewportBoxes, type Draft } from "./capture";
 import { copyText } from "./clipboard";
+import { pickColour } from "./eyedropper";
 import {
   broadcastFrameState,
   installChildFrame,
@@ -46,14 +49,8 @@ import {
   onFrameDraft,
   requestFrameHoverCapture,
 } from "./frames";
-import { identifyElement, isAnnotatable, isOurUi } from "./identify";
-import {
-  canvasToBlob,
-  cropToCanvas,
-  downloadBlob,
-  downloadPath,
-  encodeForEmbed,
-} from "./screenshot";
+import { buildSelector, identifyElement, isAnnotatable, isOurUi } from "./identify";
+import { canvasToBlob, cropToCanvas, downloadPath, encodeForEmbed } from "./screenshot";
 import { resolveSource } from "./source";
 import {
   loadAnnotations,
@@ -66,7 +63,12 @@ import {
   saveDockPosition,
   saveSettings,
 } from "./storage";
-import { Composer } from "./ui/composer";
+import {
+  Composer,
+  type ComposerCallbacks,
+  type ComposerMeta,
+  type RetargetDirection,
+} from "./ui/composer";
 import { listen } from "./ui/dom";
 import { Markers } from "./ui/markers";
 import {
@@ -79,7 +81,13 @@ import {
   type MarqueeHits,
 } from "./ui/marquee";
 import { Overlay } from "./ui/overlay";
+import { measureGap, readBoxModel, readStyleSummary } from "./measure";
 import { Panel } from "./ui/panel";
+import { applyOverride, listOverrides, overridesFor, revertAll, revertOverride } from "./css-edit";
+import { CssCard, EDITABLE } from "./ui/css-card";
+import { GridOverlay } from "./ui/grid";
+import { MeasureOverlay } from "./ui/measure-overlay";
+import { Rulers, type Guide } from "./ui/rulers";
 import { SettingsCard } from "./ui/settings";
 import { createUiRoot, type UiRoot } from "./ui/root";
 import { hideTooltip, installTooltips, isFocusTooltipVisible } from "./ui/tooltip";
@@ -113,6 +121,15 @@ let panelOpen = false;
 
 let hoveredElement: Element | null = null;
 let composer: Composer | null = null;
+/**
+ * The annotation the open composer is editing, or `null` when it holds a new draft.
+ *
+ * Read by `wipeAnnotations`, which is the only reason it is out here rather than in
+ * `openComposer`'s closure: a clear has to tell an editor whose subject it just deleted —
+ * that one has nothing to save back to — from a draft nobody has saved yet, which is work
+ * the clear never copied and must not take with it.
+ */
+let composerEditing: Annotation | null = null;
 /** Open only while a screenshot is being marked up, always on top of a composer. */
 let shotEditor: ShotEditor | null = null;
 /** Drag anchor, in document coordinates so a mid-drag scroll cannot move it. */
@@ -167,6 +184,39 @@ let composerPosition: { x: number; y: number } | null = null;
 
 /** Elements the composer is currently about — kept live for screenshotting. */
 let composerTargets: Element[] = [];
+/**
+ * The draft the open composer is describing, replaced wholesale by a retarget.
+ *
+ * Beside `composerTargets` rather than threaded through the composer's callbacks as a
+ * `(next) => (live = next)` setter: the two have exactly the same lifetime, are cleared
+ * by the same `closeComposer`, and `deliverScreenshot` needs to write into whichever
+ * draft is current — which a closure captured at open time cannot express.
+ */
+let composerDraft: Draft | null = null;
+/**
+ * The element the *last requested* retarget was stepping from, which is not the same as
+ * `composerTargets[0]` while a step is in flight.
+ *
+ * Every step is a bridge round trip of up to 500ms, and four arrow presses land well
+ * inside one on a page whose MAIN world is slow. Stepping from the last *confirmed*
+ * element would make presses 2..n all compute the same neighbour, with `retargetToken`
+ * then discarding all but the last — four presses would move one level.
+ */
+let retargetFrom: Element | null = null;
+/** Guards against a burst of arrow presses landing out of order. */
+let retargetToken = 0;
+/**
+ * Set for as long as a screenshot flow owns the open composer's draft.
+ *
+ * A retarget replaces `composerDraft` wholesale, and both halves of that flow await
+ * across the swap: `captureScreenshot` measures the box and asks the worker for the tab
+ * before the markup editor exists, and `deliverScreenshot` runs *after* `closeShotEditor`
+ * has already nulled `shotEditor` and handed focus back to the note. In either window the
+ * `shotEditor` test alone reads as "no screenshot", the arrows are live, and the filename
+ * is then written into an orphan draft no annotation references — the PNG reaches
+ * Downloads and the report has no screenshot at all.
+ */
+let screenshotPending = false;
 
 // -----------------------------------------------------------------------------
 // UI
@@ -178,6 +228,11 @@ let markers!: Markers;
 let toolbar!: Toolbar;
 let panel: Panel | null = null;
 let settingsCard: SettingsCard | null = null;
+let measureOverlay!: MeasureOverlay;
+let cssCard: CssCard | null = null;
+let editTarget: Element | null = null;
+let rulers!: Rulers;
+let grid!: GridOverlay;
 
 /**
  * Build the chrome. Top frame only — a second toolbar inside every iframe is both
@@ -187,6 +242,10 @@ function createTopUi(): void {
   ui = createUiRoot();
   installTooltips(ui.cardLayer);
   overlay = new Overlay(ui.overlayLayer);
+  measureOverlay = new MeasureOverlay(ui.overlayLayer);
+  grid = new GridOverlay(ui.overlayLayer);
+  rulers = new Rulers(ui.overlayLayer, { onGuidesChanged: (next) => saveGuides(next) });
+  rulers.setGuides(loadGuides());
 
   markers = new Markers(ui.markerLayer, {
     onClick: (annotation) => openEditor(annotation),
@@ -210,12 +269,14 @@ function createTopUi(): void {
       resetMarquee();
       clearPicked();
       overlay.hideAll();
+      measureOverlay.hideAll();
       render();
       broadcastFrameState(active, mode);
     },
     onToggleFreeze: () => toggleFreeze(),
     onTogglePanel: () => togglePanel(),
     onToggleSettings: () => toggleSettings(),
+    onPickColour: () => void pickAndCopy(),
     onToggleCollapse: () => toggleCollapsed(),
     onMove: (position) => {
       // Saved on drop rather than per frame — a drag would otherwise write sixty
@@ -223,6 +284,11 @@ function createTopUi(): void {
       dockPosition = position;
       void saveDockPosition(position);
     },
+    // Every frame of the drag, and every other reason the dock moves: a resize
+    // re-clamping a stored position, the `ResizeObserver` after a collapse. The settings
+    // card belongs to the pill and has to keep up with the pointer, not with storage —
+    // which is why this is not `onMove`.
+    onDockShift: () => settingsCard?.anchorTo(toolbar.dockBox()),
   });
 }
 
@@ -230,17 +296,27 @@ const settingsCallbacks = {
   onClose: () => toggleSettings(false),
   onHideUntilRestart: () => hideUntilRestart(),
   onChange: (patch: Partial<Settings>) => {
+    const derived: Partial<Settings> = {};
+
     // Changing the detail level moves `componentMode` to its preset, exactly as the
     // panel's own detail select does. A suggestion, not a lock: the components row can
     // be set to anything afterwards and stays there until the level changes again.
-    const derived =
-      patch.detailLevel !== undefined
-        ? { componentMode: DETAIL_TO_COMPONENT_MODE[patch.detailLevel] }
-        : {};
+    if (patch.detailLevel !== undefined) {
+      derived.componentMode = DETAIL_TO_COMPONENT_MODE[patch.detailLevel];
+    }
+
+    // Switching the master on switches the mode on with it. The default alone was not
+    // enough: turn the mode off, turn the master off, turn the master back on, and you
+    // had a switch that visibly did nothing — the one dead state this three-switch shape
+    // allows. Same suggestion-not-a-lock rule as above; the row below it can be turned
+    // straight back off and will stay off until the master is cycled again.
+    if (patch.measureTools === true) derived.measureDistances = true;
 
     settings = { ...settings, ...derived, ...patch };
     void saveSettings(settings);
     applyAppearance();
+    enforceMeasureSetting();
+    enforceCssSetting();
     render();
   },
 };
@@ -276,6 +352,125 @@ const panelCallbacks = {
   },
 };
 
+/**
+ * Whether mode 4 exists right now.
+ *
+ * Two settings, one answer, in one place — every gate below asks this rather than
+ * re-spelling the `&&`, which is how one of them ends up disagreeing with the others.
+ */
+function measureModeAvailable(): boolean {
+  return settings.measureTools && settings.measureDistances;
+}
+
+/**
+ * Leave mode 4 if the setting that provides it has just been switched off.
+ *
+ * Without this the mode survives its own button: the toolbar hides the fourth icon, the
+ * hint drops its clause, and clicks keep anchoring elements with nothing on screen to
+ * say why. Called from both places settings can change — this card, and a push from the
+ * popup in another tab.
+ */
+/**
+ * Leave mode 5 if the setting that provides it has just been switched off — and take the
+ * card with it. Overrides already applied are deliberately *not* reverted: they are the
+ * user's edits, not the mode's, and throwing away someone's work because they closed a
+ * panel would be the worst possible reading of a settings toggle.
+ */
+function enforceCssSetting(): void {
+  if (settings.cssEditor) return;
+  if (cssCard) toggleCssCard(false);
+  if (mode !== "edit") return;
+  mode = "point";
+  broadcastFrameState(active, mode);
+}
+
+function enforceMeasureSetting(): void {
+  if (measureModeAvailable() || mode !== "measure") return;
+  mode = "point";
+  measureOverlay.hideAll();
+  broadcastFrameState(active, mode);
+}
+
+/**
+ * Pick a colour, put it on the clipboard, and say so.
+ *
+ * The hex is copied rather than shown-and-left, because a six-character string in a
+ * toast that vanishes is a string you have to pick again. `copyText` falls back to
+ * `execCommand` when `navigator.clipboard` refuses — which it may here, since awaiting
+ * the picker has already spent the click's transient activation.
+ *
+ * A dismissed picker returns `null` and says nothing. Pressing Escape out of a colour
+ * picker is a decision, not a failure, and a toast for it would be noise.
+ */
+async function pickAndCopy(): Promise<void> {
+  const hex = await pickColour();
+  if (!hex) return;
+
+  const copied = await copyText(hex, ui.shadow);
+  ui.toast(copied ? `${hex} copied` : hex);
+}
+
+/** What the card shows for the element in hand: computed values plus its overrides. */
+function cssSubject(): { label: string; selector: string; values: Record<string, string>; overrides: ReturnType<typeof overridesFor> } | null {
+  if (!editTarget?.isConnected) return null;
+  const computed = getComputedStyle(editTarget);
+  const values: Record<string, string> = {};
+  for (const property of EDITABLE) values[property] = computed.getPropertyValue(property).trim();
+
+  return {
+    label: elementTag(editTarget),
+    selector: buildSelector(editTarget),
+    values,
+    overrides: overridesFor(editTarget),
+  };
+}
+
+function renderCssCard(): void {
+  cssCard?.render(cssSubject(), listOverrides());
+}
+
+const cssCallbacks = {
+  onClose: () => toggleCssCard(false),
+  onEdit: (property: string, value: string) => {
+    if (!editTarget?.isConnected) return;
+    applyOverride(editTarget, elementTag(editTarget), property, value);
+    renderCssCard();
+  },
+  onRevert: (property: string) => {
+    if (!editTarget?.isConnected) return;
+    revertOverride(editTarget, property);
+    renderCssCard();
+  },
+  onRevertAll: () => {
+    revertAll();
+    renderCssCard();
+  },
+  onCopy: () => {
+    // Same shape the report uses, so what you paste and what you file agree.
+    const text = formatCssChanges(listOverrides()).join("\n");
+    void copyText(text, ui.shadow).then((ok) =>
+      ui.toast(ok ? "CSS changes copied" : "Copy failed", ok ? "success" : "error"),
+    );
+  },
+};
+
+/** Mirrors `toggleSettings`, down to the `force` argument and the trailing `render()`. */
+function toggleCssCard(force?: boolean): void {
+  const next = force ?? !cssCard;
+  if (next === !!cssCard) return;
+
+  if (next) {
+    toggleSettings(false);
+    cssCard = new CssCard(ui.cardLayer, cssCallbacks);
+    renderCssCard();
+    cssCard.anchorTo(toolbar.dockBox());
+  } else {
+    cssCard?.destroy();
+    cssCard = null;
+  }
+  render();
+}
+
 function render(): void {
   toolbar.update({
     active,
@@ -283,13 +478,30 @@ function render(): void {
     frozen,
     panelOpen,
     settingsOpen: !!settingsCard,
+    measureMode: measureModeAvailable(),
+    colourPicker: settings.measureTools,
+    cssEditor: settings.cssEditor,
     collapsed: settings.toolbarCollapsed,
     count: annotations.length,
     page,
   });
+  // Both hang off the same master as everything else measuring. Rulers are the only
+  // surface here that costs the page a region, so `showRulers` alone is not enough.
+  rulers.show(settings.measureTools && settings.showRulers);
+  if (settings.measureTools && settings.showGrid) {
+    grid.render({
+      columns: settings.gridColumns,
+      gutter: settings.gridGutter,
+      margin: settings.gridMargin,
+    });
+  } else {
+    grid.hide();
+  }
+
   markers.render(annotations, settings.showMarkers && !!annotations.length);
   panel?.render(annotations, settings.detailLevel);
   settingsCard?.render(settings);
+  renderCssCard();
   void notifyBadge();
 }
 
@@ -322,6 +534,11 @@ function setActive(next: boolean): void {
     resetMarquee();
     clearPicked();
     overlay.hideAll();
+    // Bands, badge and readout are drawn on hover and cleared by the next hover — so
+    // leaving inspect mode with the pointer still on an element used to strand them on
+    // the page with nothing left running that would take them off. Turning the tool off
+    // has to leave the page as the tool found it.
+    measureOverlay.hideAll();
     hoveredElement = null;
     hoverLabel = null;
     document.body.style.removeProperty("cursor");
@@ -343,6 +560,61 @@ async function toggleFreeze(force?: boolean): Promise<void> {
   await setFrozen(frozen);
   ui.toast(frozen ? "Animations frozen" : "Animations resumed");
   render();
+}
+
+/**
+ * Guides for this page, in this tab.
+ *
+ * `sessionStorage`, not `chrome.storage`: a guide is a pencil line on one page, and the
+ * three options were losing them on reload (a reload is the most common thing that
+ * happens during a review), a `chrome.storage.local` key with a quota and cross-tab
+ * collisions on the same URL, or this — survives a reload, dies with the tab.
+ *
+ * Wrapped, because `sessionStorage` throws in a sandboxed frame and with storage
+ * disabled. Same treatment `isHiddenThisSession()` gives it.
+ */
+const GUIDES_KEY = "senannotate:guides";
+
+function guidesKey(): string {
+  return `${GUIDES_KEY}:${window.location.pathname}`;
+}
+
+function loadGuides(): Guide[] {
+  try {
+    const raw = window.sessionStorage.getItem(guidesKey());
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(parsed) ? (parsed as Guide[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGuides(guides: Guide[]): void {
+  try {
+    window.sessionStorage.setItem(guidesKey(), JSON.stringify(guides));
+  } catch {
+    // Sandboxed frame, or storage disabled. The guides stay on screen either way.
+  }
+}
+
+/**
+ * Would this element have taken the keystroke as text?
+ *
+ * Narrower than "is it a form control", and the difference matters. A checkbox holds
+ * focus after you click it, and swallowing every key while it does would make the mode
+ * keys feel dead for the rest of the session — you clicked a switch, you did not start
+ * typing. A checkbox takes no text, so a digit pressed on one is a mode key.
+ *
+ * `select` stays in: letters jump between its options and arrows move the selection.
+ */
+function isTextEntry(node: HTMLElement | null | undefined): boolean {
+  if (!node) return false;
+  if (node.isContentEditable) return true;
+  if (node.tagName === "TEXTAREA" || node.tagName === "SELECT") return true;
+  if (node.tagName !== "INPUT") return false;
+  return !/^(checkbox|radio|button|submit|reset|color|range|file|image)$/i.test(
+    (node as HTMLInputElement).type,
+  );
 }
 
 /** Whether this tab was asked to hide the overlay for the rest of its session. */
@@ -384,12 +656,18 @@ function toggleSettings(force?: boolean): void {
 
   if (next) {
     togglePanel(false);
+    // The exclusion has to be stated at both doors. Stating it only in
+    // `toggleMeasureCard` let Settings open on top of a Measure card already showing,
+    // and the two share the eight pixels above the dock.
     settingsCard = new SettingsCard(
       ui.cardLayer,
       settingsCallbacks,
       chrome.runtime.getManifest().version,
     );
     settingsCard.render(settings);
+    // After `render`, not before: the flip to underneath the pill turns on the card's own
+    // height, and a card whose rows have not been filled in yet measures short.
+    settingsCard.anchorTo(toolbar.dockBox());
   } else {
     settingsCard?.destroy();
     settingsCard = null;
@@ -510,6 +788,91 @@ function drawHover(element: Element): void {
     return;
   }
   overlay.showHighlights([element.getBoundingClientRect()], hoverLabel ?? undefined);
+  drawMeasure(element);
+}
+
+/**
+ * Bands, badge and — once an anchor is set — the dimension lines.
+ *
+ * Split out of `drawHover` so its cost stays visible: this is the only thing in the
+ * hover path that calls `getComputedStyle`, which forces a style recalculation. It runs
+ * when the user asked for it, or when the mode is about nothing else.
+ */
+function drawMeasure(element: Element): void {
+  if (!settings.measureTools || (mode !== "measure" && !settings.showBoxModel)) {
+    measureOverlay.hideBox();
+    measureOverlay.hideGap();
+    return;
+  }
+
+  // One declaration shared by both readers: reading a property off it is what forces
+  // the style recalculation, and this runs at pointermove frequency.
+  const style = getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  measureOverlay.showBox(
+    rect,
+    readBoxModel(element, style),
+    readStyleSummary(element, style),
+    elementTag(element),
+  );
+
+  const anchor = measureOverlay.anchor;
+  if (!anchor || anchor === element) {
+    measureOverlay.hideGap();
+    return;
+  }
+  const anchorRect = anchor.getBoundingClientRect();
+  measureOverlay.showGap(anchorRect, rect, measureGap(anchorRect, rect));
+}
+
+/**
+ * `div.card`, for the panel's header.
+ *
+ * Deliberately not `identifyElement().name` — that is the human-readable name, and the
+ * hover highlight is already showing it directly above the box. This is the CSS-shaped
+ * descriptor, which is the language the rest of the panel is written in.
+ */
+function elementTag(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+  if (element.id) return `${tag}#${element.id}`;
+  const first = element.classList[0];
+  return first ? `${tag}.${first}` : tag;
+}
+
+/**
+ * What the composer will store. Never `undefined`: the box alone is worth keeping.
+ *
+ * `box` describes the **anchor**, not the element just clicked, because `captureDraft`
+ * makes `elements[0]` the subject of the whole annotation — its name, its selector, its
+ * `**Position:**`. A box measured off the second element would sit directly under a
+ * Position line describing the first, and the two would silently disagree. The second
+ * element is not lost: `gap.toElement` names it, which is the line's whole job.
+ */
+function currentMeasurements(target: Element): Measurements {
+  const anchor = measureOverlay.anchor;
+  // `contrast` follows `box` to whichever element is the annotation's subject, for the
+  // same reason: a verdict sitting under a Position line that describes a different
+  // element is two facts quietly disagreeing.
+  const subject = anchor && anchor !== target ? anchor : target;
+  const style = getComputedStyle(subject);
+
+  const base: Measurements = {
+    box: readBoxModel(subject, style),
+    contrast: readStyleSummary(subject, style).contrast,
+  };
+  if (subject === target) return base;
+
+  const anchorRect = subject.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+
+  return {
+    ...base,
+    gap: {
+      ...measureGap(anchorRect, targetRect),
+      toElement: identifyElement(target).name,
+      toSelector: buildSelector(target),
+    },
+  };
 }
 
 /**
@@ -526,7 +889,7 @@ function drawHover(element: Element): void {
  * conclusion `docs/modal-focus-leak/` reached for dialogs.
  */
 function captureHovered(): void {
-  if (mode !== "point") return;
+  if (mode !== "point" && mode !== "measure") return;
 
   if (hoveredElement && !hoveredElement.isConnected) hoveredElement = null;
 
@@ -539,6 +902,15 @@ function captureHovered(): void {
   // document whose `elementFromPoint` can see what the pointer is actually on.
   // Keyboard focus is usually still up here, so the top frame has to hand it over.
   if (requestFrameHoverCapture(hoveredElement)) return;
+
+  if (mode === "measure") {
+    const from = measureOverlay.anchor;
+    const measurements = currentMeasurements(hoveredElement);
+    const elements = from && from !== hoveredElement ? [from, hoveredElement] : [hoveredElement];
+    measureOverlay.setAnchor(null);
+    void beginAnnotation(elements, undefined, measurements);
+    return;
+  }
 
   void beginAnnotation([hoveredElement]);
 }
@@ -560,8 +932,12 @@ function frameAnchor(draft: Draft): DOMRect {
 // Creating annotations
 // -----------------------------------------------------------------------------
 
-async function beginAnnotation(elements: Element[], selectedText?: string): Promise<void> {
-  const draft = await captureDraft(elements, { settings, selectedText });
+async function beginAnnotation(
+  elements: Element[],
+  selectedText?: string,
+  measurements?: Measurements,
+): Promise<void> {
+  const draft = await captureDraft(elements, { settings, selectedText, measurements });
   if (!draft) return;
 
   composerTargets = elements;
@@ -577,13 +953,15 @@ function openEditor(annotation: Annotation): void {
   openComposer(annotation, anchor, annotation);
 }
 
-function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null): void {
-  composer?.destroy();
-  overlay.showHighlights(
-    existing ? viewportBoxes(existing) : composerTargets.map((el) => el.getBoundingClientRect()),
-    { primary: draft.element, secondary: formatSource(draft.source) },
-  );
-
+/**
+ * Draft → the rows the composer shows. Shared by the initial build and each retarget.
+ *
+ * `ComposerMeta` and not `ComposerData`: a retarget replaces exactly these fields, and
+ * carrying `initialComment`/`initialKind` here would build them on every arrow press for a
+ * `setData` that has no way to use them — implying the composer might reset the note and
+ * the chosen type, which is the one thing it promises never to do.
+ */
+function composerMeta(draft: Draft): ComposerMeta {
   const props = draft.framework?.props
     ? Object.entries(draft.framework.props)
         .slice(0, 4)
@@ -591,58 +969,243 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
         .join(", ")
     : "";
 
-  composer = new Composer(
-    ui.cardLayer,
-    anchor,
-    {
-      title: draft.element,
-      source: formatSource(draft.source),
-      components: draft.framework?.path ?? null,
-      props: props || null,
-      selectedText: draft.selectedText,
-      elementCount: draft.elementBoundingBoxes?.length,
-      initialComment: existing?.comment,
-      initialKind: existing?.kind,
-    },
-    {
-      onSubmit: (comment, kind: AnnotationKind) => {
-        if (existing) {
-          existing.comment = comment;
-          existing.kind = kind;
-        } else {
-          annotations = [
-            ...annotations,
-            { ...draft, id: newId(), comment, kind, timestamp: Date.now() } as Annotation,
-          ];
-        }
-        closeComposer();
-        void persist();
-        render();
-        ui.toast(existing ? "Annotation updated" : "Annotation added");
-      },
-      onCancel: () => closeComposer(),
-      onScreenshot: () => void captureScreenshot(existing ?? draft),
-      onDelete: existing
-        ? () => {
-            annotations = annotations.filter((item) => item.id !== existing.id);
-            closeComposer();
-            void persist();
-            render();
-            ui.toast("Annotation deleted");
-          }
-        : undefined,
-      onMove: (position) => {
-        // Saved on drop, not per frame — a drag at pointer frequency would write
-        // sixty times a second for as long as the button is held.
-        composerPosition = position;
-        void saveComposerPosition(position);
-      },
-    },
+  return {
+    title: draft.element,
+    source: formatSource(draft.source),
+    components: draft.framework?.path ?? null,
+    props: props || null,
+    selectedText: draft.selectedText,
+    elementCount: draft.elementBoundingBoxes?.length,
+  };
+}
+
+function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null): void {
+  composer?.destroy();
+  composerEditing = existing;
+  overlay.showHighlights(
+    existing ? viewportBoxes(existing) : composerTargets.map((el) => el.getBoundingClientRect()),
+    { primary: draft.element, secondary: formatSource(draft.source) },
   );
+
+  // The draft is replaced wholesale by a retarget, and `onSubmit` has to store the one on
+  // screen rather than the one the composer opened with. Module state, not a closure: see
+  // the declaration.
+  composerDraft = draft;
+  retargetFrom = composerTargets[0] ?? null;
+
+  const callbacks: ComposerCallbacks = {
+    onSubmit: (comment, kind: AnnotationKind) => {
+      if (existing) {
+        existing.comment = comment;
+        existing.kind = kind;
+      } else {
+        annotations = [
+          ...annotations,
+          { ...(composerDraft ?? draft), id: newId(), comment, kind, timestamp: Date.now() } as Annotation,
+        ];
+      }
+      closeComposer();
+      void persist();
+      render();
+      ui.toast(existing ? "Annotation updated" : "Annotation added");
+    },
+    onCancel: () => closeComposer(),
+    onScreenshot: () => void captureScreenshot(existing ?? composerDraft ?? draft),
+    onDelete: existing
+      ? () => {
+          annotations = annotations.filter((item) => item.id !== existing.id);
+          closeComposer();
+          void persist();
+          render();
+          ui.toast("Annotation deleted");
+        }
+      : undefined,
+    onRetarget: retargetable(draft, existing)
+      ? (direction) => void retargetComposer(direction)
+      : undefined,
+    onMove: (position) => {
+      // Saved on drop, not per frame — a drag at pointer frequency would write sixty
+      // times a second for as long as the button is held.
+      composerPosition = position;
+      void saveComposerPosition(position);
+    },
+  };
+
+  composer = new Composer(ui.cardLayer, anchor, { ...composerMeta(draft), initialComment: existing?.comment, initialKind: existing?.kind }, callbacks);
   // Apply the saved position after construction, exactly as `toolbar.applyPosition`
   // runs after `createTopUi`. If `composerPosition` is null the card stays where
   // `position()` anchored it near the target element — the pre-drag default.
   composer.applyPosition(composerPosition);
+}
+
+/**
+ * Whether an arrow press may land on this element.
+ *
+ * `eligible` plus a rendered area, and the area is the part the pointer path never had
+ * to think about: `elementFromPoint` cannot return a `display: none` popover, a `hidden`
+ * span or a collapsed accordion panel, so every stage downstream of a click has always
+ * been handed something with a box. The arrows can reach all of them, and a zero-sized
+ * target breaks three things at once — `showHighlights` draws a box with no size so the
+ * highlight silently vanishes, `captureScreenshot` refuses with "Nothing to capture", and
+ * the stored `x`/`y` collapse to 0 so the panel's marker parks in the top-left corner.
+ * `marquee.ts` refuses zero-sized candidates for the same reason.
+ *
+ * Skipping them rather than stopping on them is what keeps the walk useful: a collapsed
+ * sibling between two cards is stepped over, exactly like a `<script>`.
+ */
+function retargetCandidate(element: Element): boolean {
+  if (!eligible(element)) return false;
+  const box = element.getBoundingClientRect();
+  return box.width > 0 && box.height > 0;
+}
+
+/**
+ * The element one step from `from` in `direction`, skipping anything not worth
+ * annotating.
+ *
+ * Sibling steps *loop* over `nextElementSibling`/`previousElementSibling` until
+ * `retargetCandidate` says yes, rather than filtering the whole child list: a `<script>`,
+ * a comment wrapper or one of our own nodes between two cards must not read as a dead end,
+ * but building the filtered array to find that out costs an allocation plus a measurement
+ * plus an `eligible` call — and `eligible` walks ancestors through `isOurUi` — for every
+ * sibling on the page. In a 2,000-row table that is the difference between O(k) and O(n)
+ * per press. `marquee.ts` avoids the same call for the same reason.
+ *
+ * `document.body` is the ceiling, and it enforces itself: `NOT_ANNOTATABLE`
+ * (`identify.ts`) holds `BODY` and `HTML`, so the parent walk runs out of eligible nodes
+ * rather than being stopped here. Changing where the ceiling sits means changing that set.
+ */
+function stepFrom(from: Element, direction: RetargetDirection): Element | null {
+  if (direction === "parent") {
+    for (let node = from.parentElement; node; node = node.parentElement) {
+      if (retargetCandidate(node)) return node;
+    }
+    return null;
+  }
+
+  if (direction === "child") {
+    for (let node = from.firstElementChild; node; node = node.nextElementSibling) {
+      if (retargetCandidate(node)) return node;
+    }
+    return null;
+  }
+
+  const forward = direction === "next";
+  for (
+    let node = forward ? from.nextElementSibling : from.previousElementSibling;
+    node;
+    node = forward ? node.nextElementSibling : node.previousElementSibling
+  ) {
+    if (retargetCandidate(node)) return node;
+  }
+  return null;
+}
+
+/**
+ * Move the open composer onto a neighbouring element.
+ *
+ * The draft has to be captured afresh — element name, source, component chain and
+ * props all belong to the element, not to the note — and that is a bridge round trip,
+ * so a token drops the answer to any press that has since been superseded.
+ */
+async function retargetComposer(direction: RetargetDirection): Promise<void> {
+  const owner = composer;
+  if (!owner) return;
+
+  // `setActive(false)` deliberately leaves an open composer alone — it only hides the
+  // overlay — so switching Inspect off while the card is up keeps both the buttons and
+  // the keys live. Without this the walk would paint a highlight back onto a page the
+  // user has just told us to stop inspecting. `queueSync` refuses on the same test.
+  if (!active) return;
+
+  // A screenshot is a crop of one element's box. Retargeting after one would either lose
+  // it — `deliverScreenshot` writes into whichever draft object it was handed, and a
+  // retarget replaces that object — or keep a picture of the wrong element in the report.
+  // Both are "the composer shows one thing and stores another", which is the failure this
+  // whole feature exists to avoid, so it is refused instead. The markup editor is on top
+  // of the composer and about to write into the same draft, and `screenshotPending` covers
+  // the two windows on either side of it where there is no editor to see.
+  if (composerDraft?.screenshot || shotEditor || screenshotPending) {
+    ui.toast("Retake the screenshot after choosing the element", "error");
+    return;
+  }
+
+  // The *requested* element, not the last confirmed one — see `retargetFrom`.
+  const from = retargetFrom ?? composerTargets[0];
+  if (!from) return;
+
+  // The same guard `captureHovered` calls "the guard that matters". An element inside a
+  // list the app re-renders — a virtualised row, a menu, a React reconciliation that
+  // replaces the node — is detached by now, and `stepFrom` still succeeds on a detached
+  // subtree for `child`. `captureDraft` would then return a zero-sized box and a selector
+  // that resolves to nothing: an annotation that looks fine in the panel and points
+  // nowhere.
+  if (!from.isConnected) {
+    ui.toast("That element is gone from the page", "error");
+    return;
+  }
+
+  const next = stepFrom(from, direction);
+  if (!next) {
+    ui.toast("Nothing there", "error");
+    return;
+  }
+
+  // Set before the await, so a burst of presses steps a level each instead of
+  // recomputing the same neighbour n times and discarding all but one.
+  retargetFrom = next;
+
+  const token = ++retargetToken;
+
+  // Move the highlight now, from the synchronous `identifyElement`, and let the bridge
+  // answer enrich the label a round trip later — the same order `updateHover` uses, and
+  // for a stronger reason: a keypress has one expected response, so up to 500ms of the
+  // old element still being highlighted reads as the key having missed.
+  overlay.showHighlights([next.getBoundingClientRect()], { primary: identifyElement(next).name });
+
+  const draft = await captureDraft([next], { settings });
+
+  // `composer === owner` and not merely `composer`: the token alone cannot tell a
+  // superseded press from a *different composer*. Escape closes this one, a click opens
+  // another, and this stale promise then resolves into it — setting its rows, its
+  // highlight and its screenshot target to an element it was never about. `closeComposer`
+  // bumps the token as well, which covers the same window from the other side.
+  if (!draft || token !== retargetToken || composer !== owner) return;
+
+  composerTargets = [next];
+  composerDraft = draft;
+  composer.setData(composerMeta(draft));
+  overlay.showHighlights([next.getBoundingClientRect()], {
+    primary: draft.element,
+    secondary: formatSource(draft.source),
+  });
+
+  // Not *repositioned* — the composer stays anchored where the first pick was, because a
+  // card that jumps on every arrow press makes the highlight much harder to follow. It is
+  // re-clamped inside `setData`, which is a different thing: see the comment there.
+}
+
+/**
+ * Retargeting applies to a fresh, single-element pick in this document and nothing else.
+ *
+ * A saved note is a stored record and moving it is an edit of different weight. A
+ * text selection is anchored to a Range that the new element would not contain. A
+ * multi-element draft has no single thing to walk from.
+ *
+ * Everything is read off the draft rather than off `composerTargets`, which is a module
+ * global this function is not handed. `isMultiSelect` and `elementBoundingBoxes` already
+ * encode the count, and requiring the element to be in *this* document is what makes the
+ * iframe path safe by design: `onFrameDraft` happens to clear `composerTargets` before
+ * opening, and a fourth caller that forgot that line would otherwise enable the arrows on
+ * a draft whose element lives in a child document — `stepFrom` would then walk siblings of
+ * a stale top-frame node.
+ */
+function retargetable(draft: Draft, existing: Annotation | null): boolean {
+  if (existing || draft.selectedText || draft.isMultiSelect) return false;
+  if ((draft.elementBoundingBoxes?.length ?? 1) > 1) return false;
+
+  const target = composerTargets[0];
+  return composerTargets.length === 1 && !!target && target.ownerDocument === document;
 }
 
 function closeComposer(): void {
@@ -652,7 +1215,20 @@ function closeComposer(): void {
   closeShotEditor();
   composer?.destroy();
   composer = null;
+  composerEditing = null;
   composerTargets = [];
+  composerDraft = null;
+  retargetFrom = null;
+  // The draft the picture was for is gone, so nothing can be stranded any more. It has to
+  // be released *here* rather than left to whoever set it: closing takes the markup editor
+  // down through `closeShotEditor` directly, so its `onCancel` never runs and the flag
+  // would outlive this composer and kill the next one's arrows.
+  screenshotPending = false;
+  // Bumped so an in-flight `captureDraft` — up to 500ms on a page whose MAIN world never
+  // answers the bridge — cannot resolve into whatever composer is open by then. The
+  // `composer === owner` test covers the same window from the other side; this closes the
+  // case where the *same* object is somehow reached first.
+  retargetToken += 1;
   overlay.hideHighlights();
 }
 
@@ -702,17 +1278,27 @@ function buildReport(): string {
       page,
       diagnostics: settings.captureDiagnostics ? diagnosticsCache : null,
       actions: settings.captureDiagnostics ? readActions() : [],
+      cssChanges: listOverrides(),
     },
     settings.detailLevel,
   );
 }
 
 function copyReport(): void {
-  // Read before the clipboard call, not inside the callback: `clearOnCopy` empties
-  // the list by the time the toast is written, and the toast should report what was
-  // copied rather than what is left.
-  const count = annotations.length;
-  if (!count) return;
+  if (!annotations.length) return;
+
+  // One snapshot, taken before the clipboard call, and everything downstream reads it
+  // rather than the live list: the count the toast quotes, and the set `clearOnCopy` is
+  // allowed to remove. `annotations` is replaced rather than mutated on every add, so
+  // holding the array is holding the exact list the report was built from.
+  //
+  // Both halves matter. `clearOnCopy` empties the list by the time the toast is written,
+  // so a count read there would say `Copied 0 annotations` about a copy that succeeded —
+  // and an annotation filed while the write was in flight was never in the report, so
+  // clearing must leave it alone rather than destroy work it never handed over.
+  const sent = annotations;
+  const sentIds = new Set(sent.map((item) => item.id));
+  const count = sent.length;
 
   const markdown = buildReport();
 
@@ -728,7 +1314,7 @@ function copyReport(): void {
     // a copy would, the one time the clipboard refuses, throw the session away with
     // nothing to show for it — and `copyText` has a fallback path that can fail.
     if (settings.clearOnCopy) {
-      wipeAnnotations();
+      wipeAnnotations(sentIds);
       ui.toast(`Copied ${noun} · cleared`, "success");
       return;
     }
@@ -759,39 +1345,50 @@ function downloadReport(): void {
 }
 
 async function captureScreenshot(target: Draft | Annotation): Promise<void> {
-  const element = composerTargets[0];
-  const box = element ? element.getBoundingClientRect() : viewportBoxes(target)[0];
-  if (!box || box.width === 0 || box.height === 0) {
-    ui.toast("Nothing to capture", "error");
-    return;
-  }
-
-  // captureVisibleTab photographs whatever is on screen, our overlay included —
-  // so it has to step out of the shot first.
-  ui.host.style.setProperty("display", "none", "important");
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-  let response: RuntimeResponse | null = null;
+  // Claimed before the first await: from here until the markup editor exists, `target`
+  // is the object the picture is going to be written into, and a retarget would replace
+  // it underneath us. Handed over to the editor on success, released on every failure —
+  // see `screenshotPending`.
+  screenshotPending = true;
+  let handedOver = false;
   try {
-    response = await sendRuntime({ kind: "capture" });
+    const element = composerTargets[0];
+    const box = element ? element.getBoundingClientRect() : viewportBoxes(target)[0];
+    if (!box || box.width === 0 || box.height === 0) {
+      ui.toast("Nothing to capture", "error");
+      return;
+    }
+
+    // captureVisibleTab photographs whatever is on screen, our overlay included —
+    // so it has to step out of the shot first.
+    ui.host.style.setProperty("display", "none", "important");
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+    let response: RuntimeResponse | null = null;
+    try {
+      response = await sendRuntime({ kind: "capture" });
+    } finally {
+      ui.host.style.removeProperty("display");
+    }
+
+    if (!response?.ok || !response.dataUrl) {
+      ui.toast("Screenshot failed", "error");
+      return;
+    }
+
+    const canvas = await cropToCanvas(response.dataUrl, box);
+    if (!canvas) {
+      ui.toast("Screenshot failed", "error");
+      return;
+    }
+
+    // Nothing is written to disk until the editor is saved — a cancelled markup is a
+    // cancelled screenshot, not an unwanted file in Downloads.
+    openShotEditor(canvas, target);
+    handedOver = true;
   } finally {
-    ui.host.style.removeProperty("display");
+    if (!handedOver) screenshotPending = false;
   }
-
-  if (!response?.ok || !response.dataUrl) {
-    ui.toast("Screenshot failed", "error");
-    return;
-  }
-
-  const canvas = await cropToCanvas(response.dataUrl, box);
-  if (!canvas) {
-    ui.toast("Screenshot failed", "error");
-    return;
-  }
-
-  // Nothing is written to disk until the editor is saved — a cancelled markup is a
-  // cancelled screenshot, not an unwanted file in Downloads.
-  openShotEditor(canvas, target);
 }
 
 function openShotEditor(canvas: HTMLCanvasElement, target: Draft | Annotation): void {
@@ -800,7 +1397,14 @@ function openShotEditor(canvas: HTMLCanvasElement, target: Draft | Annotation): 
     ui.cardLayer,
     canvas,
     {
-      onCancel: () => closeShotEditor(),
+      // Cancelling ends the flow here, so the draft is nobody's subject any more and the
+      // arrows may move again. `closeShotEditor` cannot do this itself: `onSave` calls it
+      // *before* handing the canvas on, and clearing there would reopen the window
+      // `deliverScreenshot` runs in.
+      onCancel: () => {
+        closeShotEditor();
+        screenshotPending = false;
+      },
       onSave: (edited) => {
         closeShotEditor();
         void deliverScreenshot(edited, target);
@@ -830,38 +1434,66 @@ async function deliverScreenshot(
   canvas: HTMLCanvasElement,
   target: Draft | Annotation,
 ): Promise<void> {
-  const blob = await canvasToBlob(canvas);
-  if (!blob) {
-    ui.toast("Could not save screenshot", "error");
-    return;
+  // The last stretch that still owns `target`, and the one with no editor on screen to
+  // stand for it: `closeShotEditor` has already handed focus back to the note, so an
+  // arrow press arrives here while `canvasToBlob` is still encoding.
+  try {
+    const blob = await canvasToBlob(canvas);
+    if (!blob) {
+      ui.toast("Could not save screenshot", "error");
+      return;
+    }
+
+    const filename = `senannotate-${Date.now()}.png`;
+    if (!downloadBlob(blob, filename)) {
+      ui.toast("Could not save screenshot", "error");
+      return;
+    }
+
+    target.screenshot = filename;
+    target.screenshotPath = downloadPath(filename);
+    target.screenshotData =
+      settings.screenshotDelivery === "embed" ? (encodeForEmbed(canvas) ?? undefined) : undefined;
+
+    ui.toast("Screenshot saved to Downloads");
+    void persist();
+  } finally {
+    screenshotPending = false;
   }
-
-  const filename = `senannotate-${Date.now()}.png`;
-  if (!downloadBlob(blob, filename)) {
-    ui.toast("Could not save screenshot", "error");
-    return;
-  }
-
-  target.screenshot = filename;
-  target.screenshotPath = downloadPath(filename);
-  target.screenshotData =
-    settings.screenshotDelivery === "embed" ? (encodeForEmbed(canvas) ?? undefined) : undefined;
-
-  ui.toast("Screenshot saved to Downloads");
-  void persist();
 }
 
 /**
- * Drop every annotation, and the diagnostics gathered alongside them.
+ * Drop annotations, and the diagnostics gathered alongside them.
  *
  * The trail goes too: keeping steps and errors from a bug you already filed would
  * attach them to the next, unrelated report. Deliberately silent — its two callers
  * are a deliberate "clear all" and the tail of a successful copy, and those want to
  * say quite different things.
+ *
+ * `only` is the set of ids the caller means, and the copy path is the reason it exists:
+ * it may remove what its report described and nothing else. Omit it and every annotation
+ * goes, which is what "Clear all" asks for.
+ *
+ * The diagnostics and the trail go regardless. They describe the report that was just
+ * handed over, whether or not something arrived after it.
  */
-function wipeAnnotations(): void {
-  annotations = [];
-  closeComposer();
+function wipeAnnotations(only?: ReadonlySet<string>): void {
+  annotations = only ? annotations.filter((item) => !only.has(item.id)) : [];
+
+  // An editor whose annotation just went has nowhere to save back to, so it goes with it.
+  // A composer holding an unsaved draft stays: it is work nothing here has copied, and a
+  // clear that scopes itself to what it took cannot then take the one thing it did not.
+  // Compared by id rather than identity, because a merge from the popup's import replaces
+  // the objects in the list.
+  if (composerEditing && !annotations.some((item) => item.id === composerEditing?.id)) {
+    closeComposer();
+  }
+
+  // The highlights are the clear's business whenever no composer is left to own them.
+  // The panel's hover preview is the case that matters: the row the pointer is over is
+  // about to be removed, and a removed element never sends the `mouseleave` that would
+  // otherwise take its box off the page.
+  if (!composer) overlay.hideHighlights();
   clearActions();
   diagnosticsCache = null;
   void clearDiagnostics();
@@ -1127,7 +1759,23 @@ function queueSync(): void {
     // containing block for our fixed host — and a resize changes the viewport we fit to.
     ui.syncPlacement();
     markers.syncPositions();
-    if (composer || !active || mode !== "point") return;
+    rulers.sync();
+    if (settings.measureTools && settings.showGrid) {
+      grid.render({
+        columns: settings.gridColumns,
+        gutter: settings.gridGutter,
+        margin: settings.gridMargin,
+      });
+    }
+    if (composer || !active) return;
+    if (mode === "measure") {
+      // The anchor outline and the bands are both viewport-space, so a scroll leaves
+      // them behind the page unless they are redrawn with it.
+      measureOverlay.syncAnchor();
+      if (hoveredElement?.isConnected) drawHover(hoveredElement);
+      return;
+    }
+    if (mode !== "point") return;
     if (picked.length) drawPicked();
     else if (hoveredElement) {
       overlay.showHighlights([hoveredElement.getBoundingClientRect()], hoverLabel ?? undefined);
@@ -1272,6 +1920,8 @@ function installTopFrame(): void {
   async function refreshSettings(): Promise<void> {
     settings = await loadSettings();
     applyAppearance();
+    enforceMeasureSetting();
+    enforceCssSetting();
     render();
   }
 
@@ -1280,7 +1930,9 @@ function installTopFrame(): void {
     "pointermove",
     (event) => {
       if (!active || composer || marqueeStart) return;
-      if (mode !== "point") return;
+      // `measure` shares the whole hover path with `point` — it is the same "what is the
+      // pointer over" question, answered with two more things drawn on top.
+      if (mode !== "point" && mode !== "measure") return;
       // Pointer capture retargets the toolbar drag's moves; it does not stop them
       // propagating, and `root.ts` deliberately lets `pointermove` through the host. So
       // during a fast drag the cursor outruns the pill, lands on page content, and this
@@ -1295,6 +1947,10 @@ function installTopFrame(): void {
         // Moving off an element must not erase a set that is still being built.
         if (picked.length) drawPicked();
         else overlay.hideHighlights();
+        // The bands belong to the element under the pointer; the anchor outline does
+        // not, and survives until the measurement is taken or abandoned.
+        measureOverlay.hideBox();
+        measureOverlay.hideGap();
         return;
       }
       if (target === hoveredElement) return;
@@ -1325,6 +1981,41 @@ function installTopFrame(): void {
 
       event.preventDefault();
       event.stopPropagation();
+
+      if (mode === "edit") {
+        const picked = document.elementFromPoint(event.clientX, event.clientY);
+        if (!picked || !eligible(picked)) return;
+        editTarget = picked;
+        // Opening on the first click rather than requiring the card first: the mode is
+        // reached by pressing 5, and a mode whose first click does nothing visible is
+        // the mistake mode 4 already made once.
+        if (!cssCard) toggleCssCard(true);
+        else renderCssCard();
+        overlay.showHighlights([picked.getBoundingClientRect()], { primary: elementTag(picked) });
+        return;
+      }
+
+      if (mode === "measure") {
+        const picked = document.elementFromPoint(event.clientX, event.clientY);
+        if (!picked || !eligible(picked)) return;
+
+        // First click anchors, second commits. The same contract as `point` — hover
+        // reads, click writes — measure just needs two clicks to have anything to say.
+        if (!measureOverlay.anchor) {
+          measureOverlay.setAnchor(picked);
+          render();
+          return;
+        }
+        const from = measureOverlay.anchor;
+        const measurements = currentMeasurements(picked);
+        measureOverlay.setAnchor(null);
+        void beginAnnotation(
+          from === picked ? [picked] : [from, picked],
+          undefined,
+          measurements,
+        );
+        return;
+      }
 
       if (mode !== "point") return;
       const target = document.elementFromPoint(event.clientX, event.clientY);
@@ -1489,6 +2180,18 @@ function installTopFrame(): void {
         toggleSettings(false);
         return;
       }
+      if (cssCard) {
+        toggleCssCard(false);
+        return;
+      }
+      // A half-taken measurement is as likely a target for Escape as a half-built pick
+      // set, and for the same reason: it is a gesture the user started and abandoned.
+      // Neither leaves the mode — only the gesture.
+      if (measureOverlay.anchor) {
+        measureOverlay.setAnchor(null);
+        if (hoveredElement?.isConnected) void updateHover(hoveredElement);
+        return;
+      }
       // A half-built pick set is the thing Escape is most likely to be aimed at, so it
       // goes before the panel and before leaving inspect mode entirely.
       if (picked.length) {
@@ -1508,10 +2211,16 @@ function installTopFrame(): void {
 
     if (composer) return;
 
-    // Never hijack a key the user is typing into the page.
-    const target = keyboard.target as HTMLElement | null;
-    if (target?.isContentEditable) return;
-    if (target && /^(input|textarea|select)$/i.test(target.tagName)) return;
+    // Never hijack a key the user is typing — into the page, or into our own UI.
+    //
+    // `event.target` is **retargeted to the shadow host** for anything inside our shadow
+    // root, so it reports `DIV` and every guard below silently misses: typing `15px`
+    // into a CSS value switched to mode 1 and then mode 5, and typing a column count
+    // into Settings switched modes behind the card. `composedPath()[0]` is the element
+    // actually focused, on both sides of the boundary.
+    const target = (keyboard.composedPath()[0] as HTMLElement | undefined) ??
+      (keyboard.target as HTMLElement | null);
+    if (isTextEntry(target)) return;
     if (keyboard.metaKey || keyboard.ctrlKey || keyboard.altKey) return;
 
     // Above the `active` guard on purpose: the pill covers the bottom-right corner
@@ -1530,6 +2239,7 @@ function installTopFrame(): void {
         resetMarquee();
         clearPicked();
         overlay.hideAll();
+        measureOverlay.hideAll();
         render();
         break;
       case "2":
@@ -1537,6 +2247,27 @@ function installTopFrame(): void {
         resetMarquee();
         clearPicked();
         overlay.hideAll();
+        measureOverlay.hideAll();
+        render();
+        break;
+      case "5":
+        if (!settings.cssEditor) break;
+        mode = "edit";
+        resetMarquee();
+        clearPicked();
+        overlay.hideAll();
+        measureOverlay.hideAll();
+        render();
+        break;
+      case "4":
+        // A key for a mode whose button is not on the toolbar would be a key that does
+        // nothing visible, which is worse than a key that does nothing.
+        if (!measureModeAvailable()) break;
+        mode = "measure";
+        resetMarquee();
+        clearPicked();
+        overlay.hideAll();
+        measureOverlay.hideAll();
         render();
         break;
       case "3":
@@ -1544,6 +2275,7 @@ function installTopFrame(): void {
         resetMarquee();
         clearPicked();
         overlay.hideAll();
+        measureOverlay.hideAll();
         render();
         break;
       // Annotate what the pointer is already over, without clicking it.

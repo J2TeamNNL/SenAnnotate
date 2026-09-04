@@ -12,6 +12,19 @@ export interface ToolbarState {
   frozen: boolean;
   panelOpen: boolean;
   settingsOpen: boolean;
+  /**
+   * Whether mode 4 exists at all. Computed by the caller from two settings — the toolbar
+   * has no business knowing that the switch it obeys is really two.
+   */
+  measureMode: boolean;
+  /**
+   * Whether the colour picker sits on the pill. Separate from `measureMode`: the picker
+   * belongs to the measuring master, not to the distance mode, so switching mode 4 off
+   * must not take it away.
+   */
+  colourPicker: boolean;
+  /** Whether mode 5 exists. Its own master, independent of the measuring one. */
+  cssEditor: boolean;
   /** Shrunk to a single handle, so the pill stops covering the page. */
   collapsed: boolean;
   count: number;
@@ -24,9 +37,19 @@ export interface ToolbarCallbacks {
   onToggleFreeze(): void;
   onTogglePanel(): void;
   onToggleSettings(): void;
+  onPickColour(): void;
   onToggleCollapse(): void;
   /** Fired once, on drop — not per frame. The drag itself needs no persistence. */
   onMove(position: { x: number; y: number }): void;
+  /**
+   * The dock has moved or resized — every frame of a drag, a resize re-clamp, a
+   * collapse. Carries nothing: a listener that needs the geometry asks `dockBox()`
+   * for it, so this cannot go stale between the two.
+   *
+   * Separate from `onMove` because that one persists and therefore only fires on drop.
+   * A card anchored to the pill has to keep up with the pointer, not with storage.
+   */
+  onDockShift?(): void;
 }
 
 /**
@@ -49,6 +72,8 @@ const MODES: { mode: InspectMode; iconName: string; title: string }[] = [
   { mode: "point", iconName: "cursor", title: "Click an element (1)" },
   { mode: "text", iconName: "text", title: "Select text (2)" },
   { mode: "area", iconName: "marquee", title: "Drag across elements (3)" },
+  { mode: "measure", iconName: "arrows", title: "Measure distances (4)" },
+  { mode: "edit", iconName: "pencil", title: "Edit CSS (5)" },
 ];
 
 /**
@@ -60,7 +85,27 @@ const MODE_HINTS: Record<InspectMode, string> = {
   point: "Click an element · ⌘/Ctrl+drag across several · C captures hover · 2 text · 3 area",
   text: "Select text · 1 point · 3 area",
   area: "Drag across elements · 1 point · 2 text",
+  measure: "Click two elements · C captures the pair · Esc clears · 1 point · 2 text · 3 area",
+  edit: "Click an element to edit its CSS · Esc closes · 1 point · 2 text · 3 area",
 };
+
+/**
+ * Appended only when the measuring tools are switched on.
+ *
+ * The hint line is the only thing on screen that says a mode exists, so advertising a
+ * fourth one to someone who has not enabled it would be advertising a key that does
+ * nothing. With the setting off, all three hints read exactly as they did before
+ * measuring existed.
+ */
+const MEASURE_HINT = " · 4 measure";
+const EDIT_HINT = " · 5 edit";
+
+function hintFor(mode: InspectMode, measureMode: boolean, cssEditor: boolean): string {
+  let hint = MODE_HINTS[mode];
+  if (measureMode && mode !== "measure") hint += MEASURE_HINT;
+  if (cssEditor && mode !== "edit") hint += EDIT_HINT;
+  return hint;
+}
 
 export class Toolbar {
   readonly element: HTMLElement;
@@ -70,6 +115,7 @@ export class Toolbar {
   private readonly modeButtons = new Map<InspectMode, HTMLButtonElement>();
   private readonly modeGroup: HTMLElement;
   private readonly freezeButton: HTMLButtonElement;
+  private readonly pickerButton: HTMLButtonElement;
   private readonly panelButton: HTMLButtonElement;
   private readonly settingsButton: HTMLButtonElement;
   private readonly collapseButton: HTMLButtonElement;
@@ -103,7 +149,12 @@ export class Toolbar {
   private readonly resizeObserver: ResizeObserver;
   private modeHint = MODE_HINTS.point;
 
-  constructor(layer: HTMLElement, callbacks: ToolbarCallbacks) {
+  // Kept rather than only closed over: `paintPosition` fires `onDockShift` from outside
+  // the constructor, and it is the one callback the drag itself does not own.
+  constructor(
+    layer: HTMLElement,
+    private readonly callbacks: ToolbarCallbacks,
+  ) {
     this.brandLabel = h("span", { class: "tool__label", text: "Inspect" });
     this.brandButton = h(
       "button",
@@ -141,6 +192,18 @@ export class Toolbar {
         on: { click: () => callbacks.onToggleFreeze() },
       },
       icon("snowflake"),
+    );
+
+    this.pickerButton = h(
+      "button",
+      {
+        class: "tool tool--picker",
+        attrs: { "aria-label": "Pick a colour" },
+        // Straight through, nothing awaited in front of it: `EyeDropper` needs the
+        // click's transient activation and an `await` on the way would spend it.
+        on: { click: () => callbacks.onPickColour() },
+      },
+      icon("eyedropper"),
     );
 
     this.countBadge = h("span", { class: "count", text: "0", style: { display: "none" } });
@@ -199,6 +262,7 @@ export class Toolbar {
       this.modeGroup,
       h("span", { class: "divider" }),
       this.freezeButton,
+      this.pickerButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -217,6 +281,7 @@ export class Toolbar {
       this.brandButton,
       ...this.modeButtons.values(),
       this.freezeButton,
+      this.pickerButton,
       this.panelButton,
       this.settingsButton,
       this.collapseButton,
@@ -406,6 +471,25 @@ export class Toolbar {
     // as the pointer crosses `HINT_FLIP_TOP` mid-drag would jerk the pill ~30px under a
     // stationary cursor and jerk it back on the way out.
     this.element.dataset.hintBelow = String(!this.hintVisible && top < HINT_FLIP_TOP);
+
+    this.callbacks.onDockShift?.();
+  }
+
+  /**
+   * The dock's box, for anything that positions itself against the pill — or `null`
+   * while the pill sits in its CSS corner.
+   *
+   * `null` rather than the corner's measured rect on purpose: the caller is then free to
+   * leave the default placement to the stylesheet, which is where it is written and where
+   * it is tested. Read from the DOM every time rather than cached, because a resize moves
+   * the dock without going through this class at all.
+   *
+   * The box includes the hint line when one is showing — it is a child of the dock — so a
+   * card placed off this box clears the hint without having to predict its height.
+   */
+  dockBox(): DOMRect | null {
+    if (this.element.dataset.floating !== "true") return null;
+    return this.element.getBoundingClientRect();
   }
 
   /**
@@ -423,6 +507,9 @@ export class Toolbar {
       delete this.element.dataset.hintBelow;
       this.element.style.removeProperty("left");
       this.element.style.removeProperty("top");
+      // Back to the CSS corner is a move like any other: whatever was anchored to the
+      // dock has to hear about it, and `dockBox()` will now answer `null`.
+      this.callbacks.onDockShift?.();
       return;
     }
     this.paintPosition();
@@ -446,7 +533,17 @@ export class Toolbar {
     this.brandLabel.textContent = state.active ? "Inspecting" : "Inspect";
     this.modeGroup.style.display = state.active ? "flex" : "none";
 
-    this.modeHint = MODE_HINTS[state.mode];
+    // The button exists from construction and is hidden rather than rebuilt: the mode
+    // map is what `onModeChange` and the e2e locators both go through.
+    const measureModeButton = this.modeButtons.get("measure");
+    if (measureModeButton) measureModeButton.style.display = state.measureMode ? "" : "none";
+
+    this.pickerButton.style.display = state.colourPicker ? "" : "none";
+
+    const editButton = this.modeButtons.get("edit");
+    if (editButton) editButton.style.display = state.cssEditor ? "" : "none";
+
+    this.modeHint = hintFor(state.mode, state.measureMode, state.cssEditor);
     this.hintVisible = state.active;
     this.hintElement.style.display = state.active ? "block" : "none";
     if (this.hintOverride === null) this.hintElement.textContent = this.modeHint;

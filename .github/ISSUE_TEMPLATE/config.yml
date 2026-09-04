@@ -1,0 +1,24 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting
+    url: https://github.com/thangnm93/SenAnnotate/wiki/Troubleshooting
+    about: >
+      Missing toolbar, dead keyboard shortcuts, no component or source line, notes that
+      vanished, and the "not trusted by Enhanced Safe Browsing" warning — which is
+      Chrome's install-age clock rather than a fault, and has no fix.
+
+  - name: How to use it
+    url: https://github.com/thangnm93/SenAnnotate/wiki
+    about: >
+      Twenty pages covering every gesture, setting and output format, illustrated with
+      screenshots of the extension.
+
+  - name: Will it work on my stack?
+    url: https://github.com/thangnm93/SenAnnotate/wiki/Framework-Support
+    about: >
+      The honest matrix — including what React 19, Angular and production builds cannot
+      give you, and what 1.7 KB buys back on a Vue production build.
+
+  - name: Security issue
+    url: https://github.com/thangnm93/SenAnnotate/security/advisories/new
+    about: Report privately, not as a public issue.

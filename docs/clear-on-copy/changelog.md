@@ -67,7 +67,7 @@ this was a fresh checkout with no `node_modules`.
 
 **`npm test` was not run.** The suite needs `SENANNOTATE_PLAYWRIGHT_DIR` pointing at a
 directory whose `node_modules` contains playwright, and the path recorded in
-`CLAUDE.md` (`/Users/thangnm/Documents/Works/storefront_playwright_test`) does not
+`CLAUDE.md` (`<path to playwright>`) does not
 exist on this machine — it belongs to a different user account. There is no playwright
 in the global npm prefix and no sibling checkout carrying one. The browsers themselves
 are present in `~/Library/Caches/ms-playwright`, so only the node module and a
@@ -85,3 +85,143 @@ such a check needs to pin, when the suite can next be run:
 
 0.6.0 grew `test/e2e.mjs` by 375 lines, so the suite is now the larger part of the
 verification story and skipping it is a bigger gap than it was when this was written.
+
+---
+
+## 2026-08-18 — audited, and the e2e gap above closed
+
+The feature was re-read against its own brief and then driven in a real browser. It
+behaves as its label says: `clearOnCopy` fires on the panel's *Copy report* only, only
+after `copyText` resolves `true`, and takes the annotations, the diagnostics buffer and
+the action trail with it, in storage as well as on screen.
+
+Two runs were needed, because one criterion cannot be reached from inside the suite.
+
+**Added to `test/e2e.mjs`** — a block of 14 checks on its own fixture,
+`test/fixtures/clear-copy.html`, placed immediately before the export/import block:
+
+- the default path is unchanged: report on the clipboard, annotations and badge intact,
+  toast reading exactly `Copied 1 annotation`
+- the checkbox is off on arrival
+- with it on: the report still reaches the clipboard, the toast reads
+  `Copied 1 annotation · cleared`, markers and badge go to zero, the panel falls back to
+  its empty state, and a reload proves the clear reached storage
+- the action trail goes too — a distinctly-named click before the clear is absent from
+  the next report, and that report's trail carries only the click made after it
+- the next report carries only the new note
+- **download does not clear** (asserted on the download event, not just the click)
+- the popup's *Copy session* does not clear either, whatever the setting says
+- the setting turns back off and the default path returns
+
+The block ends with the setting off deliberately: it lives in `storage.sync`, so leaving
+it on would make every copy in the blocks below wipe the page it had just copied. The
+fixture is its own for the usual reason — this block counts markers and reads `.count`.
+
+**Not in the suite: a failed copy must never clear.** Reaching it needs both clipboard
+routes to refuse *inside the ISOLATED world*, and neither `navigator.clipboard` nor
+`document.execCommand` can be patched from the page — each world has its own. It was
+verified instead against a copy of `dist/` whose `content.js` was prefixed with a stub
+making `writeText` reject and `execCommand` return `false`: the toast read `Copy failed`,
+the annotation stayed on the page, and it was still there after a reload. Same shape of
+reason `upgrade.mjs` sits outside `e2e.mjs` — a second bundle, so a second launch.
+
+### What went wrong while writing it
+
+The trail assertion failed on its first run, and the feature was not at fault. It matched
+`/Stale click/` over the whole report; at **forensic** detail an entry carries
+`**Nearby elements:**`, which quoted `div.row "Stale click Fresh click"` — the fixture's
+own buttons, nothing to do with the trail. An earlier block leaves `detailLevel` at
+forensic, so any regex over a whole report in this file is level-dependent by default.
+The check now extracts the `## Steps to reproduce` section and reads only that.
+
+### Two things worth a decision, neither changed here
+
+- **The popup's *Copy session* never clears.** Defensible — it spans pages, and clearing
+  across pages is out of scope by design — but `context.md` argues the download exclusion
+  at length and never mentions this one. It is now at least pinned by a test.
+- **`count` is read before the `await`, and `wipeAnnotations()` empties the whole list.**
+  An annotation arriving during the clipboard round-trip — realistically only a draft
+  handed up from a child frame — would be wiped uncounted, and the toast would understate
+  what was destroyed. Clearing by copied id rather than by truncation would close it.
+
+## 2026-08-18 — the clear is scoped to what was copied
+
+The second of the two open questions above, fixed. `copyReport()` used to read the count
+before the clipboard call but let `wipeAnnotations()` truncate the *live* list afterwards,
+so anything filed during the round-trip was destroyed without ever having been in the
+report, and the toast understated what it had taken.
+
+It now takes one snapshot before the call — the array the report was built from — and
+uses it for both halves: `count` for the toast, and the ids for
+`wipeAnnotations(only?: ReadonlySet<string>)`, which removes those and leaves the rest.
+`clearAll()` passes nothing and still empties everything.
+
+Two things checked before writing it, because the fix rests on them:
+
+- **The snapshot is real.** `annotations` is never mutated in place — every add, edit and
+  delete assigns a new array (`grep 'annotations.push\|annotations.splice'` is empty), so
+  holding the reference holds the list as it was.
+- **Every new annotation arrives through the composer's `onSubmit`.** `captureHovered()`
+  and a draft handed up from a child frame both open a composer rather than filing
+  directly, which is what makes the window narrow enough to have gone unnoticed — and
+  reachable at all, since a submit is one keystroke.
+
+The diagnostics and the trail still go unconditionally; `context.md` now says why.
+
+**No e2e check.** The window is a few milliseconds inside a promise the page cannot slow
+down: `navigator.clipboard` lives in the ISOLATED world, so nothing the fixture does can
+stall the write, and a fixture cannot submit a composer at a chosen point inside it. What
+the suite does cover is the regression risk this change carries — that scoping the clear
+leaves something behind — via "clearing empties the page" and "the clear reaches storage".
+249/249 after the change.
+
+### Found while writing it: an unsaved draft dies with the clear — closed below
+
+`wipeAnnotations()` calls `closeComposer()` unconditionally, and an open composer holding
+an *unsaved* draft is work the copy never took either. It is reachable without any race:
+open a composer, type, then hit **Copy report** in the panel with the setting on, and the
+draft is gone. Left alone in that commit — a different bug from the one it fixes — and
+closed in the next entry.
+
+## 2026-08-18 — an unsaved draft is not the copy's to destroy
+
+The item left open above. `wipeAnnotations()` closed the composer unconditionally, so a
+draft being typed died with the clear — reachable with no race at all: open a composer,
+type, hit **Copy report** with the setting on.
+
+The composer now records what it is editing (`composerEditing`, `null` for a new draft) and
+the clear reads it: an editor whose annotation just went closes with it, an unsaved draft
+stays. By id rather than identity, because an import merge replaces the objects in the list.
+
+Removing the unconditional `closeComposer()` also removed something it was doing on the
+side — hiding the overlay highlights — which the panel's hover preview depends on: the row
+the pointer is over is about to be removed, and a removed element never sends `mouseleave`,
+so its box would have been left on the page. The clear now hides the highlights whenever no
+composer is left to own them.
+
+Three checks added to the clear-after-copy block, and this time the window is wide enough to
+drive: the draft survives with its text intact, it still files onto the page the copy
+emptied, and an editor whose annotation was removed is gone. Measured both ways against a
+dist built from the previous commit — the draft was destroyed there, kept here — so the
+checks would catch the regression rather than merely describe it. 252/252.
+
+## 2026-08-18 — the popup's Copy session, written down
+
+The last item the audit left open. `context.md` argued the download exclusion at length
+and never mentioned the other copy that does not clear, so the omission read like an
+oversight rather than a decision.
+
+It is now a section of its own, and the argument turned out to be stronger than the
+download's — that one is about the label, this one about what the popup can honestly do:
+
+- a session report is not one page, and everything else here is scoped to
+  `origin + pathname`; a per-page checkbox cannot quietly buy a session-wide delete
+- the popup cannot tell the open tabs. `onSettingsChanged` watches `sync` for the settings
+  key alone, and annotations are read once at boot from `local`, so a popup-side wipe would
+  leave open tabs drawing markers for annotations that no longer exist. Import gets away
+  with it because it only adds
+- taking a session report twice during one walkthrough is normal; clearing on the first
+  would make the second a partial
+
+No code changed. The behaviour was already pinned by "the popup's session copy never
+clears, setting or not" in the clear-after-copy block.

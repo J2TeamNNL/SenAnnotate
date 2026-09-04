@@ -26,7 +26,7 @@ npm run pack         # → senannotate-<version>.zip (dist/ + TESTER-GUIDE.md)
 records no default (see the header of `test/e2e.mjs` for the reasoning):
 
 ```bash
-SENANNOTATE_PLAYWRIGHT_DIR=/Users/thangnm/Documents/Works/storefront_playwright_test npm test
+SENANNOTATE_PLAYWRIGHT_DIR=<path to playwright> npm test
 ```
 
 Add `SENANNOTATE_HEADLESS=1` to run it **without a window on screen** — Chrome's *new* headless
@@ -69,11 +69,14 @@ That single fact forces the three-context split:
 | `popup.js` (IIFE) | popup page | `src/popup/` | settings |
 
 `src/shared/` is the only code all four import: `types.ts`, `protocol.ts` (wire protocol +
-storage keys), `output.ts` (the Markdown report), `archive.ts` (export/import), `accent.ts`
+storage keys), `output.ts` (the Markdown report), `archive.ts` (export/import), `share.ts`
+(the self-contained `.html` review), `download.ts` (save a blob the plain DOM way), `accent.ts`
 (the accent colour and the two shades derived from it). Nothing in `popup/` or `background/`
 may import from `content/` — that inversion is what put `archive.ts` in `shared/` rather than
-next to `content/storage.ts`, and it is why `accent.ts` returns colours rather than CSS
-variable names: the overlay calls them `--sa-accent*` and the popup calls them `--accent*`.
+next to `content/storage.ts`, and `download.ts` is the same rule with a second worked example:
+the popup saves files too, so the saver cannot live in `content/`. It is also why `accent.ts`
+returns colours rather than CSS variable names: the overlay calls them `--sa-accent*` and the
+popup calls them `--accent*`.
 
 **Both content scripts run with `all_frames: true`.** `src/content/index.ts` therefore
 ends in a branch, and it is the most important line in the file:
@@ -152,6 +155,12 @@ round-trip, and works identically with no framework at all. Keep it that way.
   *and* `setTimeout`, so any in-page polling loop — including Playwright's, whichever
   `polling` you pass — is held by the state it is waiting for. Use a Node-side
   `waitForTimeout` plus one `evaluate`.
+- **`shared/share.ts` is the only HTML sink in the project.** Everything it emits goes
+  through the `html` tagged template, which escapes every interpolation; `raw()` is the one
+  spelled exception and its arguments are validated first (a `data:` image URI matched against
+  an allowlist, never an `svg+xml` — SVG runs script). The exported file also carries its own
+  CSP. A second sink, or one `+` concatenation past the template, is an XSS hole in a file
+  people forward to colleagues.
 - **Privacy guarantees have tests and must not regress:** field *values* are never recorded
   (the trail says `Edited Password`), request/response bodies are never recorded, and
   credential-looking query params are `[redacted]` before storage.
@@ -159,6 +168,51 @@ round-trip, and works identically with no framework at all. Keep it that way.
   go in `chrome.storage.sync`, annotations in `local`. Both keys live in `shared/protocol.ts`
   because the popup needs the same strings.
 - Chrome 111 minimum (`world: "MAIN"`); esbuild targets `chrome111`.
+
+## Opening an issue or a pull request
+
+`.github/` holds the templates. **Fill the existing one in — do not invent a structure.**
+An agent writing its own PR body is the most common way the four rules below get skipped,
+because a body you wrote yourself never asks you the question you did not think of.
+
+**Pull requests.** `.github/PULL_REQUEST_TEMPLATE.md` pre-fills the body in the web UI,
+and `gh pr create` pre-fills its editor from it too — but **only when it runs
+interactively**. An agent passing `--body` or `--body-file` bypasses it entirely, which
+is exactly the path an agent takes, so start from the file on purpose:
+
+```bash
+gh pr create --body-file .github/PULL_REQUEST_TEMPLATE.md   # then edit
+# or: cp it to a scratch file, fill it in, pass that
+```
+
+Keep every heading and every checklist item, including the conditional sections; delete a
+section only when the change genuinely does not touch it. Tick a verification box **only
+after running the command** — an unticked box is information, a wrongly ticked one is a
+false claim to a reviewer, and `npm test` in particular cannot be inferred from a green
+CI tick.
+
+**Issues.** `.github/ISSUE_TEMPLATE/` holds three YAML forms — bug, framework detection,
+feature. `gh issue create --template <name>` uses one; if the gh version in front of you
+will not take a YAML form, read the file and answer every field it asks for. The required
+fields are required because triage stalls without them: the version, the install route,
+and whether the page is a production build. `blank_issues_enabled` is `false` on purpose.
+
+**The four things the PR template exists to stop.** They are in the template; they are
+here because an agent that reads this file may not open the template first:
+
+1. **A commit subject is a release note.** `CHANGELOG.md` is generated from Conventional
+   Commit subjects between tags — see *Releasing* below.
+2. **A green CI tick is not a test run.** CI is typecheck + build + pack. `npm test`
+   needs a browser and never runs there; run it yourself and say so.
+3. **`docs/<task-slug>/` is expected** on anything non-trivial, and reviewers read it.
+4. **Three modules carry a licensing constraint** — the next section.
+
+Conventions the template checks: branch `feature/<slug>`, `fix/<slug>` or `chore/<slug>`;
+Conventional Commit subjects; no version bump (releases are their own commit); no
+hand-edited `CHANGELOG.md`; `wiki/` updated when user-visible behaviour changed.
+
+`.github/CONTRIBUTING.md` is the prose version of all of this, and the wiki's
+*Development* page has the traps.
 
 ## Licensing constraint
 
