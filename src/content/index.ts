@@ -57,10 +57,12 @@ import {
 import { resolveSource } from "./source";
 import {
   loadAnnotations,
+  loadComposerPosition,
   loadDockPosition,
   loadSettings,
   onSettingsChanged,
   saveAnnotations,
+  saveComposerPosition,
   saveDockPosition,
   saveSettings,
 } from "./storage";
@@ -155,6 +157,13 @@ let picked: Element[] = [];
  * window drag, which is no place for a storage read.
  */
 let dockPosition: { x: number; y: number } | null = null;
+
+/**
+ * Where the composer card was last dropped on *this* page, or `null` for the
+ * element-anchored default. Kept in memory alongside `dockPosition` so that
+ * `applyPosition` on resize can re-clamp without hitting storage.
+ */
+let composerPosition: { x: number; y: number } | null = null;
 
 /** Elements the composer is currently about — kept live for screenshotting. */
 let composerTargets: Element[] = [];
@@ -622,8 +631,18 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
             ui.toast("Annotation deleted");
           }
         : undefined,
+      onMove: (position) => {
+        // Saved on drop, not per frame — a drag at pointer frequency would write
+        // sixty times a second for as long as the button is held.
+        composerPosition = position;
+        void saveComposerPosition(position);
+      },
     },
   );
+  // Apply the saved position after construction, exactly as `toolbar.applyPosition`
+  // runs after `createTopUi`. If `composerPosition` is null the card stays where
+  // `position()` anchored it near the target element — the pre-drag default.
+  composer.applyPosition(composerPosition);
 }
 
 function closeComposer(): void {
@@ -1101,6 +1120,8 @@ function queueSync(): void {
       // A window narrowed since the position was saved can leave the pill off-screen,
       // so the stored coordinates are re-clamped rather than trusted.
       toolbar.applyPosition(dockPosition);
+      // Re-clamp the composer too, if it is open and has been dragged somewhere.
+      composer?.applyPosition(composerPosition);
     }
     // A dialog that resizes, or animates into place after it opened, changes whether it is a
     // containing block for our fixed host — and a resize changes the viewport we fit to.
@@ -1167,6 +1188,10 @@ async function boot(): Promise<void> {
   // pill for a user whose toolbar starts collapsed — moving a handle dropped at the
   // right edge some 300px inward on every reload.
   dockPosition = await loadDockPosition();
+  // Load alongside the toolbar position: both are per-page layout facts. The composer
+  // is not open yet, so nothing to `applyPosition` here — the saved point is passed
+  // to every subsequent `openComposer` call via the module-level `composerPosition`.
+  composerPosition = await loadComposerPosition();
 
   onSettingsChanged((next) => {
     settings = next;
