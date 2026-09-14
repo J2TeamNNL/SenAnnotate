@@ -204,6 +204,15 @@ mostly about the one real decision — `sessionStorage`, not `chrome.storage`, b
 state is per-tab and per-session — and why there is deliberately no in-tab way back.
 `changelog.md` has the miscounting-test wrong turn: a hidden node still counts.
 
+## [`toolbar-close/`](./toolbar-close/) — unreleased
+
+A `✕` at the right end of the toolbar pill that hides the overlay for the current
+page-load only; a reload (or the extension icon) brings it back. A revival of closed PR
+#6, rebased onto 0.8.4 and extended to interoperate explicitly with "Hide until restart"
+(PR #11). `context.md` explains the two controls' scopes, why the icon restores rather
+than immediately toggling inspect, and why the attribute approach was chosen over an
+inline style (it is the one the screenshot path does not own).
+
 ## [`clear-on-copy/`](./clear-on-copy/) — unreleased
 
 Copying the report can now empty the page's annotations, so the next round starts clean.

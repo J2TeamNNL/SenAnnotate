@@ -2931,6 +2931,122 @@ async function main() {
     await settingsPageUnderTest.close();
 
     // -------------------------------------------------------------------------
+    // Toolbar X — quick hide for this page-load
+    // -------------------------------------------------------------------------
+    //
+    // Dedicated fixture (close-x.html) so annotation storage is isolated —
+    // `chrome.storage.local` is keyed on origin+pathname and shared across the
+    // whole suite's context. Any page another block annotates cannot carry a
+    // count assertion here.
+    //
+    // The block tests: X hides the overlay; reload shows it again; clicking the
+    // extension icon when X-hidden restores the overlay without toggling inspect;
+    // `H` does nothing while hidden; "Hide until restart" is unaffected.
+    const closeXPage = await context.newPage();
+    await closeXPage.goto(`${base}/close-x.html`);
+    await closeXPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const closeXButton = closeXPage.locator(".tool--close");
+
+    // The X button is the last one in the pill.
+    check("X button present in toolbar", (await closeXButton.count()) === 1, "no .tool--close");
+    check("X button visible", await closeXButton.isVisible(), "not visible");
+
+    await closeXButton.click();
+    await closeXPage.waitForTimeout(200);
+
+    check(
+      "X hides the overlay (data-hidden attribute set)",
+      await closeXPage.evaluate(() => {
+        const host = document.querySelector("[data-senannotate-ui]");
+        return host?.hasAttribute("data-hidden") ?? false;
+      }),
+      "data-hidden not set",
+    );
+    check(
+      "X hides the toolbar",
+      !(await closeXPage.locator(".toolbar").isVisible()),
+      "toolbar still visible",
+    );
+
+    // `H` must not silently toggle a collapse while hidden.
+    await closeXPage.keyboard.press("h");
+    await closeXPage.waitForTimeout(150);
+    check(
+      "H does nothing while X-hidden",
+      await closeXPage.evaluate(() => {
+        const host = document.querySelector("[data-senannotate-ui]");
+        const dock = host?.shadowRoot?.querySelector(".toolbar-dock");
+        return dock?.getAttribute("data-collapsed") !== "true";
+      }),
+      "toolbar was collapsed while hidden",
+    );
+
+    // Reload should restore the overlay (in-memory state, not stored).
+    await closeXPage.reload();
+    await closeXPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    check(
+      "reload restores the overlay",
+      await closeXPage.locator(".toolbar").isVisible(),
+      "toolbar not visible after reload",
+    );
+    check(
+      "data-hidden cleared after reload",
+      await closeXPage.evaluate(() => {
+        const host = document.querySelector("[data-senannotate-ui]");
+        return !(host?.hasAttribute("data-hidden") ?? true);
+      }),
+      "data-hidden still set after reload",
+    );
+
+    // X again, then simulate the extension icon / keyboard shortcut path by sending
+    // toggle-inspect via the service worker — same code path as the popup and the
+    // keyboard shortcut. First click when X-hidden → unhide only; second → inspect.
+    await closeXButton.click();
+    await closeXPage.waitForTimeout(200);
+    check(
+      "X-hidden before icon-click test",
+      !(await closeXPage.locator(".toolbar").isVisible()),
+      "toolbar visible — expected hidden",
+    );
+
+    // The fixture page is a normal webpage — `chrome` is not available there.
+    // Use the service worker's context, which has full chrome.* access, to send
+    // toggle-inspect to the fixture tab by URL match (same as the keyboard shortcut path).
+    const closeXUrl = closeXPage.url();
+    const [swWorker] = context.serviceWorkers();
+    let iconResponse = null;
+    if (swWorker) {
+      iconResponse = await swWorker.evaluate(async (url) => {
+        // chrome.tabs.query({url}) requires a match pattern, not a full URL —
+        // query all tabs and find by exact URL match instead.
+        const tabs = await chrome.tabs.query({});
+        const tab = tabs.find((t) => t.url === url);
+        if (!tab?.id) return null;
+        try {
+          return await chrome.tabs.sendMessage(tab.id, { kind: "toggle-inspect" });
+        } catch {
+          return null;
+        }
+      }, closeXUrl);
+    }
+    await closeXPage.waitForTimeout(400);
+
+    check(
+      "icon click when X-hidden shows overlay (does not toggle inspect)",
+      await closeXPage.locator(".toolbar").isVisible(),
+      "toolbar not visible after icon click",
+    );
+    // `active` should still be false — we only unhid, did not start inspecting.
+    check(
+      "icon click when X-hidden does not activate inspect",
+      iconResponse === null || iconResponse?.active === false,
+      `active was ${String(iconResponse?.active)}`,
+    );
+
+    await closeXPage.close();
+
+    // -------------------------------------------------------------------------
     // Collapse — the toolbar must get out of the way
     // -------------------------------------------------------------------------
     //
