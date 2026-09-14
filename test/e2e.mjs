@@ -4654,6 +4654,242 @@ async function main() {
       await popup.close();
     }
 
+    // -------------------------------------------------------------------------
+    // Right-click menu — the third way in
+    // -------------------------------------------------------------------------
+    //
+    // Playwright cannot open a native context menu, and `chrome.contextMenus` has no query
+    // API, so the menu *entries* themselves are unverifiable here — the check below that
+    // the worker created them without throwing is as close as it gets.
+    //
+    // What is fully testable is the part with the behaviour in it, which is the whole
+    // design: the content script records the element on `contextmenu` (real event, real
+    // capture-phase listener) and the service worker sends the real `annotate-context`
+    // message over `chrome.tabs.sendMessage`. Only the native menu widget is simulated.
+    if (extensionId && worker) {
+      const ctx = await context.newPage();
+      await ctx.goto(`${base}/context-menu.html`);
+      await ctx.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+      const ctxDock = ctx.locator(".toolbar-dock");
+      const ctxMeta = ctx.locator(".composer__meta");
+
+      /**
+       * Asserted through the duplicate-id error, which is the only observable the API has.
+       *
+       * `chrome.contextMenus` cannot be queried, so an entry's existence is only visible in
+       * the failure to create it again. Creating a *probe* id instead would assert nothing
+       * about the code that ships — `createMenus` could be deleted outright and the check
+       * would still pass — and it would leave a live entry behind wired to the annotate
+       * path. Re-creating the three real ids names the entries under test, proves
+       * `createMenus` ran, and adds nothing to the menu: a rejected create creates nothing,
+       * and the branch that succeeded (i.e. the entry was missing) removes what it made
+       * before failing the check.
+       */
+      const menuIds = ["senannotate:annotate", "senannotate:annotate-selection", "senannotate:toggle"];
+      const menuState = await worker.evaluate(
+        (ids) =>
+          Promise.all(
+            ids.map(
+              (id) =>
+                new Promise((resolve) => {
+                  try {
+                    chrome.contextMenus.create({ id, title: id, contexts: ["page"] }, () => {
+                      const error = chrome.runtime.lastError?.message ?? "";
+                      if (error) return resolve(`${id}: ${error}`);
+                      chrome.contextMenus.remove(id, () => resolve(`${id}: was not created`));
+                    });
+                  } catch (error) {
+                    resolve(`${id}: ${String(error)}`);
+                  }
+                }),
+            ),
+          ),
+        menuIds,
+      );
+      check(
+        "the worker created all three of its menu entries",
+        menuState.every((line) => /duplicate/i.test(line)),
+        menuState.join(" | "),
+      );
+
+      /**
+       * Right-click an element for real, then fire the menu item from the worker.
+       *
+       * A CDP right-click and not `dispatchEvent`: Playwright synthesises `contextmenu` as a
+       * plain `Event`, so it carries no `clientX`/`clientY` and `elementFromPoint` resolves
+       * nothing — the recorder stores `null` and the whole path silently no-ops. Measured;
+       * it cost a debugging session. The fixture cancels the default so Chrome's own menu
+       * never opens, which is what keeps this safe in a headed run.
+       */
+      const rightClickAnnotate = async (
+        selector,
+        { selection = false, selectionText = undefined, inFrame = false } = {},
+      ) => {
+        await ctx.locator(selector).click({ button: "right" });
+        await ctx.waitForTimeout(200);
+        await worker.evaluate(
+          async ([pageUrl, wantsSelection, text, wantsFrame]) => {
+            const [tab] = await chrome.tabs.query({ url: pageUrl });
+            if (tab?.id === undefined) return;
+            await chrome.tabs.sendMessage(
+              tab.id,
+              {
+                kind: "annotate-context",
+                selection: wantsSelection,
+                // Chrome fills `selectionText` from `OnClickData`; the content script never
+                // re-derives it, which is what makes a selection inside a field work.
+                selectionText: text,
+                inFrame: wantsFrame,
+              },
+              { frameId: 0 },
+            );
+          },
+          [`${base}/context-menu.html`, selection, selectionText, inFrame],
+        );
+        await ctx.waitForTimeout(600);
+      };
+
+      // Inspect mode is deliberately still off. That is the property worth pinning: the
+      // menu item is a complete request on its own, and someone who has armed nothing has
+      // to be able to use it — the DevTools *Inspect* parallel the feature is built on.
+      check(
+        "inspect mode is off before the menu is used",
+        (await ctxDock.getAttribute("data-inspecting")) === "false",
+        `data-inspecting read "${await ctxDock.getAttribute("data-inspecting")}"`,
+      );
+
+      await rightClickAnnotate("#ctxlabel");
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the menu item annotates the element that was right-clicked",
+        ((await ctxMeta.textContent()) ?? "").includes("Elementspan"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      check(
+        "using the menu item does not arm inspect mode",
+        (await ctxDock.getAttribute("data-inspecting")) === "false",
+        `data-inspecting read "${await ctxDock.getAttribute("data-inspecting")}"`,
+      );
+
+      // …and it stores, not merely displays.
+      await ctx.locator(".composer__input").fill("Wrong label on this button.");
+      await ctx.locator(".composer .button--primary").click();
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+      await ctx.locator('.tool[aria-label^="Annotations"]').click();
+      await ctx.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+      await ctx.locator(".panel .button--primary").click();
+      const ctxReport = await ctx.evaluate(() => navigator.clipboard.readText());
+      check(
+        "the note taken from the menu reaches the report",
+        ctxReport.includes("Wrong label on this button."),
+        ctxReport.slice(0, 300),
+      );
+      await ctx.locator('.tool[aria-label^="Annotations"]').click();
+
+      // A page with its own right-click menu stops the event dead. A bubble-phase listener
+      // would see nothing; ours is capture-phase precisely so this still works.
+      await rightClickAnnotate("#ctxmenu-eater");
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "a page that cancels contextmenu does not hide the element from us",
+        ((await ctxMeta.textContent()) ?? "").includes("div.ctxeater"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // The selection item carries the text, which is what makes it different from the
+      // element one rather than a duplicate of it.
+      await ctx.locator("#ctxtext").selectText();
+      await rightClickAnnotate("#ctxtext", {
+        selection: true,
+        selectionText: await ctx.evaluate(() => window.getSelection()?.toString() ?? ""),
+      });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item carries the selected text into the composer",
+        ((await ctxMeta.textContent()) ?? "").includes("worth quoting"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // A quote is about the element its *range* spans, not the node the pointer landed on:
+      // select across `foo <b>bar</b> baz` and right-click over the bold word, and the
+      // report has to name the paragraph — the same element text mode would have picked.
+      // Otherwise the same selection describes two different elements depending only on
+      // which entry point was used.
+      await ctx.locator("#ctxmixed").selectText();
+      await rightClickAnnotate("#ctxbold", {
+        selection: true,
+        selectionText: await ctx.evaluate(() => window.getSelection()?.toString() ?? ""),
+      });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item annotates the element the selection spans, not the pointer's",
+        // The Element row names the paragraph and not the `b` the pointer was over.
+        // Matched on the tag rather than `p.ctxmixed`: an element with text of its own is
+        // labelled by that text, so the `tag.class` fallback never appears here.
+        /Elementp\b/.test((await ctxMeta.textContent()) ?? "") &&
+          !((await ctxMeta.textContent()) ?? "").includes('b "bar"'),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // The quote is Chrome's `selectionText`, not the page's own reading of the selection.
+      //
+      // Which one is used only shows up where they differ, so this sends a `selectionText`
+      // that is *not* what the document selection says while a different element is
+      // selected: the composer has to show Chrome's copy. The case in the wild is a
+      // selection inside an `<input>` or `<textarea>` — not part of the document selection
+      // on every engine, while Chrome populates `selectionText` and therefore offers the
+      // item — and re-deriving in the page drops the quote from the annotation the user
+      // explicitly asked for. (This Chromium build does surface a field's selection to
+      // `getSelection()`, so that alone would prove nothing here.)
+      await ctx.locator("#ctxtext").selectText();
+      await rightClickAnnotate("#ctxinput", { selection: true, selectionText: "Typed into a field" });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the quote comes from the menu click, not from the page's own selection",
+        ((await ctxMeta.textContent()) ?? "").includes("Typed into a field") &&
+          !((await ctxMeta.textContent()) ?? "").includes("worth quoting"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // And the field case itself still carries its quote.
+      await ctx.locator("#ctxinput").selectText();
+      await rightClickAnnotate("#ctxinput", { selection: true, selectionText: "Typed into a field" });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item still quotes text selected inside a field",
+        ((await ctxMeta.textContent()) ?? "").includes("Typed into a field"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // A right-click inside an iframe is reported rather than half-handled: the top frame
+      // cannot learn which frame a `frameId` refers to, so annotating its own record would
+      // describe the wrong element with a straight face.
+      await rightClickAnnotate("#ctxbutton", { inFrame: true });
+      check(
+        "a right-click inside a frame opens no composer",
+        (await ctx.locator(".composer").count()) === 0,
+        `${await ctx.locator(".composer").count()} composers`,
+      );
+      check(
+        "and says why, rather than failing silently",
+        /inside a frame/i.test((await ctx.locator(".toast").textContent()) ?? ""),
+        `toast read "${((await ctx.locator(".toast").textContent()) ?? "").trim()}"`,
+      );
+
+      await ctx.close();
+    }
+
     // Surviving an actual version upgrade is asserted by `test/upgrade.mjs`, which runs
     // straight after this file. It needs two browser launches sharing one profile, which
     // this suite's single throwaway context cannot provide — and `chrome.runtime.reload()`

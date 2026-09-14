@@ -25,7 +25,9 @@ does it alter the page, and where does the data go.
 SenAnnotate has one purpose: to describe a web page element precisely enough that someone
 else can act on a note about it.
 
-The user turns on inspect mode, clicks an element, and types a note. The extension then
+The user points at an element — by turning on inspect mode and clicking it, or by
+right-clicking it and choosing the extension's entry in the context menu — and types a note.
+The extension then
 produces a Markdown report that names that element — its DOM path, a re-resolvable CSS
 selector, and, on pages built with Vue, React, Svelte or Angular, the component and the
 source file the framework itself reports — so the note can be handed to an AI coding
@@ -77,20 +79,36 @@ its own shadow root, which is what requires clipboardWrite. It is used only in r
 user pressing Copy, only to write, and the extension never reads the clipboard.
 ```
 
+### contextMenus
+
+```
+Used to add three entries to Chrome's right-click menu — "Annotate this element", "Annotate
+the text ..." and "Toggle inspect mode" — so the user can annotate one element without first
+turning on inspect mode, the same way DevTools' Inspect is reached. The entries are created
+once on install or update and are restricted with documentUrlPatterns to http, https and file
+pages, which are the only pages the extension's content script runs on. chrome.contextMenus
+reports only which entry the user clicked, the frame and page URL, and any selected text; the
+extension neither reads nor modifies any other menu, and it stores nothing as a result of a
+menu being opened. Choosing an entry sends a single message to the page the user is on, which
+is what opens the annotation composer.
+```
+
+---
+
 ### Host permission (`<all_urls>`)
 
 ```
-The extension annotates whichever page the user is already reviewing, and that can be any URL
-— a localhost dev server, a staging host, or production — so it cannot know the hosts in
-advance and declares its two content scripts for <all_urls>. What runs on every page is small
-and local: a floating toolbar inside a shadow root, and a capped in-memory record of console
-errors, failed requests and coarse interaction steps, which exists so a bug report can say
-what led to the problem. That record holds at most 60 entries of each kind, is never written
-to disk, and is discarded when the page reloads. Values typed into fields are never recorded
-and credential-like query parameters are redacted. The page's DOM is read in detail only when
-the user turns inspect mode on and clicks an element. The extension makes no network request
-of its own, so nothing from any page is transmitted anywhere; the notes go to the user's own
-disk only when the user saves them as a file.
+The extension annotates whichever page the user is already reviewing — localhost, staging or
+production — so it cannot know the hosts in advance and declares its two content scripts for
+<all_urls>. What runs on every page is small and local: a floating toolbar in a shadow root,
+and a capped in-memory record of console errors, failed requests and coarse interaction
+steps (at most 60 of each kind), discarded on reload, never written to disk. Field values
+are never recorded and credential-like query parameters are redacted. A right-click notes
+which element the pointer was over so the context-menu entry can act on it; that note is
+replaced by the next right-click. The page's DOM is read in detail only when the user
+annotates an element — by clicking it with inspect mode on, or by choosing the context-menu
+entry. The extension makes no network request of its own; notes go to the user's own disk
+only when the user saves them as a file.
 ```
 
 ---

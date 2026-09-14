@@ -42,6 +42,11 @@ Settings — report detail level, theme, whether diagnostics capture is on, tool
 are stored with `chrome.storage.sync`, so they follow your Chrome profile between machines.
 **Annotations are never written to sync storage.**
 
+When you right-click a page, the extension notes which element the pointer was over — so
+that picking *Annotate this element* from the menu acts on the thing you right-clicked. That
+is a reference to an element on the page you are already looking at; nothing about it is
+stored, or read in any detail, unless you then pick one of the menu entries and annotate it.
+
 ### Held in memory only, and discarded
 
 When diagnostics capture is on (the default, and switchable off in the extension's popup),
@@ -111,6 +116,7 @@ anywhere.
 | `storage` | Keep your annotations across a page reload, and your settings across machines. |
 | `activeTab` | Photograph the visible tab, only when you click the camera button. |
 | `clipboardWrite` | Write the report to your clipboard when you press Copy, including on pages that block the modern clipboard API. |
+| `contextMenus` | Add the *Annotate this element*, *Annotate the text "…"* and *Toggle inspect mode* entries to the right-click menu. Chrome tells the extension only which entry you picked; the menu itself is never read, and nothing is recorded because a menu opened. |
 | Host access (`<all_urls>`) | The page you want to annotate can be any URL — localhost, staging or production — so the extension cannot know the hosts in advance. |
 
 ## Removing your data
