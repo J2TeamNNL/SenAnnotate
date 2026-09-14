@@ -4270,6 +4270,106 @@ async function main() {
     await clearPage.close();
 
     // -------------------------------------------------------------------------
+    // SPA navigation — annotations must be isolated per pathname
+    // -------------------------------------------------------------------------
+    //
+    // Regression for the bug where `annotations` was loaded once in `boot()` and
+    // never refreshed when `history.pushState` changed the URL without a reload.
+    // Page A's notes ended up in page B's key on persist, and the report showed
+    // the wrong pathname in its header.
+    //
+    // The fixture has two virtual "pages" (A = /spa-nav.html, B = /spa-nav-b)
+    // and navigates between them via history.pushState so the 400 ms URL-watcher
+    // interval can observe the change without a real load.
+    {
+      const spaNav = await context.newPage();
+      await spaNav.goto(`${base}/spa-nav.html`);
+      await spaNav.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+      // Turn on inspect mode.
+      await spaNav.locator(".tool--brand").click();
+
+      // Annotate the page-A paragraph.
+      await spaNav.locator("#para-a").hover();
+      await spaNav.locator(".highlight__label").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator("#para-a").click();
+      await spaNav.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator(".composer__input").fill("Note on page A");
+      await spaNav.locator(".composer .button--primary").click();
+      await spaNav.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      check(
+        "SPA page A gets an annotation after clicking",
+        (await spaNav.locator(".marker").count()) === 1,
+        `${await spaNav.locator(".marker").count()} markers on page A`,
+      );
+      check(
+        "SPA page A count badge shows 1",
+        (await spaNav.locator(".count").textContent()) === "1",
+        `count reads "${await spaNav.locator(".count").textContent()}"`,
+      );
+
+      // SPA-navigate to page B via evaluate() rather than clicking the button.
+      //
+      // When inspect mode is active, the content script's capture-phase click
+      // handler calls `event.preventDefault()` and `event.stopPropagation()`,
+      // so a Playwright click on `#go-b` would be intercepted and turned into
+      // an annotation rather than a navigation. `evaluate()` runs in the page's
+      // MAIN world and bypasses the extension's DOM listener entirely.
+      await spaNav.evaluate(() => {
+        history.pushState(null, "", "/spa-nav-b");
+        document.getElementById("page-a").classList.remove("active");
+        document.getElementById("page-b").classList.add("active");
+      });
+
+      // The URL watcher fires on a 400 ms interval. Wait long enough for the
+      // interval + the async save/load round-trip + a render pass.
+      await spaNav.waitForTimeout(800);
+
+      check(
+        "SPA page B starts with no annotations (isolation)",
+        (await spaNav.locator(".marker").count()) === 0,
+        `${await spaNav.locator(".marker").count()} markers on page B — expected 0`,
+      );
+
+      // Annotate something on page B to verify the new page's list is writable.
+      await spaNav.locator("#para-b").hover();
+      await spaNav.locator(".highlight__label").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator("#para-b").click();
+      await spaNav.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator(".composer__input").fill("Note on page B");
+      await spaNav.locator(".composer .button--primary").click();
+      await spaNav.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      check(
+        "SPA page B accepts a new annotation",
+        (await spaNav.locator(".marker").count()) === 1,
+        `${await spaNav.locator(".marker").count()} markers on page B`,
+      );
+
+      // SPA-navigate back to page A (same approach: bypass inspect-mode click interception).
+      await spaNav.evaluate(() => {
+        history.pushState(null, "", "/spa-nav.html");
+        document.getElementById("page-b").classList.remove("active");
+        document.getElementById("page-a").classList.add("active");
+      });
+      await spaNav.waitForTimeout(800);
+
+      check(
+        "SPA page A annotation was preserved across navigation",
+        (await spaNav.locator(".marker").count()) === 1,
+        `${await spaNav.locator(".marker").count()} markers on page A after return — expected 1`,
+      );
+      check(
+        "SPA page A count badge still shows 1 after returning",
+        (await spaNav.locator(".count").textContent()) === "1",
+        `count reads "${await spaNav.locator(".count").textContent()}"`,
+      );
+
+      await spaNav.close();
+    }
+
+    // -------------------------------------------------------------------------
     // Export / import — driven through the real popup
     // -------------------------------------------------------------------------
     const [worker] = context.serviceWorkers();
