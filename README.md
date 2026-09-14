@@ -149,6 +149,7 @@ the line and column.
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements near each other | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+drag a box around them — or mode <kbd>3</kbd> and drag |
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
+| Attach a reference image | paste one into the composer, or use the button beside the camera |
 | Measure the gap between two elements | switch on **Measuring tools** in settings, then mode <kbd>4</kbd>: click one, then the other |
 | See an element's size, padding, margin, type and colours | **Box model on hover** in settings — or just enter mode <kbd>4</kbd> |
 | Check a contrast ratio | hover anything with text once measuring is on — the verdict is on the panel and in the report |
@@ -313,7 +314,14 @@ in the file moves onto the origin in the current tab, path kept.
 every note and every screenshot embedded, no script and nothing loaded from the network —
 a content security policy inside the file says so, so the recipient's browser enforces it
 rather than taking our word — which opens in any browser. Screenshots only travel when **Screenshots** is set to embed —
-a path points at *your* Downloads folder, not theirs.
+a path points at *your* Downloads folder, not theirs. A pasted **reference** always
+travels, because it is already stored as image data.
+
+Paste an image into the composer — a Figma frame, a design review screenshot, anything —
+and it travels with the note as a **reference**: what the element should look like
+*instead*, as opposed to the screenshot, which is what it looks like *now*. The report
+labels the two differently for exactly that reason. The button beside the camera does the
+same for an image already on disk. Three per note.
 
 ## Screenshots
 

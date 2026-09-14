@@ -233,6 +233,17 @@ HTML sink**: `share.ts` builds every string through one `html` tagged template t
 as it interpolates, and the document carries a CSP that makes "nothing loads from the
 network" a property of the file rather than a habit of this repo.
 
+## [`reference-images/`](./reference-images/) — unreleased
+
+Every image the extension held was a photograph of the *current* state. This adds the
+other kind: paste or attach what the element should look like **instead**. Its
+`context.md` is the one to read before touching image storage — it explains why this is a
+separate field rather than a `kind` on one list, why references outlive screenshots under
+quota pressure (a screenshot can be retaken; a pasted Figma frame cannot), and why the
+untrusted-paste path is open *by construction* rather than by choice: `ACTIVATION_EVENTS`
+cannot reach a handler registered through `listen()`. Read the disclosure half of that
+section before assuming an open shadow root is free.
+
 ## [`composer-retarget/`](./composer-retarget/) — unreleased
 
 Clicking picks whatever is under the pointer, which is routinely one level off what you

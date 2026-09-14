@@ -1,6 +1,6 @@
 # Privacy policy — SenAnnotate
 
-Last updated: 11 August 2026. Applies to the SenAnnotate Chrome extension.
+Last updated: 18 August 2026. Applies to the SenAnnotate Chrome extension.
 
 ## The short version
 
@@ -31,7 +31,13 @@ the page you are reviewing brings your notes back:
   text, CSS class names, computed styles, accessibility attributes, the full DOM path, and —
   on pages built with Vue, React, Svelte or Angular — the component names and source file
   the framework itself reports.
-- The filename of any screenshot you chose to save.
+- The filename of any screenshot you chose to save, and a downscaled copy of the
+  screenshot itself, so the note still carries its picture after a reload.
+- **Reference images you paste or attach**, up to three per note, downscaled and stored
+  the same way. These are files *you* supply — a design frame, a screenshot from another
+  window, anything you choose — so unlike everything else on this list they may hold
+  content that has nothing to do with the page you are on. They are stored exactly like
+  your note text: on your device, never uploaded, and deleted with the annotation.
 
 Because this describes real page content, it can incidentally include text that is personal
 — a customer name in a table row you annotated, for example. That text is only ever the
@@ -79,6 +85,28 @@ of the current tab, crops it to the annotated element in the page, and hands the
 Chrome's normal download flow. The image is not uploaded anywhere. No capture ever happens
 without that click.
 
+### Reference images, and what "paste" means here
+
+You can attach a picture of what an element *should* look like: paste one into the note, or
+pick one from disk with the button beside the camera.
+
+The paste is yours — nothing happens until you press ⌘/Ctrl+V with a note open. The
+extension does not poll, watch or read the clipboard at any other time, and there is no
+clipboard-read permission in its manifest that would let it. When you do paste, it takes
+the image off that one event and nothing else: if your clipboard also carries text, that
+text goes into the note's text box exactly as it would have, and the extension never looks
+at what it says.
+
+The image is then downscaled, re-encoded and stored beside the note on your device. It is
+not uploaded, not sent anywhere, and removing the thumbnail or deleting the note removes
+it.
+
+One limitation worth stating plainly: the extension's own interface lives in an *open*
+shadow root on the page you are reviewing, which means a script on that page can read what
+is displayed in it — including a reference image you have pasted but not yet saved. If the
+picture is confidential and the page you are annotating is not one you trust, that is worth
+knowing before you paste.
+
 ### Files you choose to save
 
 Three things leave the extension, all of them only when you press the button that produces
@@ -89,7 +117,8 @@ them, and all of them through Chrome's ordinary download flow to your own disk:
   refiles the notes under the site open in the current tab, since notes are stored per site.
 - **Save .html** — the same notes as one self-contained document for someone who does not
   have the extension. If your screenshots are set to be embedded, they are inside that file
-  as image data. It contains no script and loads nothing from the network, and it says so
+  as image data. A reference image you pasted always travels, because it is already stored
+  that way. It contains no script and loads nothing from the network, and it says so
   in its own content security policy.
 - **Download report** — the Markdown report as an `.md` file.
 
@@ -103,7 +132,10 @@ anywhere.
 - It does not sell or transfer your data to anyone — there is nowhere for it to go.
 - It does not use your data for anything unrelated to producing the report you asked for.
 - It does not use your data to assess creditworthiness or for lending purposes.
-- It does not read your clipboard. It only writes to it, when you press Copy.
+- It does not read your clipboard on its own, and holds no permission that would let it.
+  It writes to the clipboard when you press Copy, and it sees clipboard content in exactly
+  one other place: the paste you perform yourself into an open note, where it takes the
+  image and leaves the text to the text box (see *Reference images* below).
 - It does not modify, block or inject anything into the pages you visit beyond its own
   floating toolbar, which lives in a shadow root and is removed when you disable it.
 - It does not collect health, financial, payment, authentication or location data, and it
