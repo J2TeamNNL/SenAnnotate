@@ -38,6 +38,21 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * X-dismissed for this page-load.
+ *
+ * Everything the extension draws lives under this host — toolbar, panel, markers,
+ * highlights — so one rule takes them all together, which is the whole point of the X.
+ * An attribute, not an inline style, so `captureScreenshot`'s own inline hide/restore
+ * cannot accidentally un-hide an X-dismissed overlay.
+ *
+ * Separate from "Hide until restart" (Settings → sessionStorage), which applies before
+ * the message listener is even registered and survives reloads on the same tab.
+ */
+:host([data-hidden]) {
+  display: none !important;
+}
+
 :host([data-sa-theme="dark"]) {
   --sa-bg: rgba(22, 27, 34, 0.88);
   --sa-bg-solid: #161b22;
@@ -238,6 +253,23 @@ button {
 
 .tool--brand[aria-pressed="true"] {
   color: var(--sa-accent-ink);
+}
+
+/*
+ * Muted at rest, red on hover. This is the one control in the pill that takes the
+ * whole overlay away, so it should not compete for attention with the buttons you
+ * use constantly — but it must be unmistakable once reached for.
+ *
+ * Distinct from "Hide until restart" (Settings card): X is page-load scope;
+ * the settings option persists the tab's session in sessionStorage.
+ */
+.tool--close {
+  color: color-mix(in srgb, var(--sa-fg-muted) 70%, transparent);
+}
+
+.tool--close:hover {
+  background: color-mix(in srgb, #ef4444 16%, transparent);
+  color: #ef4444;
 }
 
 .tool__label {
@@ -1312,6 +1344,52 @@ button {
 
 .composer__input::placeholder {
   color: var(--sa-fg-muted);
+}
+
+/*
+ * Reference images. The strip is empty and takes no height until something is
+ * attached, so a composer with no images is exactly the card it was before.
+ */
+.composer__images:not(:empty) {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.composer__image {
+  position: relative;
+  width: 72px;
+  height: 54px;
+}
+
+.composer__thumb {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--sa-border);
+  border-radius: var(--sa-radius-sm);
+  /* `cover`, so three pictures of different shapes still read as one row. */
+  object-fit: cover;
+  background: var(--sa-bg-sunken);
+}
+
+.composer__image-remove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sa-bg-solid);
+  background: var(--sa-fg);
+  color: var(--sa-bg-solid);
+}
+
+/* The picker is opened by the toolbar button; the input itself is never seen. */
+.composer__file {
+  display: none;
 }
 
 .button {

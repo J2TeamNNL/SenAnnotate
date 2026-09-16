@@ -287,3 +287,11 @@ backfilling open tabs with `chrome.scripting.executeScript` in the MAIN world: t
 runtime injection, whose CSP standing is exactly what `CLAUDE.md` warns about, and it would
 want verifying against a strict-CSP fixture before it could be trusted — a change with its own
 review, not a corner of this one.
+
+## After reference-images and context-menu landed
+
+`main` moved on while this PR was open. The merge kept both sides: the domain-rules
+popup and e2e block, and the right-click menu checks. The domain-rules suite still
+runs **last** and still restores `off` + an empty list, because the rules live in
+`chrome.storage.sync` and a leftover would switch the extension off for everything
+after it.

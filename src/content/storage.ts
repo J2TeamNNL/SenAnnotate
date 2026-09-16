@@ -72,6 +72,17 @@ function fitToQuota(annotations: Annotation[]): { payload: Annotation[]; dropped
     dropped += 1;
   }
 
+  // Reference images go last, and only once every screenshot is already gone. A
+  // screenshot can be taken again by standing on the page; an image pasted from
+  // somewhere else cannot be recovered from anything this extension holds.
+  for (const annotation of payload) {
+    if (total <= MAX_STORED_BYTES) break;
+    if (!annotation.referenceImages?.length) continue;
+    total -= annotation.referenceImages.reduce((sum, uri) => sum + uri.length, 0);
+    dropped += annotation.referenceImages.length;
+    delete annotation.referenceImages;
+  }
+
   return { payload, dropped };
 }
 
@@ -88,6 +99,34 @@ export async function saveAnnotations(annotations: Annotation[]): Promise<SaveRe
     return { ok: true, droppedImages: dropped };
   } catch {
     // Nothing useful to do — the in-memory list is still intact.
+    return { ok: false, droppedImages: 0 };
+  }
+}
+
+/**
+ * Persist annotations under the key for `href` rather than the current URL.
+ *
+ * Needed for SPA navigation: by the time `location.href` has changed the old
+ * page's URL is gone, so `saveAnnotations()` would write to the wrong key.
+ * Callers pass the *previous* href so page A's annotations reach page A's slot
+ * before page B is loaded.
+ */
+export async function saveAnnotationsForUrl(
+  annotations: Annotation[],
+  href: string,
+): Promise<SaveResult> {
+  try {
+    const { origin, pathname } = new URL(href);
+    const key = `${ANNOTATION_PREFIX}${origin}${pathname}`;
+    if (!annotations.length) {
+      await chrome.storage.local.remove(key);
+      return { ok: true, droppedImages: 0 };
+    }
+
+    const { payload, dropped } = fitToQuota(annotations);
+    await chrome.storage.local.set({ [key]: payload });
+    return { ok: true, droppedImages: dropped };
+  } catch {
     return { ok: false, droppedImages: 0 };
   }
 }

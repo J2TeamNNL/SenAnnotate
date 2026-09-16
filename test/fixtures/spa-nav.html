@@ -1,0 +1,61 @@
+<!doctype html>
+<!--
+  Fixture for SPA-navigation isolation test.
+
+  Two virtual "pages" live in one HTML file; navigation is simulated with
+  history.pushState so the extension's URL-change watcher (400 ms interval) can
+  fire without a real page reload.
+
+  /spa-nav.html → page A (default)
+  /spa-nav-b    → page B (pushState only — the server never serves this path)
+
+  The test annotates page A, navigates to page B, verifies the count is reset,
+  annotates page B, navigates back to page A, and verifies page A's annotation
+  was preserved — all without a full reload.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SPA nav fixture</title>
+    <style>
+      body { font-family: sans-serif; margin: 2rem; }
+      section { display: none; }
+      section.active { display: block; }
+      p { max-width: 400px; }
+    </style>
+  </head>
+  <body>
+    <section id="page-a" class="active">
+      <h1>Page A</h1>
+      <p id="para-a">Annotatable content on page A.</p>
+      <button id="go-b">Go to page B</button>
+    </section>
+
+    <section id="page-b">
+      <h1>Page B</h1>
+      <p id="para-b">Annotatable content on page B.</p>
+      <button id="go-a">Go to page A</button>
+    </section>
+
+    <script>
+      function show(isB) {
+        document.getElementById("page-a").classList.toggle("active", !isB);
+        document.getElementById("page-b").classList.toggle("active", isB);
+      }
+
+      document.getElementById("go-b").addEventListener("click", () => {
+        history.pushState(null, "", "/spa-nav-b");
+        show(true);
+      });
+
+      document.getElementById("go-a").addEventListener("click", () => {
+        history.pushState(null, "", "/spa-nav.html");
+        show(false);
+      });
+
+      window.addEventListener("popstate", () =>
+        show(location.pathname.includes("spa-nav-b")),
+      );
+    </script>
+  </body>
+</html>

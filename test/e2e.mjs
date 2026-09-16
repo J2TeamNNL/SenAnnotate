@@ -1737,6 +1737,108 @@ async function main() {
     await pick.keyboard.press("Escape");
 
     // -------------------------------------------------------------------------
+    // Reference images — the picture of what it should look like instead
+    // -------------------------------------------------------------------------
+    //
+    // Two ways in, both covered: the file picker, driven with Playwright's real
+    // `setInputFiles`, and a paste, which has to be synthesised — there is no way to put
+    // an image on the OS clipboard from here. The synthetic event works because the
+    // composer registers its handler through `listen()`, which calls `addEventListener`
+    // directly and never passes through `guarded()` — so `dom.ts`'s untrusted-event drop
+    // does not apply to it, whatever `ACTIVATION_EVENTS` contains.
+    // `docs/reference-images/context.md` weighs that exposure.
+    //
+    // `composed: true` on the dispatch is load-bearing, not decoration: it is what a real
+    // `paste` carries, and without it the event could not leave the shadow root at all,
+    // which would make the containment check below pass for the wrong reason.
+    const reference = await context.newPage();
+    await reference.goto(`${base}/reference.html`);
+    await reference.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    await reference.locator(".tool--brand").click();
+    await reference.locator(".cta").click({ timeout: 5_000 });
+    await reference.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+
+    // A 2×2 PNG. Small enough to be an obvious fixture, real enough to decode.
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFUlEQVR4nGP8z4AATAxIHDgLIgYIAAD+9wH1i0S+cwAAAABJRU5ErkJggg==";
+    const pngPath = join(profile, "reference.png");
+    await writeFile(pngPath, Buffer.from(pngBase64, "base64"));
+
+    await reference.locator(".composer__file").setInputFiles(pngPath);
+    await reference.waitForTimeout(500);
+    check(
+      "an attached image appears in the composer",
+      (await reference.locator(".composer__thumb").count()) === 1,
+      `${await reference.locator(".composer__thumb").count()} thumbnails`,
+    );
+
+    await reference.evaluate((base64) => {
+      const root = document.querySelector("[data-senannotate-ui]").shadowRoot;
+      const composer = root.querySelector(".composer");
+      const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], "pasted.png", { type: "image/png" }));
+      composer.dispatchEvent(
+        new ClipboardEvent("paste", {
+          clipboardData: transfer,
+          bubbles: true,
+          composed: true,
+        }),
+      );
+    }, pngBase64);
+    await reference.waitForTimeout(500);
+    check(
+      "a pasted image joins the attached one",
+      (await reference.locator(".composer__thumb").count()) === 2,
+      `${await reference.locator(".composer__thumb").count()} thumbnails after the paste`,
+    );
+    check(
+      "the pasted reference image never reaches the page",
+      (await reference.evaluate(() => window.__pastedIntoPage)) === false,
+      "the page's document paste listener saw our clipboard",
+    );
+
+    await reference.locator(".composer__image-remove").first().click();
+    await reference.waitForTimeout(200);
+    check(
+      "an image can be taken back out",
+      (await reference.locator(".composer__thumb").count()) === 1,
+      `${await reference.locator(".composer__thumb").count()} thumbnails after removing one`,
+    );
+
+    await reference.locator(".composer__input").click();
+    await reference.keyboard.type("Make this match the approved design.");
+    await reference.locator(".composer .button--primary").click();
+    await reference.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+    await reference.locator('.tool[aria-label^="Annotations"]').click();
+    await reference.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+    await reference.locator(".panel .button--primary").click();
+    const referenceReport = await reference.evaluate(() => navigator.clipboard.readText());
+
+    check(
+      "the report says the reference is a target, not the current state",
+      /\*\*Reference — how it should look, not how it looks now \(1\):\*\*/.test(referenceReport),
+      referenceReport.split("\n").find((line) => line.includes("Reference")) ?? "(no reference line)",
+    );
+    check(
+      "the reference image itself travels in the report",
+      /!\[[^\]]*reference 1\]\(data:image\/jpeg/.test(referenceReport),
+      "no embedded reference image in the report",
+    );
+
+    // Editing must not lose them — the composer is rebuilt from the stored note.
+    await reference.locator(".entry").first().click();
+    await reference.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+    check(
+      "reopening a note brings its reference images back",
+      (await reference.locator(".composer__thumb").count()) === 1,
+      `${await reference.locator(".composer__thumb").count()} thumbnails on reopen`,
+    );
+    await reference.keyboard.press("Escape");
+    await reference.close();
+
+    // -------------------------------------------------------------------------
     // Modals — our own UI must not read as a click outside the page's dialog
     // -------------------------------------------------------------------------
     //
@@ -2953,6 +3055,122 @@ async function main() {
     );
     await gear.click();
     await settingsPageUnderTest.close();
+
+    // -------------------------------------------------------------------------
+    // Toolbar X — quick hide for this page-load
+    // -------------------------------------------------------------------------
+    //
+    // Dedicated fixture (close-x.html) so annotation storage is isolated —
+    // `chrome.storage.local` is keyed on origin+pathname and shared across the
+    // whole suite's context. Any page another block annotates cannot carry a
+    // count assertion here.
+    //
+    // The block tests: X hides the overlay; reload shows it again; clicking the
+    // extension icon when X-hidden restores the overlay without toggling inspect;
+    // `H` does nothing while hidden; "Hide until restart" is unaffected.
+    const closeXPage = await context.newPage();
+    await closeXPage.goto(`${base}/close-x.html`);
+    await closeXPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+    const closeXButton = closeXPage.locator(".tool--close");
+
+    // The X button is the last one in the pill.
+    check("X button present in toolbar", (await closeXButton.count()) === 1, "no .tool--close");
+    check("X button visible", await closeXButton.isVisible(), "not visible");
+
+    await closeXButton.click();
+    await closeXPage.waitForTimeout(200);
+
+    check(
+      "X hides the overlay (data-hidden attribute set)",
+      await closeXPage.evaluate(() => {
+        const host = document.querySelector("[data-senannotate-ui]");
+        return host?.hasAttribute("data-hidden") ?? false;
+      }),
+      "data-hidden not set",
+    );
+    check(
+      "X hides the toolbar",
+      !(await closeXPage.locator(".toolbar").isVisible()),
+      "toolbar still visible",
+    );
+
+    // `H` must not silently toggle a collapse while hidden.
+    await closeXPage.keyboard.press("h");
+    await closeXPage.waitForTimeout(150);
+    check(
+      "H does nothing while X-hidden",
+      await closeXPage.evaluate(() => {
+        const host = document.querySelector("[data-senannotate-ui]");
+        const dock = host?.shadowRoot?.querySelector(".toolbar-dock");
+        return dock?.getAttribute("data-collapsed") !== "true";
+      }),
+      "toolbar was collapsed while hidden",
+    );
+
+    // Reload should restore the overlay (in-memory state, not stored).
+    await closeXPage.reload();
+    await closeXPage.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+    check(
+      "reload restores the overlay",
+      await closeXPage.locator(".toolbar").isVisible(),
+      "toolbar not visible after reload",
+    );
+    check(
+      "data-hidden cleared after reload",
+      await closeXPage.evaluate(() => {
+        const host = document.querySelector("[data-senannotate-ui]");
+        return !(host?.hasAttribute("data-hidden") ?? true);
+      }),
+      "data-hidden still set after reload",
+    );
+
+    // X again, then simulate the extension icon / keyboard shortcut path by sending
+    // toggle-inspect via the service worker — same code path as the popup and the
+    // keyboard shortcut. First click when X-hidden → unhide only; second → inspect.
+    await closeXButton.click();
+    await closeXPage.waitForTimeout(200);
+    check(
+      "X-hidden before icon-click test",
+      !(await closeXPage.locator(".toolbar").isVisible()),
+      "toolbar visible — expected hidden",
+    );
+
+    // The fixture page is a normal webpage — `chrome` is not available there.
+    // Use the service worker's context, which has full chrome.* access, to send
+    // toggle-inspect to the fixture tab by URL match (same as the keyboard shortcut path).
+    const closeXUrl = closeXPage.url();
+    const [swWorker] = context.serviceWorkers();
+    let iconResponse = null;
+    if (swWorker) {
+      iconResponse = await swWorker.evaluate(async (url) => {
+        // chrome.tabs.query({url}) requires a match pattern, not a full URL —
+        // query all tabs and find by exact URL match instead.
+        const tabs = await chrome.tabs.query({});
+        const tab = tabs.find((t) => t.url === url);
+        if (!tab?.id) return null;
+        try {
+          return await chrome.tabs.sendMessage(tab.id, { kind: "toggle-inspect" });
+        } catch {
+          return null;
+        }
+      }, closeXUrl);
+    }
+    await closeXPage.waitForTimeout(400);
+
+    check(
+      "icon click when X-hidden shows overlay (does not toggle inspect)",
+      await closeXPage.locator(".toolbar").isVisible(),
+      "toolbar not visible after icon click",
+    );
+    // `active` should still be false — we only unhid, did not start inspecting.
+    check(
+      "icon click when X-hidden does not activate inspect",
+      iconResponse === null || iconResponse?.active === false,
+      `active was ${String(iconResponse?.active)}`,
+    );
+
+    await closeXPage.close();
 
     // -------------------------------------------------------------------------
     // Collapse — the toolbar must get out of the way
@@ -4178,6 +4396,106 @@ async function main() {
     await clearPage.close();
 
     // -------------------------------------------------------------------------
+    // SPA navigation — annotations must be isolated per pathname
+    // -------------------------------------------------------------------------
+    //
+    // Regression for the bug where `annotations` was loaded once in `boot()` and
+    // never refreshed when `history.pushState` changed the URL without a reload.
+    // Page A's notes ended up in page B's key on persist, and the report showed
+    // the wrong pathname in its header.
+    //
+    // The fixture has two virtual "pages" (A = /spa-nav.html, B = /spa-nav-b)
+    // and navigates between them via history.pushState so the 400 ms URL-watcher
+    // interval can observe the change without a real load.
+    {
+      const spaNav = await context.newPage();
+      await spaNav.goto(`${base}/spa-nav.html`);
+      await spaNav.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+      // Turn on inspect mode.
+      await spaNav.locator(".tool--brand").click();
+
+      // Annotate the page-A paragraph.
+      await spaNav.locator("#para-a").hover();
+      await spaNav.locator(".highlight__label").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator("#para-a").click();
+      await spaNav.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator(".composer__input").fill("Note on page A");
+      await spaNav.locator(".composer .button--primary").click();
+      await spaNav.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      check(
+        "SPA page A gets an annotation after clicking",
+        (await spaNav.locator(".marker").count()) === 1,
+        `${await spaNav.locator(".marker").count()} markers on page A`,
+      );
+      check(
+        "SPA page A count badge shows 1",
+        (await spaNav.locator(".count").textContent()) === "1",
+        `count reads "${await spaNav.locator(".count").textContent()}"`,
+      );
+
+      // SPA-navigate to page B via evaluate() rather than clicking the button.
+      //
+      // When inspect mode is active, the content script's capture-phase click
+      // handler calls `event.preventDefault()` and `event.stopPropagation()`,
+      // so a Playwright click on `#go-b` would be intercepted and turned into
+      // an annotation rather than a navigation. `evaluate()` runs in the page's
+      // MAIN world and bypasses the extension's DOM listener entirely.
+      await spaNav.evaluate(() => {
+        history.pushState(null, "", "/spa-nav-b");
+        document.getElementById("page-a").classList.remove("active");
+        document.getElementById("page-b").classList.add("active");
+      });
+
+      // The URL watcher fires on a 400 ms interval. Wait long enough for the
+      // interval + the async save/load round-trip + a render pass.
+      await spaNav.waitForTimeout(800);
+
+      check(
+        "SPA page B starts with no annotations (isolation)",
+        (await spaNav.locator(".marker").count()) === 0,
+        `${await spaNav.locator(".marker").count()} markers on page B — expected 0`,
+      );
+
+      // Annotate something on page B to verify the new page's list is writable.
+      await spaNav.locator("#para-b").hover();
+      await spaNav.locator(".highlight__label").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator("#para-b").click();
+      await spaNav.locator(".composer").waitFor({ state: "visible", timeout: 5_000 });
+      await spaNav.locator(".composer__input").fill("Note on page B");
+      await spaNav.locator(".composer .button--primary").click();
+      await spaNav.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      check(
+        "SPA page B accepts a new annotation",
+        (await spaNav.locator(".marker").count()) === 1,
+        `${await spaNav.locator(".marker").count()} markers on page B`,
+      );
+
+      // SPA-navigate back to page A (same approach: bypass inspect-mode click interception).
+      await spaNav.evaluate(() => {
+        history.pushState(null, "", "/spa-nav.html");
+        document.getElementById("page-b").classList.remove("active");
+        document.getElementById("page-a").classList.add("active");
+      });
+      await spaNav.waitForTimeout(800);
+
+      check(
+        "SPA page A annotation was preserved across navigation",
+        (await spaNav.locator(".marker").count()) === 1,
+        `${await spaNav.locator(".marker").count()} markers on page A after return — expected 1`,
+      );
+      check(
+        "SPA page A count badge still shows 1 after returning",
+        (await spaNav.locator(".count").textContent()) === "1",
+        `count reads "${await spaNav.locator(".count").textContent()}"`,
+      );
+
+      await spaNav.close();
+    }
+
+    // -------------------------------------------------------------------------
     // Export / import — driven through the real popup
     // -------------------------------------------------------------------------
     const [worker] = context.serviceWorkers();
@@ -4460,6 +4778,242 @@ async function main() {
       );
 
       await popup.close();
+    }
+
+    // -------------------------------------------------------------------------
+    // Right-click menu — the third way in
+    // -------------------------------------------------------------------------
+    //
+    // Playwright cannot open a native context menu, and `chrome.contextMenus` has no query
+    // API, so the menu *entries* themselves are unverifiable here — the check below that
+    // the worker created them without throwing is as close as it gets.
+    //
+    // What is fully testable is the part with the behaviour in it, which is the whole
+    // design: the content script records the element on `contextmenu` (real event, real
+    // capture-phase listener) and the service worker sends the real `annotate-context`
+    // message over `chrome.tabs.sendMessage`. Only the native menu widget is simulated.
+    if (extensionId && worker) {
+      const ctx = await context.newPage();
+      await ctx.goto(`${base}/context-menu.html`);
+      await ctx.locator(".toolbar").waitFor({ state: "visible", timeout: 10_000 });
+
+      const ctxDock = ctx.locator(".toolbar-dock");
+      const ctxMeta = ctx.locator(".composer__meta");
+
+      /**
+       * Asserted through the duplicate-id error, which is the only observable the API has.
+       *
+       * `chrome.contextMenus` cannot be queried, so an entry's existence is only visible in
+       * the failure to create it again. Creating a *probe* id instead would assert nothing
+       * about the code that ships — `createMenus` could be deleted outright and the check
+       * would still pass — and it would leave a live entry behind wired to the annotate
+       * path. Re-creating the three real ids names the entries under test, proves
+       * `createMenus` ran, and adds nothing to the menu: a rejected create creates nothing,
+       * and the branch that succeeded (i.e. the entry was missing) removes what it made
+       * before failing the check.
+       */
+      const menuIds = ["senannotate:annotate", "senannotate:annotate-selection", "senannotate:toggle"];
+      const menuState = await worker.evaluate(
+        (ids) =>
+          Promise.all(
+            ids.map(
+              (id) =>
+                new Promise((resolve) => {
+                  try {
+                    chrome.contextMenus.create({ id, title: id, contexts: ["page"] }, () => {
+                      const error = chrome.runtime.lastError?.message ?? "";
+                      if (error) return resolve(`${id}: ${error}`);
+                      chrome.contextMenus.remove(id, () => resolve(`${id}: was not created`));
+                    });
+                  } catch (error) {
+                    resolve(`${id}: ${String(error)}`);
+                  }
+                }),
+            ),
+          ),
+        menuIds,
+      );
+      check(
+        "the worker created all three of its menu entries",
+        menuState.every((line) => /duplicate/i.test(line)),
+        menuState.join(" | "),
+      );
+
+      /**
+       * Right-click an element for real, then fire the menu item from the worker.
+       *
+       * A CDP right-click and not `dispatchEvent`: Playwright synthesises `contextmenu` as a
+       * plain `Event`, so it carries no `clientX`/`clientY` and `elementFromPoint` resolves
+       * nothing — the recorder stores `null` and the whole path silently no-ops. Measured;
+       * it cost a debugging session. The fixture cancels the default so Chrome's own menu
+       * never opens, which is what keeps this safe in a headed run.
+       */
+      const rightClickAnnotate = async (
+        selector,
+        { selection = false, selectionText = undefined, inFrame = false } = {},
+      ) => {
+        await ctx.locator(selector).click({ button: "right" });
+        await ctx.waitForTimeout(200);
+        await worker.evaluate(
+          async ([pageUrl, wantsSelection, text, wantsFrame]) => {
+            const [tab] = await chrome.tabs.query({ url: pageUrl });
+            if (tab?.id === undefined) return;
+            await chrome.tabs.sendMessage(
+              tab.id,
+              {
+                kind: "annotate-context",
+                selection: wantsSelection,
+                // Chrome fills `selectionText` from `OnClickData`; the content script never
+                // re-derives it, which is what makes a selection inside a field work.
+                selectionText: text,
+                inFrame: wantsFrame,
+              },
+              { frameId: 0 },
+            );
+          },
+          [`${base}/context-menu.html`, selection, selectionText, inFrame],
+        );
+        await ctx.waitForTimeout(600);
+      };
+
+      // Inspect mode is deliberately still off. That is the property worth pinning: the
+      // menu item is a complete request on its own, and someone who has armed nothing has
+      // to be able to use it — the DevTools *Inspect* parallel the feature is built on.
+      check(
+        "inspect mode is off before the menu is used",
+        (await ctxDock.getAttribute("data-inspecting")) === "false",
+        `data-inspecting read "${await ctxDock.getAttribute("data-inspecting")}"`,
+      );
+
+      await rightClickAnnotate("#ctxlabel");
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the menu item annotates the element that was right-clicked",
+        ((await ctxMeta.textContent()) ?? "").includes("Elementspan"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      check(
+        "using the menu item does not arm inspect mode",
+        (await ctxDock.getAttribute("data-inspecting")) === "false",
+        `data-inspecting read "${await ctxDock.getAttribute("data-inspecting")}"`,
+      );
+
+      // …and it stores, not merely displays.
+      await ctx.locator(".composer__input").fill("Wrong label on this button.");
+      await ctx.locator(".composer .button--primary").click();
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+      await ctx.locator('.tool[aria-label^="Annotations"]').click();
+      await ctx.locator(".panel").waitFor({ state: "visible", timeout: 5_000 });
+      await ctx.locator(".panel .button--primary").click();
+      const ctxReport = await ctx.evaluate(() => navigator.clipboard.readText());
+      check(
+        "the note taken from the menu reaches the report",
+        ctxReport.includes("Wrong label on this button."),
+        ctxReport.slice(0, 300),
+      );
+      await ctx.locator('.tool[aria-label^="Annotations"]').click();
+
+      // A page with its own right-click menu stops the event dead. A bubble-phase listener
+      // would see nothing; ours is capture-phase precisely so this still works.
+      await rightClickAnnotate("#ctxmenu-eater");
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "a page that cancels contextmenu does not hide the element from us",
+        ((await ctxMeta.textContent()) ?? "").includes("div.ctxeater"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // The selection item carries the text, which is what makes it different from the
+      // element one rather than a duplicate of it.
+      await ctx.locator("#ctxtext").selectText();
+      await rightClickAnnotate("#ctxtext", {
+        selection: true,
+        selectionText: await ctx.evaluate(() => window.getSelection()?.toString() ?? ""),
+      });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item carries the selected text into the composer",
+        ((await ctxMeta.textContent()) ?? "").includes("worth quoting"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // A quote is about the element its *range* spans, not the node the pointer landed on:
+      // select across `foo <b>bar</b> baz` and right-click over the bold word, and the
+      // report has to name the paragraph — the same element text mode would have picked.
+      // Otherwise the same selection describes two different elements depending only on
+      // which entry point was used.
+      await ctx.locator("#ctxmixed").selectText();
+      await rightClickAnnotate("#ctxbold", {
+        selection: true,
+        selectionText: await ctx.evaluate(() => window.getSelection()?.toString() ?? ""),
+      });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item annotates the element the selection spans, not the pointer's",
+        // The Element row names the paragraph and not the `b` the pointer was over.
+        // Matched on the tag rather than `p.ctxmixed`: an element with text of its own is
+        // labelled by that text, so the `tag.class` fallback never appears here.
+        /Elementp\b/.test((await ctxMeta.textContent()) ?? "") &&
+          !((await ctxMeta.textContent()) ?? "").includes('b "bar"'),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // The quote is Chrome's `selectionText`, not the page's own reading of the selection.
+      //
+      // Which one is used only shows up where they differ, so this sends a `selectionText`
+      // that is *not* what the document selection says while a different element is
+      // selected: the composer has to show Chrome's copy. The case in the wild is a
+      // selection inside an `<input>` or `<textarea>` — not part of the document selection
+      // on every engine, while Chrome populates `selectionText` and therefore offers the
+      // item — and re-deriving in the page drops the quote from the annotation the user
+      // explicitly asked for. (This Chromium build does surface a field's selection to
+      // `getSelection()`, so that alone would prove nothing here.)
+      await ctx.locator("#ctxtext").selectText();
+      await rightClickAnnotate("#ctxinput", { selection: true, selectionText: "Typed into a field" });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the quote comes from the menu click, not from the page's own selection",
+        ((await ctxMeta.textContent()) ?? "").includes("Typed into a field") &&
+          !((await ctxMeta.textContent()) ?? "").includes("worth quoting"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // And the field case itself still carries its quote.
+      await ctx.locator("#ctxinput").selectText();
+      await rightClickAnnotate("#ctxinput", { selection: true, selectionText: "Typed into a field" });
+      await ctxMeta.waitFor({ state: "visible", timeout: 5_000 });
+      check(
+        "the selection item still quotes text selected inside a field",
+        ((await ctxMeta.textContent()) ?? "").includes("Typed into a field"),
+        `meta read "${((await ctxMeta.textContent()) ?? "").trim()}"`,
+      );
+      await ctx.keyboard.press("Escape");
+      await ctx.locator(".composer").waitFor({ state: "detached", timeout: 5_000 });
+
+      // A right-click inside an iframe is reported rather than half-handled: the top frame
+      // cannot learn which frame a `frameId` refers to, so annotating its own record would
+      // describe the wrong element with a straight face.
+      await rightClickAnnotate("#ctxbutton", { inFrame: true });
+      check(
+        "a right-click inside a frame opens no composer",
+        (await ctx.locator(".composer").count()) === 0,
+        `${await ctx.locator(".composer").count()} composers`,
+      );
+      check(
+        "and says why, rather than failing silently",
+        /inside a frame/i.test((await ctx.locator(".toast").textContent()) ?? ""),
+        `toast read "${((await ctx.locator(".toast").textContent()) ?? "").trim()}"`,
+      );
+
+      await ctx.close();
     }
 
     // -------------------------------------------------------------------------

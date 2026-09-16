@@ -169,7 +169,35 @@ function renderAnnotation(annotation: Annotation, number: number): Html {
     picture = html`<p class="note__shot-missing">Screenshot saved as <code>${path}</code> on the reporter's machine — not embedded.</p>`;
   }
 
-  return html`<article class="note${done ? " note--done" : ""}"><header class="note__head"><span class="note__number">${number}</span><h3 class="note__title">${annotation.element}</h3><span class="chip chip--${kind}">${kind}</span>${done ? raw(`<span class="chip chip--done">fixed</span>`) : null}</header><p class="note__comment">${annotation.comment}</p>${meta.length ? html`<div class="note__meta">${meta}</div>` : null}${picture}</article>`;
+  // After the photograph of *now*, same order as the Markdown report: a reference is
+  // what it should look like instead, and putting both under one heading is how an
+  // agent implements the current state on purpose.
+  const references = renderReferences(annotation);
+
+  return html`<article class="note${done ? " note--done" : ""}"><header class="note__head"><span class="note__number">${number}</span><h3 class="note__title">${annotation.element}</h3><span class="chip chip--${kind}">${kind}</span>${done ? raw(`<span class="chip chip--done">fixed</span>`) : null}</header><p class="note__comment">${annotation.comment}</p>${meta.length ? html`<div class="note__meta">${meta}</div>` : null}${picture}${references}</article>`;
+}
+
+/**
+ * The pictures of *instead*, which the Markdown report already labels as such.
+ *
+ * Share-export landed first and this branch said it would add them here. Dropping them
+ * from the one document a designer actually opens would be the failure the field exists
+ * to prevent: a screenshot of now, no target, words left to guess.
+ *
+ * Each URI still goes through `isEmbeddable`. After an import they are whatever the file
+ * said, and a reference is the one image nobody asked this extension to take.
+ */
+function renderReferences(annotation: Annotation): Html | null {
+  const images = (annotation.referenceImages ?? []).filter(isEmbeddable);
+  if (!images.length) return null;
+
+  const alt = annotation.element;
+  const pictures = images.map(
+    (uri, index) =>
+      html`<img class="note__ref" src="${raw(uri)}" alt="${alt} — reference ${index + 1}" loading="lazy" />`,
+  );
+
+  return html`<div class="note__refs"><p class="note__refs-label">Reference — how it should look, not how it looks now</p>${pictures}</div>`;
 }
 
 function renderPage(entry: { page: string; annotations: Annotation[] }): Html {
@@ -209,6 +237,9 @@ h1 { margin: 0 0 4px; font-size: 22px; }
 .row__value { word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .note__shot { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
 .note__shot-missing { margin: 0; color: var(--muted); font-size: 12.5px; }
+.note__refs { margin: 12px 0 0; display: grid; gap: 8px; }
+.note__refs-label { margin: 0; color: var(--muted); font-size: 12.5px; }
+.note__ref { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 footer { margin-top: 48px; color: var(--muted); font-size: 12px; text-align: center; }
 `.trim();

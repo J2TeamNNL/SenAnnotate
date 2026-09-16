@@ -27,6 +27,8 @@ import {
 import {
   clearActions,
   installActionTrail,
+  installUrlWatcher,
+  onUrlChange,
   readActions,
   setActionTrailPaused,
 } from "./actions";
@@ -51,7 +53,7 @@ import {
   requestFrameHoverCapture,
 } from "./frames";
 import { buildSelector, identifyElement, isAnnotatable, isOurUi } from "./identify";
-import { canvasToBlob, cropToCanvas, downloadPath, encodeForEmbed } from "./screenshot";
+import { canvasToBlob, cropToCanvas, downloadPath, encodeForEmbed, encodeSuppliedImage } from "./screenshot";
 import { resolveSource } from "./source";
 import {
   loadAnnotations,
@@ -59,11 +61,13 @@ import {
   loadSettings,
   onSettingsChanged,
   saveAnnotations,
+  saveAnnotationsForUrl,
   saveDockPosition,
   saveSettings,
 } from "./storage";
 import {
   Composer,
+  MAX_REFERENCE_IMAGES,
   type ComposerCallbacks,
   type ComposerMeta,
   type RetargetDirection,
@@ -113,6 +117,16 @@ let page: PageFrameworkInfo | null = null;
 /** Mirror of the MAIN world's buffers, kept current by pushed events. */
 let diagnosticsCache: Diagnostics | null = null;
 
+/**
+ * Dismissed via the toolbar X for this page-load.
+ *
+ * In-memory only — a reload restores the overlay. This is the "step out of the way
+ * for a screenshot" control; "Hide until restart" (`HIDDEN_KEY` in sessionStorage)
+ * is the separate tab-session control in Settings that survives reloads on this tab.
+ * The two cannot fight: `HIDDEN_KEY` causes an early return from `installTopFrame()`,
+ * so the UI (and therefore this flag) is never set up at all when that one is active.
+ */
+let hidden = false;
 let active = false;
 let mode: InspectMode = "point";
 let frozen = false;
@@ -210,6 +224,33 @@ let retargetToken = 0;
  */
 let screenshotPending = false;
 
+/**
+ * What the last right-click was over: the element under the pointer, and the element the
+ * selection was about if there was one.
+ *
+ * `chrome.contextMenus` tells an extension the frame, the page URL and the selected text,
+ * and nothing whatsoever about the element under the pointer. `contextmenu` fires before
+ * the menu opens, so recording it there is the only way the menu item can act on the thing
+ * the user right-clicked — which is the entire gesture.
+ *
+ * Not cleared after use: reopening the menu on the same element and picking the item twice
+ * should work, and the liveness check at use time is what catches a stale record.
+ *
+ * `WeakRef` rather than the node, because "not cleared after use" would otherwise mean
+ * right-clicking a large container the app then removes retains the whole detached subtree
+ * for the life of the page. `setActive(false)` clears both alongside `hoveredElement`, so
+ * leaving inspect mode drops them too. Only the *element* is kept; the selected text comes
+ * from Chrome with the menu click and is never held here.
+ */
+let rightClicked: WeakRef<Element> | null = null;
+let rightClickedSelection: WeakRef<Element> | null = null;
+
+/** A recorded element if it is still in the document, else null. */
+function liveTarget(ref: WeakRef<Element> | null): Element | null {
+  const element = ref?.deref();
+  return element?.isConnected ? element : null;
+}
+
 // -----------------------------------------------------------------------------
 // UI
 // -----------------------------------------------------------------------------
@@ -270,6 +311,7 @@ function createTopUi(): void {
     onToggleSettings: () => toggleSettings(),
     onPickColour: () => void pickAndCopy(),
     onToggleCollapse: () => toggleCollapsed(),
+    onClose: () => setHidden(true),
     onMove: (position) => {
       // Saved on drop rather than per frame — a drag would otherwise write sixty
       // times a second for as long as the button is held.
@@ -533,6 +575,8 @@ function setActive(next: boolean): void {
     measureOverlay.hideAll();
     hoveredElement = null;
     hoverLabel = null;
+    rightClicked = null;
+    rightClickedSelection = null;
     document.body.style.removeProperty("cursor");
   } else {
     document.body.style.setProperty("cursor", "crosshair", "important");
@@ -635,6 +679,33 @@ function hideUntilRestart(): void {
     // the more useful half of what was asked.
   }
   ui.host.style.setProperty("display", "none", "important");
+}
+
+/**
+ * Take the whole overlay off screen via the toolbar X, or restore it.
+ *
+ * In-memory state only — distinct from `hideUntilRestart()` (Settings, sessionStorage)
+ * in two ways: a reload restores the overlay, and clicking the extension icon also
+ * brings it back (`toggle-inspect` handler unhides before acting, so the first icon
+ * click is always a restore when this flag is set).
+ *
+ * Closing deactivates inspect mode, dismisses the panel and the composer so nothing
+ * continues running behind the curtain; restoring does not re-enable inspect — the
+ * user picks up where they left off with the toolbar visible.
+ */
+function setHidden(next: boolean): void {
+  if (hidden === next) return;
+  hidden = next;
+
+  if (hidden) {
+    setActive(false);
+    togglePanel(false);
+    if (composer) closeComposer();
+    overlay.hideAll();
+  }
+
+  ui.setHidden(hidden);
+  render();
 }
 
 /**
@@ -924,6 +995,58 @@ function frameAnchor(draft: Draft): DOMRect {
 // Creating annotations
 // -----------------------------------------------------------------------------
 
+/**
+ * Annotate whatever the last right-click was over.
+ *
+ * Deliberately does **not** turn inspect mode on. Right-clicking one element is a complete
+ * request in itself, and arming a mode that makes the next ordinary click open a composer
+ * is the surprise `toolbar-collapse/` went out of its way to prevent. Everything the
+ * composer needs — the draft, the highlight, the markers — works with the mode off already.
+ */
+async function annotateRightClicked(request: {
+  selection: boolean;
+  selectionText?: string;
+  inFrame: boolean;
+}): Promise<void> {
+  // The composer, the annotations and the markers are the top frame's, and this frame has
+  // no way to learn which iframe was clicked: `OnClickData.frameId` is a number the DOM
+  // cannot be asked about. Annotating `rightClicked` here would silently describe whatever
+  // the *top* frame was last pointed at, which is the wrong element with a straight face.
+  if (request.inFrame) {
+    ui.toast("Right-click annotation works on the main page — inside a frame, use inspect mode", "error");
+    return;
+  }
+
+  // For the selection item the subject is the selection, so the element is the one its
+  // range is about — falling back to the pointer's element, which is what a selection
+  // inside an `<input>` gives us (no document range exists for it at all).
+  const target = request.selection
+    ? (liveTarget(rightClickedSelection) ?? liveTarget(rightClicked))
+    : liveTarget(rightClicked);
+
+  if (!target) {
+    // A right-click on a page that then re-rendered, or on something `eligible` refused —
+    // our own overlay, a `<script>`, the `<html>` element.
+    ui.toast("Nothing to annotate there", "error");
+    return;
+  }
+
+  // A half-built pick set is the one piece of state on this screen the user assembled by
+  // hand — Escape protects it ahead of leaving inspect mode for that reason — so say that
+  // it went rather than letting the hint blank itself and take the only trace with it.
+  if (picked.length) {
+    ui.toast(`Discarded ${picked.length} picked element${picked.length === 1 ? "" : "s"}`);
+  }
+
+  // A right-click is a fresh subject. Anything half-finished belongs to the previous one.
+  closeComposer();
+  clearPicked();
+  resetMarquee();
+
+  const selectedText = request.selection ? (request.selectionText?.trim() || undefined) : undefined;
+  await beginAnnotation([target], selectedText);
+}
+
 async function beginAnnotation(
   elements: Element[],
   selectedText?: string,
@@ -986,14 +1109,25 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
   retargetFrom = composerTargets[0] ?? null;
 
   const callbacks: ComposerCallbacks = {
-    onSubmit: (comment, kind: AnnotationKind) => {
+    onSubmit: (comment, kind: AnnotationKind, referenceImages: string[]) => {
+      // Undefined rather than an empty array: it keeps the stored shape identical to
+      // what every annotation written before this feature looks like.
+      const images = referenceImages.length ? referenceImages : undefined;
       if (existing) {
         existing.comment = comment;
         existing.kind = kind;
+        existing.referenceImages = images;
       } else {
         annotations = [
           ...annotations,
-          { ...(composerDraft ?? draft), id: newId(), comment, kind, timestamp: Date.now() } as Annotation,
+          {
+            ...(composerDraft ?? draft),
+            id: newId(),
+            comment,
+            kind,
+            referenceImages: images,
+            timestamp: Date.now(),
+          } as Annotation,
         ];
       }
       closeComposer();
@@ -1003,6 +1137,7 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
     },
     onCancel: () => closeComposer(),
     onScreenshot: () => void captureScreenshot(existing ?? composerDraft ?? draft),
+    onAttach: (files) => void attachReferenceImages(files),
     onDelete: existing
       ? () => {
           annotations = annotations.filter((item) => item.id !== existing.id);
@@ -1017,7 +1152,21 @@ function openComposer(draft: Draft, anchor: DOMRect, existing: Annotation | null
       : undefined,
   };
 
-  composer = new Composer(ui.cardLayer, anchor, { ...composerMeta(draft), initialComment: existing?.comment, initialKind: existing?.kind }, callbacks);
+  composer = new Composer(
+    ui.cardLayer,
+    anchor,
+    {
+      ...composerMeta(draft),
+      initialComment: existing?.comment,
+      initialKind: existing?.kind,
+      // Only an existing note has any. A fresh `Draft` carries the field structurally —
+      // `Omit<Annotation, …>` keeps it — but `captureDraft` never writes it, and
+      // `openEditor` passes the same object as both `draft` and `existing`, so a
+      // fallback to `draft` would read either `undefined` or what was just read.
+      initialImages: existing?.referenceImages,
+    },
+    callbacks,
+  );
 }
 
 /**
@@ -1188,6 +1337,64 @@ function retargetable(draft: Draft, existing: Annotation | null): boolean {
 
   const target = composerTargets[0];
   return composerTargets.length === 1 && !!target && target.ownerDocument === document;
+}
+
+/**
+ * Encode pasted or picked images and hand them to the open composer.
+ *
+ * The composer collects them rather than the annotation: nothing is written until the
+ * note is saved, so a paste into a composer you then cancel leaves no trace — the same
+ * contract the typed comment already has.
+ */
+async function attachReferenceImages(files: File[]): Promise<void> {
+  if (!composer || !files.length) return;
+
+  const room = composer.referenceImageRoom();
+  if (!room) {
+    ui.toast(`${MAX_REFERENCE_IMAGES} reference images is the limit`, "error");
+    return;
+  }
+
+  // Sliced before the encode, not after it. The picker is `multiple`, so "select all" in
+  // a screenshots folder hands this sixty files and a synthesised paste could hand it a
+  // hundred — and every one of them would otherwise pay for a canvas and a JPEG encode,
+  // concurrently, only to be discarded by the cap a moment later.
+  const attempted = files.slice(0, room);
+  const encoded = (
+    await Promise.all(attempted.map((file) => encodeSuppliedImage(file)))
+  ).filter((uri): uri is string => uri !== null);
+
+  if (!encoded.length) {
+    ui.toast("Could not read that image", "error");
+    return;
+  }
+
+  // Checked again rather than optional-chained: encoding is async and Esc during a 4 MB
+  // PNG is not rare. `?? 0` collapsed "the composer is gone" into the same 0 the cap
+  // produces, and told the user about a limit they were nowhere near.
+  if (!composer) return;
+  const kept = composer.addReferenceImages(encoded);
+  composer.focus();
+
+  // Room is re-read inside `addReferenceImages`, so a second paste that landed during
+  // this one's encode can still take the last slot.
+  if (!kept) {
+    ui.toast(`${MAX_REFERENCE_IMAGES} reference images is the limit`, "error");
+    return;
+  }
+
+  // Counted against what the user handed over, not against what survived. Five files
+  // with three slots, or three files where one is a corrupt PNG, both used to report
+  // only the successes — leaving the rest to vanish with no word about why.
+  const lost = files.length - kept;
+  if (lost > 0) {
+    ui.toast(
+      `Attached ${kept} image${kept === 1 ? "" : "s"} — ${lost} could not be added`,
+      "error",
+    );
+    return;
+  }
+  ui.toast(`Attached ${kept} image${kept === 1 ? "" : "s"}`);
 }
 
 function closeComposer(): void {
@@ -1522,6 +1729,24 @@ function eligible(element: Element): boolean {
   return isAnnotatable(element) && !isOurUi(element) && !isLiveChildFrame(element);
 }
 
+/**
+ * The element a text selection is *about* — the common ancestor of its range, not whichever
+ * node the pointer happened to be over.
+ *
+ * Shared by both routes to a quote so they cannot disagree. Select `foo bar baz` across
+ * `<p>foo <b>bar</b> baz</p>` and the annotation is about the `p`, whether it arrived by
+ * mouseup in text mode or by right-clicking over `bar` and picking the selection item;
+ * reporting `b` for one and `p` for the other would make the report depend on the entry
+ * point rather than on what was selected.
+ */
+function selectionElement(selection: Selection | null): Element | null {
+  if (!selection || selection.rangeCount === 0) return null;
+  const container = selection.getRangeAt(0).commonAncestorContainer;
+  const element =
+    container.nodeType === Node.ELEMENT_NODE ? (container as Element) : container.parentElement;
+  return element && eligible(element) ? element : null;
+}
+
 
 
 // --- marquee -----------------------------------------------------------------
@@ -1823,6 +2048,12 @@ async function boot(): Promise<void> {
     render();
   });
 
+  // The URL watcher must run regardless of `captureDiagnostics` — SPA navigation
+  // state hygiene (save page A's annotations, load page B's) is always needed.
+  // `installActionTrail` calls this too, so calling both is safe (idempotent guard
+  // inside `installUrlWatcher`).
+  installUrlWatcher();
+
   if (settings.captureDiagnostics) {
     installActionTrail();
     onDiagnostics((diagnostics) => {
@@ -1875,8 +2106,50 @@ function installTopFrame(): void {
     openComposer({ ...draft, screenshotData: undefined }, frameAnchor(draft), null);
   });
 
+  // SPA navigation: persist page A's annotations, then load page B's.
+  //
+  // The action-trail poller fires this before appending the "navigate" step, so
+  // `clearActions()` here wipes only page A's trail; the navigate entry that
+  // follows opens a fresh trail that belongs to page B.
+  //
+  // `saveAnnotationsForUrl` targets the *old* href explicitly because
+  // `location.href` has already advanced to page B by the time this fires, and
+  // `saveAnnotations()` would write to the wrong key.
+  //
+  // The diagnostics cache is intentionally left alone: it is a running buffer of
+  // network activity that spans the whole tab session (not scoped per page), and
+  // clearing it here would drop entries that happened between the last push and
+  // the navigation — a bigger privacy surprise than retaining them.
+  onUrlChange(async (fromHref) => {
+    // Save page A's annotations under page A's key before the URL key changes.
+    await saveAnnotationsForUrl(annotations, fromHref);
+
+    // Load page B's annotations (pageKey() now resolves to the new pathname).
+    annotations = await loadAnnotations();
+
+    // Clear the action trail so page B's report does not contain page A's steps.
+    // The "navigate" entry that `actions.ts` records next will be the first entry
+    // in the new trail, giving page B's report its own clean history.
+    clearActions();
+
+    // Close any in-flight composer — it was started on page A's elements, whose
+    // selectors may not resolve on page B, and leaving it open would let the user
+    // submit a note that `persist()` stores under page B's key.
+    closeComposer();
+
+    render();
+  });
+
   chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResponse) => {
     if (message.kind === "toggle-inspect") {
+      // The extension icon and the keyboard shortcut are the way back from X-dismiss.
+      // Unhide first so the user sees the overlay before inspect mode toggles on top.
+      // If already visible this is a no-op and the rest of the toggle proceeds normally.
+      if (hidden) {
+        setHidden(false);
+        sendResponse({ ok: true, active });
+        return true;
+      }
       setActive(!active);
       sendResponse({ ok: true, active });
       return true;
@@ -1890,8 +2163,51 @@ function installTopFrame(): void {
       sendResponse({ ok: true });
       return true;
     }
+    if (message.kind === "annotate-context") {
+      void annotateRightClicked(message);
+      sendResponse({ ok: true });
+      return true;
+    }
     return false;
   });
+
+  // Recorded whether or not inspect mode is on, which is the whole point: the menu item is
+  // an entry point for someone who has armed nothing, the way DevTools' *Inspect* is.
+  //
+  // Capture phase on `window`, because a page that calls `stopPropagation` on `contextmenu`
+  // — every app with a custom right-click menu does — would otherwise take the element with
+  // it, and the failure is not "nothing happens": the record keeps the *previous* element
+  // and the menu item annotates that, silently. `window` and not `document` because capture
+  // runs `window → document → … → target`, so a page listening on `window` still gets there
+  // first. Passive and never cancelled: the page's own menu, or Chrome's, still opens. We
+  // are only watching.
+  listen(
+    window,
+    "contextmenu",
+    (event) => {
+      // `elementFromPoint` first, for the same reason the click handler uses it: it is the
+      // one lookup that sees through our own `pointer-events: none` overlay to what the
+      // user was actually pointing at.
+      //
+      // `event.target` when it misses or lands outside that element's subtree, which is the
+      // keyboard-invoked menu (Menu key, Shift+F10): Chrome synthesises coordinates for
+      // those, and with nothing focused they sit near the top-left of the viewport — so the
+      // hit test returns a real, eligible element that has nothing to do with where the
+      // user was. Without the fallback that is not the safe "Nothing to annotate there"
+      // path, it is the wrong element annotated silently.
+      const hit = document.elementFromPoint(event.clientX, event.clientY);
+      const fired = event.target instanceof Element ? event.target : null;
+      const agrees = !fired || hit === fired || (hit?.contains(fired) ?? false);
+      const target = agrees ? hit : fired;
+      rightClicked = target && eligible(target) ? new WeakRef(target) : null;
+      // Recorded now rather than resolved when the menu item fires: opening a context menu
+      // can collapse the selection on some platforms, and by then the range would be gone.
+      // Only the element is kept — the text itself comes back from Chrome on the message.
+      const forSelection = selectionElement(window.getSelection());
+      rightClickedSelection = forSelection ? new WeakRef(forSelection) : null;
+    },
+    { capture: true, passive: true },
+  );
 
   async function refreshSettings(): Promise<void> {
     settings = await loadSettings();
@@ -2039,13 +2355,8 @@ function installTopFrame(): void {
       const text = selection?.toString().trim();
       if (!selection || !text) return;
 
-      const container = selection.getRangeAt(0).commonAncestorContainer;
-      const element =
-        container.nodeType === Node.ELEMENT_NODE
-          ? (container as Element)
-          : container.parentElement;
-
-      if (!element || !eligible(element)) return;
+      const element = selectionElement(selection);
+      if (!element) return;
       void beginAnnotation([element], text);
     }, 0);
   });
@@ -2134,6 +2445,10 @@ function installTopFrame(): void {
 
   listen(document, "keydown", (event) => {
     const keyboard = event as KeyboardEvent;
+
+    // Nothing on screen to act on while X-dismissed. Guard before any key, because
+    // `H` in particular would silently toggle a collapse behind the curtain.
+    if (hidden) return;
 
     if (keyboard.key === "Escape") {
       if (composer) {
