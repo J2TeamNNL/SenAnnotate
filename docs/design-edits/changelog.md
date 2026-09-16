@@ -213,3 +213,18 @@ block's later assertions depend on).
 the order the Markdown report already uses, because the numbers are what to do and the
 picture is what they are changing. Values go through the existing `html` tagged template;
 nothing here is a new sink.
+
+## After reference-images, context-menu, toolbar-close and SPA isolation landed
+
+`main` moved on while this PR was open: `#14` (reference images), `#18` (context menu),
+`#36` (toolbar close) and `#35` (SPA page isolation). The merge kept both sides.
+
+The composer now takes a fourth `onSubmit` argument for the attached images, and the
+Design section sits above the reference-image strip. `Annotation` carries `designChanges`
+and `referenceImages` as separate optional fields — they answer different questions, so
+they stay separate. The Markdown report and the shared `.html` review print the design
+table, then the references, after the screenshot of *now*.
+
+Store justifications stay under 1,000 characters: storage names both the CSS deltas and
+the pasted images; host permission names the context-menu pointer note *and* that the
+design preview is the only write to the page and is put back when the card closes.

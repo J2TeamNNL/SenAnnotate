@@ -170,10 +170,12 @@ function renderAnnotation(annotation: Annotation, number: number): Html {
   }
 
   // After the photograph of *now*, same order as the Markdown report: the delta is
-  // what to do, and it is unreadable without the picture of what it is changing.
+  // what to do, then the picture of *instead*. Putting the reference under the same
+  // heading as the screenshot is how an agent implements the current state on purpose.
   const design = renderDesign(annotation);
+  const references = renderReferences(annotation);
 
-  return html`<article class="note${done ? " note--done" : ""}"><header class="note__head"><span class="note__number">${number}</span><h3 class="note__title">${annotation.element}</h3><span class="chip chip--${kind}">${kind}</span>${done ? raw(`<span class="chip chip--done">fixed</span>`) : null}</header><p class="note__comment">${annotation.comment}</p>${meta.length ? html`<div class="note__meta">${meta}</div>` : null}${picture}${design}</article>`;
+  return html`<article class="note${done ? " note--done" : ""}"><header class="note__head"><span class="note__number">${number}</span><h3 class="note__title">${annotation.element}</h3><span class="chip chip--${kind}">${kind}</span>${done ? raw(`<span class="chip chip--done">fixed</span>`) : null}</header><p class="note__comment">${annotation.comment}</p>${meta.length ? html`<div class="note__meta">${meta}</div>` : null}${picture}${design}${references}</article>`;
 }
 
 /**
@@ -195,6 +197,29 @@ function renderDesign(annotation: Annotation): Html | null {
   );
 
   return html`<div class="note__design"><p class="note__design-label">Design edits — previewed on the page, not applied to the code</p>${changes.length ? html`<table class="note__design-table"><thead><tr><th>Property</th><th>From</th><th>To</th></tr></thead><tbody>${rows}</tbody></table>` : null}${text ? html`<p class="note__design-text">Text: "${text.from}" → <strong>"${text.to}"</strong></p>` : null}</div>`;
+}
+
+/**
+ * The pictures of *instead*, which the Markdown report already labels as such.
+ *
+ * Share-export landed first and this branch said it would add them here. Dropping them
+ * from the one document a designer actually opens would be the failure the field exists
+ * to prevent: a screenshot of now, no target, words left to guess.
+ *
+ * Each URI still goes through `isEmbeddable`. After an import they are whatever the file
+ * said, and a reference is the one image nobody asked this extension to take.
+ */
+function renderReferences(annotation: Annotation): Html | null {
+  const images = (annotation.referenceImages ?? []).filter(isEmbeddable);
+  if (!images.length) return null;
+
+  const alt = annotation.element;
+  const pictures = images.map(
+    (uri, index) =>
+      html`<img class="note__ref" src="${raw(uri)}" alt="${alt} — reference ${index + 1}" loading="lazy" />`,
+  );
+
+  return html`<div class="note__refs"><p class="note__refs-label">Reference — how it should look, not how it looks now</p>${pictures}</div>`;
 }
 
 function renderPage(entry: { page: string; annotations: Annotation[] }): Html {
@@ -240,6 +265,9 @@ h1 { margin: 0 0 4px; font-size: 22px; }
 .note__design-table th, .note__design-table td { text-align: left; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
 .note__design-table thead th { color: var(--muted); font-weight: 600; }
 .note__design-text { margin: 8px 0 0; font-size: 12.5px; }
+.note__refs { margin: 12px 0 0; display: grid; gap: 8px; }
+.note__refs-label { margin: 0; color: var(--muted); font-size: 12.5px; }
+.note__ref { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 footer { margin-top: 48px; color: var(--muted); font-size: 12px; text-align: center; }
 `.trim();

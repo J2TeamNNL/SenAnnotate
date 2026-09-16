@@ -204,6 +204,15 @@ mostly about the one real decision — `sessionStorage`, not `chrome.storage`, b
 state is per-tab and per-session — and why there is deliberately no in-tab way back.
 `changelog.md` has the miscounting-test wrong turn: a hidden node still counts.
 
+## [`toolbar-close/`](./toolbar-close/) — unreleased
+
+A `✕` at the right end of the toolbar pill that hides the overlay for the current
+page-load only; a reload (or the extension icon) brings it back. A revival of closed PR
+#6, rebased onto 0.8.4 and extended to interoperate explicitly with "Hide until restart"
+(PR #11). `context.md` explains the two controls' scopes, why the icon restores rather
+than immediately toggling inspect, and why the attribute approach was chosen over an
+inline style (it is the one the screenshot path does not own).
+
 ## [`clear-on-copy/`](./clear-on-copy/) — unreleased
 
 Copying the report can now empty the page's annotations, so the next round starts clean.
@@ -212,6 +221,7 @@ two things ever remove annotations** — the explicit "Clear all" and this setti
 button that also cleared was designed and then cut, and the argument is recorded there
 rather than lost. Its `changelog.md` records the copy shortcut this feature originally
 carried, and the 0.6.0 binding it collided with.
+
 ## [`design-edits/`](./design-edits/) — unreleased
 
 "Tighten this and make it feel less heavy" makes the agent invent the numbers, and the
@@ -237,6 +247,17 @@ on a key no dev server will open. Its `context.md` states the rule for the proje
 HTML sink**: `share.ts` builds every string through one `html` tagged template that escapes
 as it interpolates, and the document carries a CSP that makes "nothing loads from the
 network" a property of the file rather than a habit of this repo.
+
+## [`reference-images/`](./reference-images/) — unreleased
+
+Every image the extension held was a photograph of the *current* state. This adds the
+other kind: paste or attach what the element should look like **instead**. Its
+`context.md` is the one to read before touching image storage — it explains why this is a
+separate field rather than a `kind` on one list, why references outlive screenshots under
+quota pressure (a screenshot can be retaken; a pasted Figma frame cannot), and why the
+untrusted-paste path is open *by construction* rather than by choice: `ACTIVATION_EVENTS`
+cannot reach a handler registered through `listen()`. Read the disclosure half of that
+section before assuming an open shadow root is free.
 
 ## [`composer-retarget/`](./composer-retarget/) — unreleased
 
@@ -286,6 +307,14 @@ things: why a card this tall cannot use the composer's "prefer, flip, clamp" pla
 why the default corner is left entirely to CSS. The `changelog.md` records the e2e trap —
 a vertical drag gesture whose first step leaves the pill never starts one.
 
+## [`context-menu/`](./context-menu/) — unreleased
+
+Right-click an element and annotate it, with no mode to arm first — the gesture DevTools'
+*Inspect* established. Its `context.md` is the one to read: `chrome.contextMenus` gives an
+extension **no element and no coordinates**, so the whole design is a capture-phase recorder
+in the page plus a menu click that only says "use it". It also records why a right-click
+inside an iframe is *reported* rather than handled, and the security-relevant change to the
+frame boundary that fixing it would need.
 ## [`freeze-frame-scope/`](./freeze-frame-scope/) — issue #24
 
 `freeze.ts` was monkey-patching five native timer functions in every iframe at
