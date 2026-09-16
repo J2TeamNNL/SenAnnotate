@@ -38,3 +38,11 @@ The drag is modelled directly on `docs/draggable-toolbar/` and inherits all its 
 No dedicated e2e scenario for the drag itself: adding one requires either a new fixture
 (or careful position tracking) to avoid count-assertion interference with other blocks
 that open the same-page composer. Left as a follow-up; the existing suite still passes.
+
+## After reference-images landed
+
+`#14` added a reference-image strip that grows the card after `position()` has run.
+Attaching an image now re-clamps from the dragged position when one exists, rather
+than jumping the card back to the element-anchored default. The header stays a local
+variable so `installDrag` can attach to it; the image strip sits in the body beside
+the textarea.

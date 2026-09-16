@@ -204,6 +204,15 @@ mostly about the one real decision — `sessionStorage`, not `chrome.storage`, b
 state is per-tab and per-session — and why there is deliberately no in-tab way back.
 `changelog.md` has the miscounting-test wrong turn: a hidden node still counts.
 
+## [`toolbar-close/`](./toolbar-close/) — unreleased
+
+A `✕` at the right end of the toolbar pill that hides the overlay for the current
+page-load only; a reload (or the extension icon) brings it back. A revival of closed PR
+#6, rebased onto 0.8.4 and extended to interoperate explicitly with "Hide until restart"
+(PR #11). `context.md` explains the two controls' scopes, why the icon restores rather
+than immediately toggling inspect, and why the attribute approach was chosen over an
+inline style (it is the one the screenshot path does not own).
+
 ## [`clear-on-copy/`](./clear-on-copy/) — unreleased
 
 Copying the report can now empty the page's annotations, so the next round starts clean.
@@ -224,6 +233,17 @@ HTML sink**: `share.ts` builds every string through one `html` tagged template t
 as it interpolates, and the document carries a CSP that makes "nothing loads from the
 network" a property of the file rather than a habit of this repo.
 
+## [`reference-images/`](./reference-images/) — unreleased
+
+Every image the extension held was a photograph of the *current* state. This adds the
+other kind: paste or attach what the element should look like **instead**. Its
+`context.md` is the one to read before touching image storage — it explains why this is a
+separate field rather than a `kind` on one list, why references outlive screenshots under
+quota pressure (a screenshot can be retaken; a pasted Figma frame cannot), and why the
+untrusted-paste path is open *by construction* rather than by choice: `ACTIVATION_EVENTS`
+cannot reach a handler registered through `listen()`. Read the disclosure half of that
+section before assuming an open shadow root is free.
+
 ## [`composer-retarget/`](./composer-retarget/) — unreleased
 
 Clicking picks whatever is under the pointer, which is routinely one level off what you
@@ -239,6 +259,13 @@ the pill can now be dragged anywhere. Its `context.md` is the one to read before
 touching pointer handling again: it sets out why adding a drag did **not** reopen
 `modal-click-leak/` or `modal-focus-leak/`, and which of those guarantees hold by
 design and which hold by accident.
+
+## [`composer-drag/`](./composer-drag/) — unreleased
+
+The annotation card always opened anchored to the clicked element, which on a crowded
+page is often unreadable. It can now be dragged by its header, and the dropped position
+is remembered per page. Its `context.md` is the companion to `draggable-toolbar/`: same
+pointer-capture rules, a separate storage prefix, and why the textarea is not the handle.
 
 ## [`modal-trap-refocus/`](./modal-trap-refocus/) — unreleased
 
@@ -272,6 +299,14 @@ things: why a card this tall cannot use the composer's "prefer, flip, clamp" pla
 why the default corner is left entirely to CSS. The `changelog.md` records the e2e trap —
 a vertical drag gesture whose first step leaves the pill never starts one.
 
+## [`context-menu/`](./context-menu/) — unreleased
+
+Right-click an element and annotate it, with no mode to arm first — the gesture DevTools'
+*Inspect* established. Its `context.md` is the one to read: `chrome.contextMenus` gives an
+extension **no element and no coordinates**, so the whole design is a capture-phase recorder
+in the page plus a menu click that only says "use it". It also records why a right-click
+inside an iframe is *reported* rather than handled, and the security-relevant change to the
+frame boundary that fixing it would need.
 ## [`freeze-frame-scope/`](./freeze-frame-scope/) — issue #24
 
 `freeze.ts` was monkey-patching five native timer functions in every iframe at

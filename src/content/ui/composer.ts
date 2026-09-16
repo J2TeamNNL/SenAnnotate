@@ -39,15 +39,21 @@ export interface ComposerMeta {
 export interface ComposerData extends ComposerMeta {
   initialComment?: string;
   initialKind?: AnnotationKind;
+  initialImages?: string[];
 }
 
 /** Which way to walk the DOM from the element the composer is currently about. */
 export type RetargetDirection = "parent" | "child" | "previous" | "next";
 
 export interface ComposerCallbacks {
-  onSubmit(comment: string, kind: AnnotationKind): void;
+  onSubmit(comment: string, kind: AnnotationKind, referenceImages: string[]): void;
   onCancel(): void;
   onScreenshot(): void;
+  /**
+   * Files the user pasted or picked. Encoding them is the orchestrator's job — this
+   * layer draws, and does not know what a canvas is for.
+   */
+  onAttach(files: File[]): void;
   onDelete?(): void;
   /** Absent when retargeting does not apply — a saved note, text, or a multi-select. */
   onRetarget?(direction: RetargetDirection): void;
@@ -82,21 +88,40 @@ const RETARGET_CONTROLS: {
  */
 const DRAG_THRESHOLD = 4;
 
+/**
+ * Ceiling on reference images per note.
+ *
+ * Not a storage limit — `fitToQuota` owns that. It is a "you are describing one change"
+ * limit: past three pictures the note is a mood board, and the strip stops fitting
+ * across a 380px card without wrapping into something that needs a scroller.
+ *
+ * Exported because the orchestrator both slices files down to the cap before paying to
+ * encode them and writes the toast that names it. Spelling the number out in prose over
+ * there would leave a message insisting on three in a file nobody opens when the strip
+ * grows to four.
+ */
+export const MAX_REFERENCE_IMAGES = 3;
+
 export class Composer {
   readonly element: HTMLElement;
   private readonly textarea: HTMLTextAreaElement;
   private readonly teardown: Array<() => void> = [];
   private readonly kindButtons = new Map<AnnotationKind, HTMLButtonElement>();
+  private readonly strip: HTMLElement;
+  private readonly fileInput: HTMLInputElement;
+  /**
+   * Where the card was first placed, kept rather than used once. `position()` decides
+   * between below the element and flipped above it by measuring the card, and the card
+   * changes height after that decision was taken — attaching an image grows it, and a
+   * retarget rebuilds a taller meta block. Both have to re-clamp against the anchor the
+   * first decision was made against, not against a `top` frozen when the card was shorter.
+   */
+  private readonly anchor: { left: number; top: number; right: number; bottom: number };
+  private images: string[];
   private kind: AnnotationKind;
   /** Rebuilt whole on every retarget — see `renderMeta`. */
   private readonly meta: HTMLElement;
   private readonly callbacks: ComposerCallbacks;
-  /**
-   * Where the card was first placed. Kept so a retarget that grows the meta block can be
-   * re-clamped against the same anchor rather than against a `top` frozen when the card
-   * was shorter.
-   */
-  private readonly anchor: { left: number; top: number; right: number; bottom: number };
   /**
    * The point last *asked* for, before clamping. `null` means "use the anchor".
    *
@@ -118,6 +143,20 @@ export class Composer {
     this.callbacks = callbacks;
     this.anchor = anchor;
     this.kind = data.initialKind ?? "ui";
+    this.images = [...(data.initialImages ?? [])];
+
+    this.strip = h("div", { class: "composer__images" });
+    this.fileInput = h("input", {
+      class: "composer__file",
+      attrs: { type: "file", accept: "image/*", multiple: "" },
+      on: {
+        change: () => {
+          callbacks.onAttach([...(this.fileInput.files ?? [])]);
+          // The same file twice in a row would not fire `change` without this.
+          this.fileInput.value = "";
+        },
+      },
+    });
 
     this.textarea = h("textarea", {
       class: "composer__input",
@@ -179,6 +218,15 @@ export class Composer {
         },
         icon("camera", 14),
       ),
+      h(
+        "button",
+        {
+          class: "button button--ghost button--attach",
+          title: "Attach a reference image — or just paste one",
+          on: { click: () => this.fileInput.click() },
+        },
+        icon("image", 14),
+      ),
       submit,
     );
 
@@ -203,9 +251,11 @@ export class Composer {
       "div",
       { class: "card composer" },
       header,
-      h("div", { class: "card__body" }, this.meta, kinds, this.textarea),
+      h("div", { class: "card__body" }, this.meta, kinds, this.textarea, this.strip, this.fileInput),
       footer,
     );
+
+    this.renderImages();
 
     layer.append(this.element);
     this.position(anchor);
@@ -264,6 +314,46 @@ export class Composer {
         // Without this the page scrolls under the composer on every press.
         keyboard.preventDefault();
         this.callbacks.onRetarget(control.direction);
+      }),
+    );
+
+    // Paste is the point of this feature — a screenshot from another window, a Figma
+    // frame, a competitor's page — and the file picker is only the fallback for an
+    // image that is already on disk. It is listened for on the whole card rather than
+    // on the textarea: an image on the clipboard is not text, so wherever the caret
+    // happens to be is not information.
+    this.teardown.push(
+      listen(this.element, "paste", (event) => {
+        // Containment first, and unconditionally. `ClipboardEvent` is `composed: true`,
+        // so a paste in here reaches `document` retargeted to our host — and a page that
+        // listens for `paste` there (every rich-text editor, chat box and drag-drop
+        // uploader does) would receive the clipboard we were handed and act on it: the
+        // confidential frame the user is pasting *into a review note* gets uploaded into
+        // the application under review. `preventDefault` cannot stop that; it only
+        // suppresses the browser's own insertion. Same shape as `docs/modal-click-leak/`,
+        // with a much worse payload, and the reason this is not conditional on there
+        // being an image: a pasted paragraph of text is no more the page's business.
+        event.stopPropagation();
+
+        const items = [...((event as ClipboardEvent).clipboardData?.items ?? [])];
+        const files = items
+          .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+          .map((item) => item.getAsFile())
+          .filter((file): file is File => file !== null);
+
+        if (!files.length) return;
+
+        // Cancel the default only when the image is the whole clipboard. A clipboard is
+        // not one thing: a copy out of Figma — or Excel, Word, Preview — carries
+        // `text/plain` beside the bitmap, and cancelling on sight of the image ate the
+        // half of the paste the textarea was about to receive. A plain text paste never
+        // reaches here at all.
+        const hasText = items.some(
+          (item) => item.kind === "string" && item.type === "text/plain",
+        );
+        if (!hasText) event.preventDefault();
+
+        callbacks.onAttach(files);
       }),
     );
 
@@ -457,6 +547,70 @@ export class Composer {
     this.paintPosition();
   }
 
+  /**
+   * How many more images this note will take.
+   *
+   * Asked *before* the files are encoded: the cap is known up front, and a full-size
+   * canvas per file that is going to be discarded anyway is the most expensive possible
+   * way to find out there was no room.
+   */
+  referenceImageRoom(): number {
+    return Math.max(0, MAX_REFERENCE_IMAGES - this.images.length);
+  }
+
+  /**
+   * Hand back encoded images. Returns how many were kept, so the caller can say when
+   * the cap swallowed some rather than leaving the user wondering.
+   */
+  addReferenceImages(uris: string[]): number {
+    const kept = uris.slice(0, this.referenceImageRoom());
+    this.images = [...this.images, ...kept];
+    this.renderImages();
+    // The strip is ~62px of card that was not there when `position()` last ran. A note
+    // taken in the lower third of the viewport was placed to just fit, so without this
+    // the footer — Save, camera, attach, delete — slides under the fold, and the card
+    // sits in a layer with no scroller and no way to reach it.
+    // If the card has been dragged, re-clamp from the dragged position rather than
+    // jumping back to the element-anchored default.
+    if (this.requested) {
+      this.paintPosition();
+    } else {
+      this.position(this.anchor);
+    }
+    return kept.length;
+  }
+
+  private renderImages(): void {
+    this.strip.replaceChildren(
+      ...this.images.map((uri, index) => {
+        const thumb = h("img", {
+          class: "composer__thumb",
+          attrs: { src: uri, alt: `Reference image ${index + 1}` },
+        });
+
+        return h(
+          "div",
+          { class: "composer__image" },
+          thumb,
+          h(
+            "button",
+            {
+              class: "composer__image-remove",
+              title: "Remove this image",
+              on: {
+                click: () => {
+                  this.images = this.images.filter((_, at) => at !== index);
+                  this.renderImages();
+                },
+              },
+            },
+            icon("close", 10),
+          ),
+        );
+      }),
+    );
+  }
+
   private selectKind(kind: AnnotationKind): void {
     this.kind = kind;
     for (const [candidate, button] of this.kindButtons) {
@@ -472,7 +626,7 @@ export class Composer {
       takeFocus(this.textarea);
       return;
     }
-    this.callbacks.onSubmit(comment, this.kind);
+    this.callbacks.onSubmit(comment, this.kind, this.images);
   }
 
   /**

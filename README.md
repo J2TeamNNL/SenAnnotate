@@ -143,11 +143,13 @@ the line and column.
 |---|---|
 | Toggle inspect mode | click **Inspect**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> |
 | Annotate an element | click it |
+| Annotate one element without arming anything | **right-click it** → *Annotate this element* |
 | Annotate what you are hovering | <kbd>C</kbd> — no click, so the menu stays open |
 | Fix a mis-click | arrow keys while the note is empty, or its ↑ ↓ ← → buttons at any time |
 | Annotate some text | mode <kbd>2</kbd>, then select the text |
 | Annotate several elements near each other | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+drag a box around them — or mode <kbd>3</kbd> and drag |
 | Annotate several elements anywhere | <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+click each one, then click the last normally — or <kbd>Enter</kbd> |
+| Attach a reference image | paste one into the composer, or use the button beside the camera |
 | Measure the gap between two elements | switch on **Measuring tools** in settings, then mode <kbd>4</kbd>: click one, then the other |
 | See an element's size, padding, margin, type and colours | **Box model on hover** in settings — or just enter mode <kbd>4</kbd> |
 | Check a contrast ratio | hover anything with text once measuring is on — the verdict is on the panel and in the report |
@@ -170,6 +172,24 @@ the line and column.
 The line under the toolbar always names what the current mode does and which keys
 switch to the others, so nothing above needs memorising. Every button on the pill names
 itself on hover — and on keyboard focus — so the icons do not have to be learned either.
+
+### Right-click, like DevTools
+
+Inspect mode is the right tool when you are working through a screen and annotating six
+things. For one problem you have already spotted, **right-click it** and pick *Annotate this
+element* — the same gesture as DevTools' *Inspect*, and the same result: no mode to turn on,
+and nothing to turn off afterwards.
+
+With text selected the menu also offers *Annotate the text "…"*, which carries the quote into
+the note. There is a *Toggle inspect mode* entry too, for when you do want the mode.
+
+None of them arm inspect mode. That is deliberate: inspect mode swallows the next click on
+the page, and a right-click on one element is a complete request on its own.
+
+The page's own right-click menu still works — SenAnnotate watches the event, it never takes
+it. One current limit: a right-click **inside an iframe** cannot be used this way, because
+the extension cannot tell which frame the browser is reporting. Use inspect mode inside
+frames; it works there.
 
 <kbd>C</kbd> is the one worth knowing about. Clicking is how you annotate, and clicking
 is also what closes the thing you wanted to annotate — a dropdown, a hover menu, a
@@ -294,7 +314,14 @@ in the file moves onto the origin in the current tab, path kept.
 every note and every screenshot embedded, no script and nothing loaded from the network —
 a content security policy inside the file says so, so the recipient's browser enforces it
 rather than taking our word — which opens in any browser. Screenshots only travel when **Screenshots** is set to embed —
-a path points at *your* Downloads folder, not theirs.
+a path points at *your* Downloads folder, not theirs. A pasted **reference** always
+travels, because it is already stored as image data.
+
+Paste an image into the composer — a Figma frame, a design review screenshot, anything —
+and it travels with the note as a **reference**: what the element should look like
+*instead*, as opposed to the screenshot, which is what it looks like *now*. The report
+labels the two differently for exactly that reason. The button beside the camera does the
+same for an image already on disk. Three per note.
 
 ## Screenshots
 
